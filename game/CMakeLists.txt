@@ -1,0 +1,18 @@
+add_executable(pxe
+  src/main.cpp
+  src/scene.cpp
+)
+
+target_include_directories(pxe PRIVATE
+  ${CMAKE_SOURCE_DIR}/third_party/stb
+)
+
+target_compile_options(pxe PRIVATE
+  $<$<CXX_COMPILER_ID:MSVC>:/W4>
+  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
+)
+
+target_link_libraries(pxe PRIVATE pxe_engine glfw)
+
+# Keep the binary name stable across generators (pxe, pxe.exe).
+set_target_properties(pxe PROPERTIES OUTPUT_NAME pxe)
