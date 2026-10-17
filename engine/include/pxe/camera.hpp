@@ -67,7 +67,7 @@ class Camera {
   float yawT_ = 1.f;
   bool yawAnimating_ = false;
 
-  int zoom_ = 2;  // index into the pixels-per-unit table
+  int zoom_ = 4;  // index into the pixels-per-unit table (42 px/unit)
 };
 
 }  // namespace pxe

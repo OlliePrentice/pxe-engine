@@ -16,9 +16,8 @@ struct Scene {
   Mesh water;
   std::vector<FoliageInstance> foliage;
 
-  glm::vec3 sunDirection{0.f, 1.f, 0.f};  // direction the light travels
-  glm::vec3 shadowCenter{0.f};
-  float shadowExtent = 24.f;
+  // Horizontal angle of the sun at hour 0. The day/night cycle orbits from here.
+  float sunAzimuth = 0.f;
   glm::vec3 focus{0.f};
 };
 

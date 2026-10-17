@@ -33,18 +33,20 @@ void main() {
 
   vec3 pos;
   if (kind < 2.5) {
-    // Grass and flowers: vertical billboards, rooted, swaying from the tip.
-    float height = (kind < 0.5 ? 0.40 : 0.34) * scale;
-    float width = (kind < 0.5 ? 0.26 : 0.36) * scale;
+    // Sparse tufts, a few pixels tall. They sway from the tip.
+    float height = (kind < 0.5 ? 0.10 : 0.14) * scale;
+    float width = (kind < 0.5 ? 0.055 : 0.12) * scale;
     vec2 c = vec2(aUv.x - 0.5, aUv.y);
-    float sway = sin(uTime * 1.55 + phase) * c.y * c.y;
-    pos = iPos + uCamRight * (c.x + sway * 0.22) * width + vec3(0.0, c.y * height, 0.0);
-    vSurface = 0.0;  // shaded as the ground they grow from
+    float sway = sin(uTime * 1.4 + phase) * c.y * c.y;
+    pos = iPos + uCamRight * (c.x + sway * 0.35) * width + vec3(0.0, c.y * height, 0.0);
+    vSurface = 0.0;
     vKind = kind;
   } else {
-    float size = 0.55 * scale;
+    // Small cards sitting on the canopy shell. They break the silhouette
+    // into leaf pixels; the blob underneath carries the shading.
+    float size = 0.22 * scale;
     vec2 c = aUv - 0.5;
-    float sway = sin(uTime * 1.15 + phase) * 0.05 * scale;
+    float sway = sin(uTime * 0.9 + phase) * 0.02;
     pos = iPos + (uCamRight * c.x + uCamUp * c.y) * size + uCamRight * sway;
     vSurface = 4.0;
   }

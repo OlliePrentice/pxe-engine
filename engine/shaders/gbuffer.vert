@@ -7,6 +7,7 @@ layout(location = 3) in float aSurface;
 
 uniform mat4 uViewProj;
 uniform mat4 uView;
+uniform float uTime;
 
 out vec3 vWorld;
 out vec3 vBase;
@@ -16,12 +17,19 @@ out float vSurface;
 out float vLinearDepth;
 
 void main() {
-  vWorld = aPos;
+  vec3 pos = aPos;
+  // Whole canopy, one motion. The shadow pass uses the same displacement.
+  if (aSurface > 3.5) {
+    float s = sin(uTime * 0.65 + aPos.x * 0.31 + aPos.z * 0.22) * 0.045;
+    pos.x += s;
+    pos.z += s * 0.55;
+  }
+  vWorld = pos;
   vBase = aPos;
   vNormal = aNormal;
   vColor = aColor;
   vSurface = aSurface;
-  vec4 view = uView * vec4(aPos, 1.0);
+  vec4 view = uView * vec4(pos, 1.0);
   vLinearDepth = -view.z;
-  gl_Position = uViewProj * vec4(aPos, 1.0);
+  gl_Position = uViewProj * vec4(pos, 1.0);
 }

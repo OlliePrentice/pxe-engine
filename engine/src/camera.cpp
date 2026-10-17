@@ -15,7 +15,8 @@ constexpr float kYawDuration = 0.5f;
 constexpr float kEyeDistance = 48.f;
 
 // Integer low-res pixels per world unit. Zoom only rests on these so a
-// resting camera keeps a stable texel grid. Index 2 (22) is the default.
+// resting camera keeps a stable texel grid. Index 4 (42) frames a ruin the
+// way the reference scenes do: a pillar is about a quarter of the frame.
 constexpr int kPixelsPerUnit[] = {12, 16, 22, 30, 42};
 constexpr int kZoomCount = 5;
 
@@ -156,7 +157,10 @@ CameraFrame Camera::frame(int rtW, int rtH, int viewH) const {
   // grid is diagonal on screen and the pixels swim.
   const float px = glm::dot(desired, right);
   const float py = glm::dot(desired, up);
-  const float pz = glm::dot(desired, forward);
+  // Snap depth as well. An ortho slide along the view plane still leaks a
+  // few ulps into this axis, and that is enough to flip a 1px shore or an
+  // outline. Quantizing it keeps the eye bitwise-stable inside one texel.
+  const float pz = std::round(glm::dot(desired, forward) / f.texelWorld) * f.texelWorld;
   const float sx = std::round(px / f.texelWorld) * f.texelWorld;
   const float sy = std::round(py / f.texelWorld) * f.texelWorld;
   f.eye = right * sx + up * sy + forward * pz;

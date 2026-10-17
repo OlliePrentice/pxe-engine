@@ -42,9 +42,11 @@ struct Options {
   bool demo = false;
   bool vsync = true;
   float yawDeg = 45.f;
-  int zoom = 3;
-  int weather = 1;
+  int zoom = 4;
+  int weather = 0;
   float time = -1.f;
+  float hour = 9.f;
+  std::string cycleFrames;
   bool haveTarget = false;
   glm::vec3 target{0.f};
 };
@@ -59,6 +61,8 @@ void printUsage() {
                "  --demo                    scripted pan and 45° rotation, then exit\n"
                "  --demo-frames dir         write that demo as a PNG sequence\n"
                "  --yaw degrees --zoom 0..4 --weather 0|1|2 --time seconds\n"
+               "  --hour 0..24          time of day (morning is 9)\n"
+               "  --cycle-frames dir    write one day of shadow frames, then exit\n"
                "  --target x,y,z\n"
                "  --no-vsync\n");
 }
@@ -110,6 +114,11 @@ Options parseArgs(int argc, char** argv) {
       opt.weather = std::atoi(need("--weather"));
     } else if (a == "--time") {
       opt.time = std::atof(need("--time"));
+    } else if (a == "--hour") {
+      opt.hour = std::atof(need("--hour"));
+    } else if (a == "--cycle-frames") {
+      opt.cycleFrames = need("--cycle-frames");
+      opt.vsync = false;
     } else if (a == "--target") {
       if (!parseTarget(need("--target"), opt.target)) {
         std::fprintf(stderr, "bad --target, expected x,y,z\n");
@@ -148,6 +157,9 @@ struct Input {
   bool cycleWeather = false;
   bool shot = false;
   bool quit = false;
+  bool togglePause = false;
+  int timeSpeed = 0;
+  int stepHour = 0;
 };
 
 bool pressed(GLFWwindow* win, int key, bool& latch) {
@@ -170,12 +182,18 @@ Input pollInput(GLFWwindow* win, double& wheel) {
 
   static bool q = false, e = false, o = false, f1 = false, v = false, f12 = false;
   static bool minus = false, plus = false, equal = false, esc = false;
+  static bool pause = false, slow = false, fast = false, stepBack = false, stepFwd = false;
   if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
   if (pressed(win, GLFW_KEY_E, e)) in.rotate += 1;
   if (pressed(win, GLFW_KEY_O, o)) in.toggleOutline = true;
   if (pressed(win, GLFW_KEY_F1, f1)) in.cycleDebug = true;
   if (pressed(win, GLFW_KEY_V, v)) in.cycleWeather = true;
   if (pressed(win, GLFW_KEY_F12, f12)) in.shot = true;
+  if (pressed(win, GLFW_KEY_P, pause)) in.togglePause = true;
+  if (pressed(win, GLFW_KEY_LEFT_BRACKET, slow)) in.timeSpeed -= 1;
+  if (pressed(win, GLFW_KEY_RIGHT_BRACKET, fast)) in.timeSpeed += 1;
+  if (pressed(win, GLFW_KEY_COMMA, stepBack)) in.stepHour -= 1;
+  if (pressed(win, GLFW_KEY_PERIOD, stepFwd)) in.stepHour += 1;
   if (pressed(win, GLFW_KEY_MINUS, minus) || pressed(win, GLFW_KEY_KP_SUBTRACT, minus)) in.zoom -= 1;
   if (pressed(win, GLFW_KEY_EQUAL, equal) || pressed(win, GLFW_KEY_KP_ADD, plus)) in.zoom += 1;
   if (pressed(win, GLFW_KEY_ESCAPE, esc)) in.quit = true;
@@ -202,13 +220,27 @@ const char* debugName(int view) {
 
 const char* weatherName(int weather) {
   switch (weather) {
-    case 0:
-      return "clear";
+    case 1:
+      return "haze";
     case 2:
       return "rain";
     default:
-      return "haze";
+      return "clear";
   }
+}
+
+const char* dayPhase(float hour) {
+  if (hour < 5.f || hour >= 20.5f) return "night";
+  if (hour < 7.2f) return "dawn";
+  if (hour < 11.f) return "morning";
+  if (hour < 16.2f) return "day";
+  if (hour < 18.6f) return "dusk";
+  return "night";
+}
+
+void wrapHour(float& hour) {
+  hour = std::fmod(hour, 24.f);
+  if (hour < 0.f) hour += 24.f;
 }
 
 int differingPixels(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b) {
@@ -274,8 +306,8 @@ int main(int argc, char** argv) {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
   glfwWindowHint(GLFW_SAMPLES, 0);
   glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
-  const bool headless =
-      opt.selfTest || !opt.screenshot.empty() || !opt.shotsDir.empty() || !opt.demoFrames.empty();
+  const bool headless = opt.selfTest || !opt.screenshot.empty() || !opt.shotsDir.empty() ||
+                        !opt.demoFrames.empty() || !opt.cycleFrames.empty();
   if (headless && !opt.demo) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
   GLFWwindow* window = glfwCreateWindow(opt.width, opt.height, "pxe", nullptr, nullptr);
@@ -322,6 +354,12 @@ int main(int argc, char** argv) {
   int weather = std::clamp(opt.weather, 0, 2);
   float timeSec = opt.time >= 0.f ? opt.time : 0.f;
   const bool freezeTime = opt.time >= 0.f;
+  float hour = opt.hour;
+  wrapHour(hour);
+  bool clockPaused = false;
+  int speedIndex = 0;
+  const float kSpeed[] = {1.f, 4.f, 16.f, 64.f};
+  constexpr float kDaySeconds = 60.f;
 
   auto drawFrame = [&](int fbW, int fbH) {
     pxe::FrameParams params;
@@ -331,6 +369,7 @@ int main(int argc, char** argv) {
     params.debugView = debugView;
     params.weather = weather;
     params.time = timeSec;
+    params.hour = hour;
     const pxe::CameraFrame frame =
         camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH, pxe::RenderConfig::kViewH);
     renderer.render(scene, frame, params);
@@ -354,11 +393,13 @@ int main(int argc, char** argv) {
       float yaw;
       int zoom;
       int weather;
+      float hour;
     };
     const Shot shots[] = {
-        {"sunny_yaw45.png", 45.f, 3, 0}, {"haze_yaw45.png", 45.f, 3, 1},
-        {"haze_yaw90.png", 90.f, 3, 1},  {"haze_yaw0.png", 0.f, 3, 1},
-        {"rain_yaw45.png", 45.f, 3, 2},   {"haze_close.png", 45.f, 4, 1},
+        {"morning.png", 45.f, 4, 0, 9.f},  {"noon.png", 45.f, 4, 0, 12.5f},
+        {"dawn.png", 45.f, 4, 0, 6.3f},    {"dusk.png", 45.f, 4, 0, 17.7f},
+        {"night.png", 45.f, 4, 0, 22.5f},  {"morning_yaw90.png", 90.f, 4, 0, 9.f},
+        {"wide.png", 45.f, 1, 0, 9.f},
     };
     bool ok = true;
     for (const Shot& shot : shots) {
@@ -366,9 +407,23 @@ int main(int argc, char** argv) {
       camera.setYawRadians(shot.yaw * 3.14159265f / 180.f);
       camera.setPixelsPerUnitIndex(shot.zoom);
       weather = shot.weather;
+      hour = shot.hour;
       timeSec = 1.2f;
       ok = saveWindow(opt.shotsDir + "/" + shot.name) && ok;
     }
+    exitCode = ok ? 0 : 1;
+  } else if (!opt.cycleFrames.empty()) {
+    constexpr int kFrames = 48;
+    std::filesystem::create_directories(opt.cycleFrames);
+    bool ok = true;
+    for (int i = 0; i < kFrames; ++i) {
+      hour = 24.f * static_cast<float>(i) / static_cast<float>(kFrames);
+      timeSec = 1.2f;
+      char name[64];
+      std::snprintf(name, sizeof(name), "hour_%05.2f.png", hour);
+      ok = saveWindow(opt.cycleFrames + "/" + name) && ok;
+    }
+    std::fprintf(stderr, "pxe: wrote %d day-cycle frames to %s\n", kFrames, opt.cycleFrames.c_str());
     exitCode = ok ? 0 : 1;
   } else if (!opt.screenshot.empty()) {
     timeSec = opt.time >= 0.f ? opt.time : 1.2f;
@@ -414,6 +469,18 @@ int main(int argc, char** argv) {
     glfwPollEvents();
     Input input = pollInput(window, wheel);
     if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
+    if (input.togglePause) clockPaused = !clockPaused;
+    if (input.timeSpeed) {
+      speedIndex = std::clamp(speedIndex + input.timeSpeed, 0, 3);
+    }
+    if (input.stepHour) {
+      hour += static_cast<float>(input.stepHour);
+      wrapHour(hour);
+    }
+    if (!clockPaused && !opt.demo) {
+      hour += dt * kSpeed[speedIndex] * (24.f / kDaySeconds);
+      wrapHour(hour);
+    }
 
     if (opt.demo) {
       demoT += dt;
@@ -455,9 +522,13 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "pxe: wrote pxe-shot.png\n");
     }
 
-    char title[192];
+    const int hh = static_cast<int>(hour);
+    const int mm = static_cast<int>((hour - static_cast<float>(hh)) * 60.f);
+    char title[256];
     std::snprintf(title, sizeof(title),
-                  "pxe  |  WASD pan   Q/E rotate   wheel/+/- zoom   O outlines   F1 %s   V %s   |  %d px/unit",
+                  "pxe  |  %02d:%02d %s %s  |  WASD pan  Q/E rotate  +/- zoom  O outlines  F1 %s  V %s  P pause  [ ] speed  , . step  |  %d px/unit",
+                  hh, mm, dayPhase(hour),
+                  clockPaused ? "paused" : (speedIndex == 0 ? "x1" : speedIndex == 1 ? "x4" : speedIndex == 2 ? "x16" : "x64"),
                   debugName(debugView), weatherName(weather), frame.pixelsPerUnit);
     glfwSetWindowTitle(window, title);
 

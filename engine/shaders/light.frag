@@ -14,30 +14,37 @@ uniform vec3 uForward;
 uniform float uHalfW;
 uniform float uHalfH;
 uniform vec3 uLightDir;
-uniform vec3 uFogColor;
+uniform vec3 uSunColor;
+uniform vec3 uShadowTint;
+uniform vec3 uSkyColor;
 uniform float uFocusDepth;
 uniform float uFogNear;
 uniform float uFogFar;
 uniform float uFogMax;
+uniform float uNormalBias;
+uniform float uDepthBias;
 
 layout(location = 0) out vec4 oColor;
 
 float shadowFactor(vec3 world, vec3 n) {
-  vec4 lc = uLightViewProj * vec4(world, 1.0);
+  vec3 lit = -normalize(uLightDir);
+  float nd = clamp(dot(n, lit), 0.0, 1.0);
+  // Lift the sample off the surface so a nearest-filtered map does not speckle.
+  vec3 pworld = world + n * uNormalBias * (1.0 - nd * 0.85) + lit * (uNormalBias * 0.35);
+  vec4 lc = uLightViewProj * vec4(pworld, 1.0);
   vec3 p = lc.xyz / lc.w;
   vec2 suv = p.xy * 0.5 + 0.5;
   if (suv.x <= 0.0 || suv.x >= 1.0 || suv.y <= 0.0 || suv.y >= 1.0) return 1.0;
   float stored = texture(uShadow, suv).r;
   float z = p.z * 0.5 + 0.5;
-  float facing = clamp(dot(n, -uLightDir), 0.0, 1.0);
-  float bias = mix(0.014, 0.0028, facing);
+  float bias = uDepthBias * mix(2.4, 0.35, nd);
   return z <= stored + bias ? 1.0 : 0.0;
 }
 
 void main() {
   float depth = texture(uDepth, vUv).r;
   if (depth > 200.0) {
-    oColor = vec4(uFogColor, 1.0);
+    oColor = vec4(uSkyColor, 0.0);
     return;
   }
 
@@ -48,30 +55,40 @@ void main() {
   vec3 n = normalize(texture(uNormal, vUv).xyz);
   vec3 albedo = albedoS.rgb;
   float material = albedoS.a;
-
-  // Leaves sit inside the canopy shadow proxy, so they are lit from the
-  // stored sphere normal and skip the shadow map. Grass and solids receive it.
-  float sunVis = material < 0.75 ? shadowFactor(world, n) : 1.0;
   float ndl = dot(n, -uLightDir);
 
+  vec3 hi = albedo * uSunColor;
+  vec3 lo = albedo * uShadowTint;
+  // Soft monochrome form inside the shadow band, so a shaded stone face
+  // still has a top and a side. Never a third colour ramp on the ground.
+  float amb = clamp(n.y * 0.10 + 0.92, 0.90, 1.0);
+  lo *= amb;
+
+  float litMask;
   vec3 col;
-  if (sunVis < 0.5) {
-    // Soft monochrome Lambert in shadow: contrast without a flat black cutout.
-    float amb = clamp(ndl * 0.55 + 0.45, 0.0, 1.0);
-    amb = floor(amb * 3.0) / 2.0;
-    vec3 tint = vec3(0.42, 0.56, 0.56);
-    col = albedo * tint * (0.72 + 0.40 * amb);
+  if (material > 0.75) {
+    // Canopy: the mesh normal is the smooth enclosing shape, so a few hard
+    // bands read as one blob instead of a pile of leaves.
+    float w = clamp(ndl * 0.5 + 0.5, 0.0, 0.999);
+    if (w > 0.60) {
+      col = hi;
+      litMask = 1.0;
+    } else if (w > 0.36) {
+      col = albedo * mix(uShadowTint, uSunColor, 0.58);
+      litMask = 0.55;
+    } else {
+      col = lo;
+      litMask = 0.0;
+    }
   } else {
-    float wrapped = clamp(ndl * 0.5 + 0.5, 0.0, 0.999);
-    float band = floor(wrapped * 4.0) / 3.0;
-    vec3 lo = vec3(0.64, 0.68, 0.56);
-    vec3 hi = vec3(1.16, 1.12, 1.06);
-    col = albedo * mix(lo, hi, band);
+    float sunVis = shadowFactor(world, n);
+    litMask = (sunVis > 0.5 && ndl > 0.02) ? 1.0 : 0.0;
+    col = mix(lo, hi, litMask);
   }
 
-  // Depth is measured from the eye, which sits far back on an ortho camera.
-  // Haze should grow past the focal plane, not from the eye itself.
-  float fog = smoothstep(uFogNear, uFogFar, depth - uFocusDepth);
-  col = mix(col, uFogColor, clamp(fog, 0.0, uFogMax));
-  oColor = vec4(col, 1.0);
+  if (uFogMax > 0.001) {
+    float fog = smoothstep(uFogNear, uFogFar, depth - uFocusDepth);
+    col = mix(col, uSkyColor, clamp(fog, 0.0, uFogMax));
+  }
+  oColor = vec4(col, litMask);
 }

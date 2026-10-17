@@ -4,6 +4,7 @@
 #include "pxe/config.hpp"
 #include "shader.hpp"
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
@@ -11,6 +12,11 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+
+namespace {
+constexpr float kPi = 3.14159265358979323846f;
+constexpr float kTau = 6.28318530717958647692f;
+}
 
 namespace pxe {
 namespace {
@@ -49,6 +55,82 @@ std::string shaderDir() {
 #else
   return "engine/shaders";
 #endif
+}
+
+float saturate(float v) { return std::clamp(v, 0.f, 1.f); }
+
+float smooth01(float edge0, float edge1, float x) {
+  float t = saturate((x - edge0) / (edge1 - edge0));
+  return t * t * (3.f - 2.f * t);
+}
+
+// One directional light for the whole day. Azimuth turns steadily so shadows
+// sweep. Elevation stays high enough at dawn and dusk that the shadow map
+// still covers the casters, while the colour goes warm and dim. At night the
+// same orbit is a cool, low moon. The angle is quantized so the shadow edge
+// steps by a texel instead of swimming inside one.
+struct DayLight {
+  glm::vec3 travel{0.f, -1.f, 0.f};  // direction the light travels
+  glm::vec3 sunColor{1.f};
+  glm::vec3 shadowTint{0.5f};
+  glm::vec3 skyColor{0.62f, 0.74f, 0.78f};
+};
+
+DayLight evaluateDay(float hour, float azimuth0) {
+  hour = std::fmod(hour, 24.f);
+  if (hour < 0.f) hour += 24.f;
+
+  const float dayWave = std::sin((hour - 6.f) / 24.f * kTau);  // +1 noon, -1 midnight
+  float elev;
+  if (dayWave >= 0.f) {
+    elev = std::lerp(0.20f, 1.02f, std::pow(dayWave, 0.80f));
+  } else {
+    elev = std::lerp(0.22f, 0.48f, std::pow(-dayWave, 0.90f));
+  }
+  float az = azimuth0 + (hour / 24.f) * kTau;
+
+  constexpr float kQuant = 0.45f * kPi / 180.f;
+  az = std::round(az / kQuant) * kQuant;
+  elev = std::round(elev / kQuant) * kQuant;
+
+  const glm::vec3 toLight{std::cos(az) * std::cos(elev), std::sin(elev), std::sin(az) * std::cos(elev)};
+
+  // Full colour shortly after the sun clears the horizon, so dawn and dusk
+  // read as a warm low sun rather than a dim mix with the moon.
+  const float sunUp = smooth01(-0.05f, 0.10f, dayWave);
+  const float lowSun = saturate(1.f - std::fabs(dayWave) * 2.6f) * smooth01(0.02f, 0.18f, dayWave);
+
+  const glm::vec3 daySun{1.04f, 1.01f, 0.90f};
+  const glm::vec3 goldSun{1.34f, 0.72f, 0.36f};
+  const glm::vec3 moon{0.42f, 0.52f, 0.90f};
+  // Cool, not black. Vertical stone in shade should stay a grey, not a hole.
+  const glm::vec3 dayShadow{0.60f, 0.68f, 0.74f};
+  const glm::vec3 goldShadow{0.55f, 0.46f, 0.56f};
+  const glm::vec3 nightShadow{0.22f, 0.24f, 0.38f};
+
+  const glm::vec3 daySky{0.64f, 0.78f, 0.70f};
+  const glm::vec3 goldSky{0.86f, 0.62f, 0.42f};
+  const glm::vec3 nightSky{0.08f, 0.10f, 0.16f};
+
+  DayLight dl;
+  dl.travel = -glm::normalize(toLight);
+  const glm::vec3 dayLit = glm::mix(daySun, goldSun, lowSun);
+  const glm::vec3 daySh = glm::mix(dayShadow, goldShadow, lowSun);
+  dl.sunColor = glm::mix(moon, dayLit, sunUp);
+  dl.shadowTint = glm::mix(nightShadow, daySh, sunUp);
+  dl.skyColor = glm::mix(nightSky, glm::mix(daySky, goldSky, lowSun), sunUp);
+  return dl;
+}
+
+// Lock the shadow projection to texel centres so a slow sun (and a panning
+// camera) does not shimmer the edge between shadow texels.
+glm::mat4 snapShadowMatrix(const glm::mat4& lightVP, float shadowSize) {
+  glm::vec4 origin = lightVP * glm::vec4(0.f, 0.f, 0.f, 1.f);
+  origin *= shadowSize * 0.5f;
+  const glm::vec4 rounded = glm::round(origin);
+  glm::vec3 offset{(rounded.x - origin.x), (rounded.y - origin.y), 0.f};
+  offset *= 2.f / shadowSize;
+  return glm::translate(glm::mat4{1.f}, offset) * lightVP;
 }
 
 }  // namespace
@@ -272,30 +354,48 @@ void Renderer::updatePresentQuad(const CameraFrame& camera, const FrameParams& p
 
 void Renderer::render(const Scene& scene, const CameraFrame& camera, const FrameParams& params) {
   const glm::mat4 viewProj = camera.proj * camera.view;
-  const glm::vec3 lightDir = glm::normalize(scene.sunDirection);
+  const DayLight day = evaluateDay(params.hour, scene.sunAzimuth);
+  const glm::vec3 lightDir = glm::normalize(day.travel);
   const glm::vec3 shadowUp =
       std::fabs(lightDir.y) > 0.92f ? glm::vec3{0.f, 0.f, 1.f} : glm::vec3{0.f, 1.f, 0.f};
-  const float ext = scene.shadowExtent;
-  const float dist = ext + 18.f;
-  const glm::vec3 lightEye = scene.shadowCenter - lightDir * dist;
-  const glm::mat4 lightView = glm::lookAt(lightEye, scene.shadowCenter, shadowUp);
-  const glm::mat4 lightProj = glm::ortho(-ext, ext, -ext, ext, 1.f, dist + ext + 20.f);
-  const glm::mat4 lightVP = lightProj * lightView;
 
-  glm::vec3 fog = glm::vec3{0.67f, 0.73f, 0.64f};
-  float fogNear = 8.f;
-  float fogFar = 26.f;
-  float fogMax = 0.55f;
+  // Cover the view, plus the reach of a low sun, and keep one shadow texel
+  // about the size of one low-res pixel so the edge stays crisp.
+  const float sunElev = std::asin(std::clamp(-lightDir.y, 0.05f, 1.f));
+  const float shadowReach = 6.5f / std::max(std::tan(sunElev), 0.22f);
+  float ext = std::max(camera.orthoHalfW, camera.orthoHalfH) * 2.05f + 6.f + shadowReach * 0.35f;
+  const float texelCap = camera.texelWorld * static_cast<float>(RenderConfig::kShadow) * 0.5f;
+  ext = std::min(ext, std::max(texelCap, std::max(camera.orthoHalfW, camera.orthoHalfH) * 2.4f));
+  // Anchor the shadow frustum to the snapped camera, not the unsnapped look-at.
+  // A sub-texel pan then cannot slide the shadow map under the pixels.
+  const float centerDepth =
+      std::round(glm::dot(camera.target - camera.eye, camera.forward) / camera.texelWorld) *
+      camera.texelWorld;
+  const glm::vec3 shadowCenter = camera.eye + camera.forward * centerDepth;
+  const float dist = ext + 24.f;
+  const glm::vec3 lightEye = shadowCenter - lightDir * dist;
+  const glm::mat4 lightView = glm::lookAt(lightEye, shadowCenter, shadowUp);
+  const float nearP = std::max(0.5f, dist - ext - 18.f);
+  const float farP = dist + ext + 28.f;
+  const glm::mat4 lightProj = glm::ortho(-ext, ext, -ext, ext, nearP, farP);
+  const glm::mat4 lightVP =
+      snapShadowMatrix(lightProj * lightView, static_cast<float>(RenderConfig::kShadow));
+  const float shadowTexel = (2.f * ext) / static_cast<float>(RenderConfig::kShadow);
+  const float depthSpan = std::max(farP - nearP, 1.f);
+
+  glm::vec3 sky = day.skyColor;
+  float fogNear = 10.f;
+  float fogFar = 28.f;
+  float fogMax = 0.f;
   if (params.weather == 1) {
-    fog = glm::vec3{0.71f, 0.74f, 0.64f};
+    fogNear = 8.f;
+    fogFar = 26.f;
+    fogMax = 0.18f;
+  } else if (params.weather == 2) {
+    sky = glm::mix(sky, glm::vec3{0.38f, 0.46f, 0.56f}, 0.55f);
     fogNear = 4.f;
     fogFar = 18.f;
-    fogMax = 0.62f;
-  } else if (params.weather == 2) {
-    fog = glm::vec3{0.40f, 0.48f, 0.56f};
-    fogNear = 1.5f;
-    fogFar = 14.f;
-    fogMax = 0.72f;
+    fogMax = 0.28f;
   }
   const float focusDepth = glm::dot(camera.target - camera.eye, camera.forward);
 
@@ -308,10 +408,11 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glEnable(GL_CULL_FACE);
   glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
   glEnable(GL_POLYGON_OFFSET_FILL);
-  glPolygonOffset(1.75f, 3.5f);
+  glPolygonOffset(2.0f, 4.0f);
   glClear(GL_DEPTH_BUFFER_BIT);
   glUseProgram(progShadow_);
   setMat4(progShadow_, "uLightViewProj", lightVP);
+  set1f(progShadow_, "uTime", params.time);
   scene.shadowCasters.draw();
   glDisable(GL_POLYGON_OFFSET_FILL);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -321,7 +422,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glViewport(0, 0, RenderConfig::kRtW, RenderConfig::kRtH);
   const GLenum gbufs[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
   glDrawBuffers(3, gbufs);
-  const float clearAlb[] = {fog.r, fog.g, fog.b, 0.f};
+  const float clearAlb[] = {sky.r, sky.g, sky.b, 0.f};
   const float clearNrm[] = {0.f, 1.f, 0.f, 0.f};
   const float clearDep[] = {999.f, 0.f, 0.f, 1.f};
   glClearBufferfv(GL_COLOR, 0, clearAlb);
@@ -332,6 +433,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glUseProgram(progG_);
   setMat4(progG_, "uViewProj", viewProj);
   setMat4(progG_, "uView", camera.view);
+  set1f(progG_, "uTime", params.time);
   scene.opaque.draw();
 
   if (foliageCount_ > 0) {
@@ -374,11 +476,15 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   set1f(progLight_, "uHalfW", camera.orthoHalfW);
   set1f(progLight_, "uHalfH", camera.orthoHalfH);
   set3f(progLight_, "uLightDir", lightDir);
-  set3f(progLight_, "uFogColor", fog);
+  set3f(progLight_, "uSunColor", day.sunColor);
+  set3f(progLight_, "uShadowTint", day.shadowTint);
+  set3f(progLight_, "uSkyColor", sky);
   set1f(progLight_, "uFocusDepth", focusDepth);
   set1f(progLight_, "uFogNear", fogNear);
   set1f(progLight_, "uFogFar", fogFar);
   set1f(progLight_, "uFogMax", fogMax);
+  set1f(progLight_, "uNormalBias", shadowTexel * 1.6f);
+  set1f(progLight_, "uDepthBias", (shadowTexel * 0.85f) / depthSpan);
   drawFullscreen(progLight_);
 
   // ---- outlines into the composite buffer ----
@@ -398,7 +504,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   set3f(progOutline_, "uBias", glm::normalize(glm::vec3{0.15f, 1.f, 0.45f}));
   set2f(progOutline_, "uTexel", 1.f / RenderConfig::kRtW, 1.f / RenderConfig::kRtH);
   const float groundStep = camera.texelWorld / std::tan(camera.pitchRadians);
-  set1f(progOutline_, "uDepthThresh", groundStep * 3.2f);
+  set1f(progOutline_, "uDepthThresh", groundStep * 2.4f);
+  set3f(progOutline_, "uSunColor", day.sunColor);
   set1i(progOutline_, "uEnable", params.outlines ? 1 : 0);
   drawFullscreen(progOutline_);
 
@@ -415,8 +522,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     setMat4(progWater_, "uViewProj", viewProj);
     setMat4(progWater_, "uView", camera.view);
     set2f(progWater_, "uInvRes", 1.f / RenderConfig::kRtW, 1.f / RenderConfig::kRtH);
-    set1f(progWater_, "uShore", groundStep * 14.f);
-    set1f(progWater_, "uTime", params.time);
+    set1f(progWater_, "uPixelDepth", groundStep);
     scene.water.draw();
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
@@ -428,8 +534,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   float facing = glm::dot(camera.forward, -lightDir);
   facing = glm::clamp(facing, 0.f, 1.f);
   float rayStrength = 0.f;
-  if (params.weather == 0) rayStrength = 0.0f;
-  if (params.weather == 1) rayStrength = 0.12f;
+  if (params.weather == 1) rayStrength = 0.05f;
   rayStrength *= 0.55f + 0.45f * facing;
   if (rayStrength > 0.001f) {
     glEnable(GL_BLEND);

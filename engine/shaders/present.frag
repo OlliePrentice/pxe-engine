@@ -36,8 +36,8 @@ void main() {
   if (uMode == 3) col = vec3(clamp(col.r / 48.0, 0.0, 1.0));
 
   if (uMode == 0) {
-    // Keep a little light in the darkest outline so the frame has no pure black.
-    col = mix(vec3(0.045, 0.05, 0.048), col, 0.94);
+    // Shadows are tinted, so this only catches a true zero from an empty pixel.
+    col = max(col, vec3(0.012, 0.014, 0.016));
   }
 
   if (uWeather == 2 && (uMode == 0 || uMode == 1)) {

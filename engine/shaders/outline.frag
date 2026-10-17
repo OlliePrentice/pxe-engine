@@ -11,6 +11,7 @@ uniform vec3 uBias;
 uniform vec2 uTexel;
 uniform float uDepthThresh;
 uniform int uEnable;
+uniform vec3 uSunColor;
 
 layout(location = 0) out vec4 oColor;
 
@@ -20,9 +21,11 @@ vec3 viewNormal(vec2 uv) {
 }
 
 void main() {
-  vec3 col = texture(uColor, vUv).rgb;
+  vec4 src = texture(uColor, vUv);
+  vec3 col = src.rgb;
   float d0 = texture(uDepth, vUv).r;
   float material = texture(uAlbedo, vUv).a;
+  // Grass and leaves opt out. Their silhouette is the sprite itself.
   if (uEnable == 0 || material > 0.25 || d0 > 200.0) {
     oColor = vec4(col, 1.0);
     return;
@@ -40,28 +43,33 @@ void main() {
     vec2 uv = vUv + offs[i];
     float dn = texture(uDepth, uv).r;
     depthScore += max(dn - d0, 0.0);
-    if (d0 - dn > uDepthThresh * 0.4) farther += 1.0;
+    if (d0 - dn > uDepthThresh * 0.35) farther += 1.0;
     if (dn < 200.0) {
       vec3 nn = viewNormal(uv);
       normalScore += max(dot(n0 - nn, uBias), 0.0);
     }
   }
 
+  // Normal edges are for hard creases (a step lip, a block corner), not
+  // the gentle change of a hill. Depth edges are silhouettes.
   bool depthEdge = depthScore > uDepthThresh;
-  bool normalEdge = normalScore > 0.75 && farther < 0.5 && !depthEdge;
-
-  vec3 albedo = texture(uAlbedo, vUv).rgb;
-  float lumaC = dot(col, vec3(0.30, 0.50, 0.20));
-  float lumaA = max(dot(albedo, vec3(0.30, 0.50, 0.20)), 0.04);
-  float lightLevel = clamp(lumaC / lumaA, 0.0, 1.3);
-
-  if (depthEdge) {
-    float darken = mix(0.34, 0.58, clamp(lightLevel, 0.0, 1.0));
-    col *= darken;
+  bool normalEdge = normalScore > 0.95 && farther < 0.5 && !depthEdge;
+  if (!depthEdge && !normalEdge) {
+    oColor = vec4(col, 1.0);
+    return;
   }
-  if (normalEdge) {
-    float boost = mix(1.0, 1.26, clamp(lightLevel, 0.0, 1.0));
-    col = col * boost + vec3(0.035, 0.03, 0.015) * clamp(lightLevel, 0.0, 1.0);
+
+  // Alpha of the light buffer is the cel band (1 lit, 0 shadow).
+  float lit = src.a;
+  vec3 albedo = texture(uAlbedo, vUv).rgb;
+  if (lit > 0.72) {
+    // Light-facing lip: brighter than the lit surface, tinted by the sun.
+    vec3 hi = albedo * uSunColor * 1.42 + vec3(0.07, 0.06, 0.04);
+    float amt = normalEdge ? 0.88 : 0.62;
+    col = mix(col, clamp(hi, 0.0, 1.0), amt);
+  } else {
+    // Shadowed silhouette. Stay in the local colour, just darker.
+    col *= normalEdge ? 0.78 : 0.66;
   }
   oColor = vec4(col, 1.0);
 }

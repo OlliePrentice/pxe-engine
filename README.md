@@ -69,12 +69,17 @@ The generator may place `pxe.exe` directly in `build\game\`.
 | WASD or arrow keys | Pan along the ground, relative to the camera yaw |
 | Shift | Pan faster |
 | Q / E | Rotate yaw by 45°. The turn animates, then rests on the new step |
-| Mouse wheel, `+` / `-` | Zoom through fixed pixels-per-unit steps (12, 16, 22, 30, 42) |
+| Mouse wheel, `+` / `-` | Zoom through fixed pixels-per-unit steps (12, 16, 22, 30, 42). Default is 42 |
 | O | Outlines on / off |
 | F1 | Cycle debug view: final, raw low-res (nearest), albedo, normals, depth |
-| V | Cycle weather: clear, hazy god rays, rain |
+| V | Cycle weather: clear, light haze, rain. Default is clear |
+| P | Pause / resume the day-night clock |
+| `[` / `]` | Slower / faster clock (x1, x4, x16, x64) |
+| `,` / `.` | Step the clock back / forward one hour |
 | F12 | Save `pxe-shot.png` |
 | Esc | Quit |
+
+The window title shows the time of day (`HH:MM` and a phase name: night, dawn, morning, day, dusk), whether the clock is paused, and the speed. A full day lasts 60 seconds at x1.
 
 Zoom steps change how many low-res pixels cover one world unit and then sit still. A continuous zoom would reshuffle the pixel grid every frame.
 
@@ -83,8 +88,8 @@ Zoom steps change how many low-res pixels cover one world unit and then sit stil
 ```text
 pxe [--width N] [--height N]
     [--yaw degrees] [--zoom 0..4] [--weather 0|1|2] [--time seconds]
-    [--target x,y,z]
-    [--screenshot path.png] [--shots dir]
+    [--hour 0..24] [--target x,y,z]
+    [--screenshot path.png] [--shots dir] [--cycle-frames dir]
     [--demo] [--demo-frames dir]
     [--self-test] [--no-vsync]
 ```
@@ -107,19 +112,21 @@ game/       meadow scene and the GLFW loop
 
 **Upscale.** The present pass samples the low-res colour with the box filter he describes for pixel-art magnification: the sample is snapped to a texel centre, and it only blends in a band around the texel edge whose width is `fwidth` of the texel coordinate, clamped to one texel. The blend is a `smoothstep` (the integral of a quadratic window). At 2× or 3× the sample points miss that band, so the pixels stay hard. The snap error is a shift of the UV window into this filter.
 
-**Lighting.** A single directional sun. Opaque colour is a 4-step ramp on wrapped N·L. Shadowed pixels ignore the ramp and use a teal monochrome Lambert, so shadow pools stay shaped. Leaves are lit from the canopy normal and do not sample the shadow map, because the canopy is a shadow caster they sit inside. Grass is lit from the ground normal under the tuft, which does not change as the camera moves.
+**Lighting.** One directional light orbits through the day. Morning and noon are a warm-white sun with a cool shadow tint. Dawn and dusk drop the sun and shift the lit side gold. Night keeps a dim cool moon so the meadow stays readable. Opaque surfaces use a hard lit/shadow split on N·L and the shadow map. Shadowed pixels keep a little form from a monochrome Lambert, and they are never black. Canopies are lit from a smooth normal in three bands and do not sample the shadow map, because the canopy mesh is the caster. Grass is lit from the ground normal under the tuft.
 
-**Outlines.** A 4-neighbour pass on linear depth and view-space normals. A pixel closer than its neighbours is darkened (the near side of a silhouette). A convex crease, on the nearer side only, is brightened, and the amount follows how lit that pixel already is. Grass, flowers, and leaves opt out. Outline colour is a shade of the local colour, not black. A small lift in the present pass keeps the darkest pixels off pure black.
+The shadow camera is snapped to shadow-map texels, and the sun angle is quantized, so a moving light does not swim the shadow edge inside a pixel. Polygon offset plus a normal bias keeps the ground free of acne.
 
-**Scene.** Terraced height field, a ruined cloister, faceted rocks, a pond with a 1-pixel-scale shore highlight, instanced grass and flowers, and trees (a trunk, a jagged shadow sphere, and camera-facing leaf cards). Grass sways from the tip; leaves bob. Wind is animation, so those pixels are allowed to change. Static surfaces do not, while the camera pans by less than a pixel.
+**Outlines.** A 4-neighbour pass on linear depth and view-space normals. Lit edges — the near side of a silhouette, and the convex lip of a step or pillar — are pushed brighter than the surface, tinted by the sun. Edges in shadow are darkened. Grass, flowers, and leaves opt out. Outline colour is a shade of the local colour, not black.
+
+**Scene.** A large smooth height field, so the frame is meadow rather than a floating slab. Flat colours: two or three greens, grey-taupe stone, beige steps, light-blue water. The ruin is a pair of pillars, a flight of steps, and a few slabs. Trees are displaced icospheres whose normals come from the smooth shell, with a handful of leaf cards on the rim. Grass is a sparse scatter of short tufts. The pond is a clear blue plane with a 1-pixel white shore where it meets the bank. Wind moves the canopy and the tufts. Static surfaces do not change while the camera pans by less than a pixel.
 
 ## What this prototype does not do
 
 Verified here on Linux with llvmpipe, including the snap self-test. Not launched on macOS.
 
-- God rays are a short march through the sun shadow map with hard steps. They are not the light-aligned plane projection from the reference, and they are easy to overdo, so the hazy preset keeps them quiet.
+- God rays are a short march through the sun shadow map with hard steps. They are not the light-aligned plane projection from the reference. Clear weather, the default, draws none. The haze preset keeps them very light.
 - Rain is a grade plus 1-pixel streaks and flecks, not the full set of splashes, mist, and lightning.
-- No reflection probe, refraction map, point lights, or day/night palette swap.
+- No reflection probe, refraction wiggle, or quantised point lights. The day/night cycle is a single orbiting light and a palette shift, not a texture swap.
 - Grass placement is a jittered grid, not blue noise. Leaves are analytic blobs, not a drawn sprite sheet.
 - Terrain is generated in code. There is no editor and no marching-squares authoring tool.
 - No characters, smear frames, or gameplay.

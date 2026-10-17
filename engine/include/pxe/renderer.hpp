@@ -15,8 +15,10 @@ struct FrameParams {
   // 0 final, 1 nearest raw, 2 albedo, 3 normals, 4 unlit albedo (no upscale filter)
   int debugView = 0;
   // 0 clear sun, 1 hazy god rays, 2 rain
-  int weather = 1;
+  int weather = 0;
   float time = 0.f;
+  // Time of day in hours, [0, 24). Drives the sun direction and the palette.
+  float hour = 9.f;
 };
 
 class Renderer {

@@ -10,7 +10,7 @@ struct RenderConfig {
   static constexpr int kPad = 2;
   static constexpr int kRtW = kViewW + kPad * 2;
   static constexpr int kRtH = kViewH + kPad * 2;
-  static constexpr int kShadow = 1024;
+  static constexpr int kShadow = 2048;
 };
 
 }  // namespace pxe

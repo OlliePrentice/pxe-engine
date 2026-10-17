@@ -4,33 +4,32 @@ in float vLinearDepth;
 
 uniform sampler2D uDepth;
 uniform vec2 uInvRes;
-uniform float uShore;
-uniform float uTime;
+uniform float uPixelDepth;
 
 out vec4 oColor;
-
-float hash12(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-}
 
 void main() {
   vec2 uv = gl_FragCoord.xy * uInvRes;
   float sceneD = texture(uDepth, uv).r;
   float diff = sceneD - vLinearDepth;
 
-  vec3 shallowCol = vec3(0.50, 0.64, 0.56);
-  vec3 deepCol = vec3(0.26, 0.40, 0.42);
-  float t = clamp(diff / 1.6, 0.0, 1.0);
-  vec3 col = mix(shallowCol, deepCol, t);
-
-  vec2 px = floor(gl_FragCoord.xy);
-  float spark = step(0.92, hash12(px + floor(uTime * 1.5)));
-  col += spark * 0.08;
-
-  float alpha = mix(0.42, 0.80, t);
-  if (diff > 0.04 && diff < uShore) {
-    col = mix(col, vec3(0.84, 0.90, 0.78), 0.72);
-    alpha = 0.9;
+  // The bank pixel is terrain closer than the water plane. Only the water
+  // texel touching that bank passes, which keeps the line one pixel wide.
+  bool shore = false;
+  vec2 offs[4] = vec2[](
+    vec2(uInvRes.x, 0.0), vec2(-uInvRes.x, 0.0),
+    vec2(0.0, uInvRes.y), vec2(0.0, -uInvRes.y));
+  for (int i = 0; i < 4; ++i) {
+    float nd = texture(uDepth, uv + offs[i]).r;
+    if (nd + uPixelDepth * 0.15 < vLinearDepth) shore = true;
   }
+  if (shore && diff < uPixelDepth * 8.0) {
+    oColor = vec4(0.96, 0.98, 0.97, 1.0);
+    return;
+  }
+
+  float deep = clamp(diff / 1.4, 0.0, 1.0);
+  vec3 col = mix(vec3(0.62, 0.82, 0.90), vec3(0.36, 0.64, 0.78), deep);
+  float alpha = mix(0.58, 0.82, deep);
   oColor = vec4(col, alpha);
 }
