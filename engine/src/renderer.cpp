@@ -114,11 +114,11 @@ DayLight evaluateDay(float hour, float azimuth0) {
   const float sunUp = smooth01(-0.05f, 0.10f, dayWave);
   const float lowSun = saturate(1.f - std::fabs(dayWave) * 2.6f) * smooth01(0.02f, 0.18f, dayWave);
 
-  const glm::vec3 daySun{1.04f, 1.01f, 0.90f};
+  const glm::vec3 daySun{1.16f, 1.12f, 1.02f};
   const glm::vec3 goldSun{1.34f, 0.72f, 0.36f};
   const glm::vec3 moon{0.42f, 0.52f, 0.90f};
-  // Cool, not black. Vertical stone in shade should stay a grey, not a hole.
-  const glm::vec3 dayShadow{0.60f, 0.68f, 0.74f};
+  // Cool, not black. The grass path in the shader pushes this further teal.
+  const glm::vec3 dayShadow{0.64f, 0.70f, 0.72f};
   const glm::vec3 goldShadow{0.55f, 0.46f, 0.56f};
   const glm::vec3 nightShadow{0.22f, 0.24f, 0.38f};
 
@@ -175,12 +175,32 @@ glm::mat4 snapShadowMatrix(const glm::mat4& lightVP, float shadowSize) {
 
 }  // namespace
 
+float lightningFlash(float time, int weather) {
+  if (weather < 2) return 0.f;
+  // Irregular bolts, a few seconds apart. Onset is this frame; the
+  // exponential is back under 10% inside about a second.
+  static const float kBolts[] = {0.55f, 2.10f, 4.40f, 6.20f, 8.70f, 11.40f,
+                                 13.10f, 15.60f, 18.20f, 20.40f, 22.80f};
+  const float half = weather == 2 ? 0.36f : 0.48f;
+  float best = 0.f;
+  for (float t0 : kBolts) {
+    const float dt = time - t0;
+    if (dt < 0.f || dt > 1.35f) continue;
+    float amp = 0.62f + 0.38f * std::fabs(std::sin(t0 * 12.7f));
+    if (weather == 3) amp *= 0.85f;
+    best = std::max(best, std::exp(-0.693147f * dt / half) * amp);
+  }
+  return std::min(best, 1.f);
+}
+
 WindState windPreset(int weather) {
+  // fps is the flipbook rate. 2 is the baseline (a frame holds 0.5s).
+  // Storm is faster. Strength picks the lean row.
   static const WindState kPresets[] = {
-      {0.80f, 0.60f, 0.30f, 0.10f, 0.20f, 4.f, 0.f},
-      {0.80f, 0.60f, 1.50f, 0.40f, 0.50f, 8.f, 0.f},
-      {0.80f, 0.60f, 4.00f, 0.90f, 0.80f, 12.f, 1.f},
-      {0.80f, 0.60f, 1.00f, 0.30f, 0.40f, 6.f, 0.6f},
+      {0.80f, 0.60f, 0.35f, 0.08f, 0.15f, 2.f, 0.f},
+      {0.80f, 0.60f, 1.10f, 0.42f, 0.40f, 2.f, 0.f},
+      {0.80f, 0.60f, 2.40f, 0.88f, 0.70f, 4.f, 1.f},
+      {0.80f, 0.60f, 0.90f, 0.34f, 0.35f, 2.f, 0.75f},
   };
   const int i = std::clamp(weather, 0, 3);
   return kPresets[i];
@@ -457,27 +477,17 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     wind.dirX = 1.f;
     wind.dirZ = 0.f;
   }
-  // Clouds drift with the wind at full frame rate. The flipbook uses a
-  // quantised clock inside the foliage shader; this scroll does not.
-  // Slow enough that calm clouds barely move, and a storm still drifts them.
-  const glm::vec2 cloudScroll{wind.dirX * wind.speed * params.time * 0.16f,
-                              wind.dirZ * wind.speed * params.time * 0.16f};
+  // Clouds morph in place. This scroll is in noise space, about
+  // 0.6 of a native pixel per second, and it does not follow wind speed.
+  const float cloudDrift = params.time * 0.004f;
+  const glm::vec2 cloudScroll{wind.dirX * cloudDrift, wind.dirZ * cloudDrift};
+  const float cloudMorph = params.time * 0.012f;
+  const float flash = lightningFlash(params.time, params.weather);
 
   glm::vec3 sky = day.skyColor;
   float fogNear = 10.f;
   float fogFar = 28.f;
   float fogMax = 0.f;
-  if (params.weather == 2) {
-    sky = glm::mix(sky, glm::vec3{0.34f, 0.40f, 0.50f}, 0.48f);
-    fogNear = 6.f;
-    fogFar = 22.f;
-    fogMax = 0.22f;
-  } else if (params.weather == 3) {
-    sky = glm::mix(sky, glm::vec3{0.40f, 0.48f, 0.58f}, 0.35f);
-    fogNear = 7.f;
-    fogFar = 24.f;
-    fogMax = 0.16f;
-  }
   const float focusDepth = glm::dot(camera.target - camera.eye, camera.forward);
 
   // ---- shadow ----
@@ -537,6 +547,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     set1f(progFoliage_, "uNormalBias", shadowTexel * 1.6f);
     set1f(progFoliage_, "uDepthBias", (shadowTexel * 0.85f) / depthSpan);
     set2f(progFoliage_, "uCloudScroll", cloudScroll.x, cloudScroll.y);
+    set1f(progFoliage_, "uCloudMorph", cloudMorph);
     bindTex(0, texGrass_);
     bindTex(1, texFlower_);
     bindTex(2, texLeaf_);
@@ -588,6 +599,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   set1f(progLight_, "uNormalBias", shadowTexel * 1.6f);
   set1f(progLight_, "uDepthBias", (shadowTexel * 0.85f) / depthSpan);
   set2f(progLight_, "uCloudScroll", cloudScroll.x, cloudScroll.y);
+  set1f(progLight_, "uCloudMorph", cloudMorph);
   drawFullscreen(progLight_);
 
   // ---- outlines into the composite buffer ----
@@ -626,6 +638,9 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     setMat4(progWater_, "uView", camera.view);
     set2f(progWater_, "uInvRes", 1.f / RenderConfig::kRtW, 1.f / RenderConfig::kRtH);
     set1f(progWater_, "uPixelDepth", groundStep);
+    set1f(progWater_, "uTime", params.time);
+    set1i(progWater_, "uWeather", params.weather);
+    set1f(progWater_, "uTexelWorld", camera.texelWorld);
     scene.water.draw();
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
@@ -696,6 +711,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   set1i(progPresent_, "uMode", mode);
   set1i(progPresent_, "uWeather", params.weather);
   set1f(progPresent_, "uTime", params.time);
+  set1f(progPresent_, "uFlash", flash);
+  set3f(progPresent_, "uSkyColor", sky);
   glBindVertexArray(presentVao_);
   glDrawArrays(GL_TRIANGLES, 0, 6);
   glBindVertexArray(0);

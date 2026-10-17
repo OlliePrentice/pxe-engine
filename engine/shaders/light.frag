@@ -26,6 +26,7 @@ uniform float uFogMax;
 uniform float uNormalBias;
 uniform float uDepthBias;
 uniform vec2 uCloudScroll;
+uniform float uCloudMorph;
 
 layout(location = 0) out vec4 oColor;
 
@@ -45,7 +46,7 @@ void main() {
   vec3 albedo = albedoS.rgb;
   float material = albedoS.a;
   float ndl = dot(n, -uLightDir);
-  float cloud = cloudShadow(world.xz, uCloudScroll);
+  float cloud = cloudBand(world, uLightDir, uCloudScroll, uCloudMorph);
 
   vec3 col;
   float litMask;
@@ -56,19 +57,19 @@ void main() {
     col = s.rgb;
     litMask = s.a;
   } else if (material > 0.6) {
-    // Leaf sprite. normal.w is the cloud gate at the leaf, so the card is one colour.
+    // Leaf sprite. normal.w is the cloud band at the leaf, so the card is one colour.
     vec4 s = shadeCanopy(albedo, n, ndl, uSunColor, uShadowTint, nrm.w);
     col = s.rgb;
     litMask = s.a;
   } else if (material > 0.25) {
-    // Grass. normal.w is lit/shadow at the base, not at this pixel.
-    col = shadeGround(albedo, n, uSunColor, uShadowTint, nrm.w);
-    litMask = step(0.5, nrm.w);
+    // Grass. normal.w is the band at the base (0 shadow, 0.5 mid, 1 lit).
+    col = shadeBand(albedo, n, uSunColor, uShadowTint, nrm.w);
+    litMask = nrm.w;
   } else {
     float sunVis = shadowFactor(uShadow, uLightViewProj, world, n, uLightDir, uNormalBias, uDepthBias);
-    float lit = (sunVis > 0.5 && cloud > 0.5 && ndl > 0.02) ? 1.0 : 0.0;
-    col = shadeGround(albedo, n, uSunColor, uShadowTint, lit);
-    litMask = lit;
+    float band = (sunVis < 0.5 || ndl <= 0.02) ? 0.0 : cloud;
+    col = shadeBand(albedo, n, uSunColor, uShadowTint, band);
+    litMask = band;
   }
 
   if (uFogMax > 0.001) {

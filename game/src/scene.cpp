@@ -27,11 +27,11 @@ namespace {
 constexpr float kPi = 3.1415926535f;
 constexpr float kTau = 6.28318530718f;
 
-// Flat palette. The lit colour is close to these values at midday; the
-// shadow tint in the renderer supplies the second band.
-const glm::vec3 kGrass{0.58f, 0.72f, 0.32f};
-const glm::vec3 kGrassDeep{0.48f, 0.62f, 0.27f};
-const glm::vec3 kGrassLight{0.64f, 0.76f, 0.36f};
+// Linear albedo. At noon the sun multiply lands on #a8bd6d; the mid and
+// shadow bands in the lighting pass land on #83a555 and #628474.
+const glm::vec3 kGrass{0.568f, 0.661f, 0.419f};
+const glm::vec3 kGrassDeep{0.568f, 0.661f, 0.419f};
+const glm::vec3 kGrassLight{0.568f, 0.661f, 0.419f};
 const glm::vec3 kDirt{0.64f, 0.50f, 0.32f};
 const glm::vec3 kBed{0.30f, 0.46f, 0.44f};
 
@@ -681,16 +681,20 @@ pxe::Scene buildMeadow() {
     g.phase = hash01(ix, iz, 15);
     g.scale = 1.f;
     g.pad = hash01(ix, iz, 17) > 0.5f ? 1.f : 0.f;
-    if (roll < 0.012f) {
+    if (roll < 0.016f) {
       g.kind = 1.f;
-      if (roll < 0.004f) {
-        g.cr = 0.40f;
-        g.cg = 0.56f;
-        g.cb = 0.50f;
+      if (roll < 0.009f) {
+        // Purple X. Divided by the noon sun so the lit pixel is #ad7dd8.
+        g.cr = 0.585f;
+        g.cg = 0.438f;
+        g.cb = 0.830f;
+        g.pad = 0.f;
       } else {
-        g.cr = 0.93f;
-        g.cg = 0.84f;
-        g.cb = 0.40f;
+        // Yellow dot, lit #dcd386.
+        g.cr = 0.744f;
+        g.cg = 0.739f;
+        g.cb = 0.515f;
+        g.pad = 1.f;
       }
       ++flowerN;
     } else {

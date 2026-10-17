@@ -32,6 +32,7 @@ uniform vec3 uLightDir;
 uniform float uNormalBias;
 uniform float uDepthBias;
 uniform vec2 uCloudScroll;
+uniform float uCloudMorph;
 
 flat out vec3 vColor;
 flat out vec3 vNormal;
@@ -50,39 +51,36 @@ void main() {
   bool leaf = kind > 1.5;
   bool flower = !leaf && kind > 0.5;
 
-  // Quantised clock so a pose holds for several refreshes, staggered per sprite.
-  float fps = max(uWindFps, 1.0);
-  float tq = floor((uTime + phase) * fps) / fps;
+  // 4-frame cycle. Baseline is 2 fps (a pose holds 0.5s). Wind speed raises
+  // uWindFps. Phase is per sprite, so the field does not flip together.
+  float fps = max(uWindFps, 0.5);
+  float tick = floor((uTime + phase * 4.0) * fps);
+  int frame = int(mod(tick, 4.0));
+  // Gust and crown sway step with the flipbook, so a pose holds.
+  float stepT = floor(uTime * fps) / fps;
 
-  float n1 = valueNoise(base.xz * 0.30 - uWindDir * uWindSpeed * tq);
-  float n2 = valueNoise(base.xz * 0.17 + vec2(19.4, 7.1) - uWindDir * uWindSpeed * tq * 0.65);
+  float n1 = valueNoise(base.xz * 0.30 - uWindDir * uWindSpeed * stepT * 0.15);
+  float n2 = valueNoise(base.xz * 0.17 + vec2(19.4, 7.1) - uWindDir * uWindSpeed * stepT * 0.08);
   float g = n1 * 0.62 + n2 * 0.38;
   float halfw = max(0.5 * uWindGust, 0.02);
   float gust = smoothstep(0.5 - halfw, 0.5 + halfw, g);
-  float amp = clamp(uWindStrength * mix(0.25, 1.0, gust), 0.0, 0.999);
+  float amp = clamp(uWindStrength * mix(0.35, 1.0, gust), 0.0, 0.999);
 
-  int frameCount = leaf ? 6 : (flower ? 4 : 8);
   int bandCount = flower ? 2 : 3;
   int shape = int(clamp(variant + 0.5, 0.0, 1.0));
   int band = clamp(int(amp * float(bandCount)), 0, bandCount - 1);
-
-  float travel = fract(dot(base.xz, uWindDir) * 0.23 - tq * uWindSpeed * 0.23 + phase * 0.37);
-  int frame = int(travel * float(frameCount));
-  if (band == 0) {
+  // Calm holds the planted pose. Stronger wind both leans and flips.
+  if (uWindStrength < 0.16) {
     frame = 0;
-    // Rare idle twitch on grass only, and only once the wind is up a little.
-    if (!flower && !leaf && uWindStrength >= 0.16 && fract(phase * 2.7 + tq * 0.17) > 0.94) {
-      frame = min(6, frameCount - 1);
-    }
+    band = 0;
   }
-  frame = clamp(frame, 0, frameCount - 1);
   int row = shape * bandCount + band;
 
   vec2 corner = aUv;
   if (dot(uWindDir, vec2(uCamRight.x, uCamRight.z)) < 0.0) corner.x = 1.0 - corner.x;
 
-  vec2 cells = leaf ? vec2(6.0, 6.0) : (flower ? vec2(4.0, 4.0) : vec2(8.0, 6.0));
-  float quadPx = leaf ? 10.0 : 12.0;
+  vec2 cells = leaf ? vec2(4.0, 6.0) : (flower ? vec2(4.0, 4.0) : vec2(4.0, 6.0));
+  float quadPx = leaf ? 10.0 : (flower ? 8.0 : 12.0);
   vUv = (vec2(float(frame), float(row)) + corner) / cells;
 
   vec3 pos;
@@ -95,27 +93,29 @@ void main() {
   } else {
     vec2 c = aUv - 0.5;
     pos = base + (uCamRight * c.x + uCamUp * c.y) * quadPx * uTexelWorld;
-    // Whole-pixel crown sway from the gust at the tree, 0 when calm, at most 2px.
     vec2 cell = floor(base.xz / 3.5 + 0.5);
-    float cg = valueNoise(cell * 0.21 - uWindDir * uWindSpeed * tq);
+    float cg = valueNoise(cell * 0.21 - uWindDir * uWindSpeed * stepT * 0.15);
     float px = round((cg - 0.5) * uWindStrength * 4.0);
     float h = clamp(base.y / 3.2, 0.15, 1.0);
     pos.xz += uWindDir * px * uTexelWorld * h;
-    // Rain: upward-facing leaves drop a single pixel, on a stepped clock.
+    // Upward-facing leaves bob by one pixel. Not locked to the rain tick.
     if (n.y > 0.55 && uRain > 0.35) {
-      float bob = step(0.62, valueNoise(base.xz * 1.9 + floor(tq * 3.0)));
+      float bob = step(0.62, valueNoise(base.xz * 1.9 + floor(uTime * 2.3 + phase * 5.0)));
       pos.y -= bob * uTexelWorld;
     }
   }
 
-  float cloud = cloudShadow(base.xz, uCloudScroll);
+  float cloud = cloudBand(base, uLightDir, uCloudScroll, uCloudMorph);
   if (leaf) {
     vGate = cloud;
     vMaterial = 0.75;
   } else {
     float sunVis = shadowFactor(uShadow, uLightViewProj, base, n, uLightDir, uNormalBias, uDepthBias);
     float ndl = dot(n, -normalize(uLightDir));
-    vGate = (sunVis > 0.5 && cloud > 0.5 && ndl > 0.02) ? 1.0 : 0.0;
+    float gate = (sunVis < 0.5 || ndl <= 0.02) ? 0.0 : cloud;
+    // A few lit tufts take the mid green, so open lawn is not one flat fill.
+    if (!flower && gate > 0.75 && fract(phase * 13.7) > 0.93) gate = 0.5;
+    vGate = gate;
     vMaterial = 0.5;
   }
 

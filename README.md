@@ -118,11 +118,15 @@ tools/sprites  regenerates the flipbook sheets
 
 **Upscale.** The present pass samples the low-res colour with the box filter he describes for pixel-art magnification: the sample is snapped to a texel centre, and it only blends in a band around the texel edge whose width is `fwidth` of the texel coordinate, clamped to one texel. The blend is a `smoothstep` (the integral of a quadratic window). At 2× or 3× the sample points miss that band, so the pixels stay hard. The snap error is a shift of the UV window into this filter.
 
-**Lighting.** One directional light orbits through the day. Morning and noon are a warm-white sun with a cool shadow tint. Dawn and dusk drop the sun and shift the lit side gold. Night keeps a dim cool moon so the meadow stays readable. Opaque surfaces use a hard lit/shadow split on N·L and the shadow map. Shadowed pixels keep a little form from a monochrome Lambert, and they are never black. Canopies are lit from a smooth normal in three bands and do not sample the shadow map, because the canopy mesh is the caster. A hard cloud mask, scrolled by the wind, multiplies into that same split.
+**Lighting.** One directional light orbits through the day. Morning and noon are a warm-white sun with a cool shadow tint, chosen so lit grass lands on `#a8bd6d`, the mid band on `#83a555`, and shadow on `#628474`. Stone is lifted slightly in the shader so a noon face is near `#d7c7a9` and its shadow near `#75767d`. Dawn and dusk drop the sun and shift the lit side gold. Night keeps a dim cool moon so the meadow stays readable. Opaque surfaces take three hard steps (lit, mid, shadow) from N·L, the shadow map, and the cloud field. There is no dither. Canopies are lit from a smooth normal in three bands and do not sample the shadow map, because the canopy mesh is the caster.
 
-**Grass.** Sprites are vertex-shader billboards, GPU instanced, scattered once with blue noise. Each one is a single flat colour: the terrain albedo, normal, shadow map, and cloud sampled at its base, through the same shade function as the ground. Inside a lighting band the tuft matches the ground and disappears. It shows only where a band, a cast shadow, or a cloud edge crosses it. A few sprites are a second shape with a teal or pale-yellow tint. They alpha-test and write depth. The canopy mesh is still; one camera-facing leaf sprite is spawned on each canopy vertex, with that vertex's normal.
+**Clouds.** No cloud bodies. A five-octave value-noise FBM is projected along the sun and mixed with a flat-relief sample, then cut into the same three colours as the sun shadow. The field drifts under one native pixel per second and morphs in place. Grass tufts make the edge jagged.
 
-**Wind.** One state (direction, speed, strength, gustiness, step rate, rain) is shared by grass and leaves. A scrolling gust field plus position picks a flipbook cell. Time is quantised, and the step rate follows wind speed, so poses hold instead of crawling. The quad is never rotated or bent. Calm stays on the still row. Storm pushes gusts of the strong-lean row across the field in the wind direction, and sways a crown by at most two pixels. Rain drops upward-facing leaves by one pixel. `V` blends between calm, breezy, storm, and rain over about three seconds. `--weather 0..3` selects one directly. `--weather-clip dir` writes a 12 fps sequence of each.
+**Grass.** Sprites are vertex-shader billboards, GPU instanced, scattered once with blue noise. Each one is a fan of one-pixel blades, a single flat colour: the terrain albedo, normal, shadow map, and cloud band sampled at its base. Inside a lighting band the tuft matches the ground and disappears. It shows where a band, a cast shadow, or a cloud edge crosses it. A few lit tufts use the mid green. Flowers are a purple four-petal X or a yellow two-pixel dot. They alpha-test and write depth. The canopy mesh is still; one camera-facing leaf sprite is spawned on each canopy vertex, with that vertex's normal.
+
+**Wind.** One state (direction, speed, strength, gustiness, step rate, rain) is shared by grass and leaves. The flipbook is four frames. The baseline is 2 fps, so a pose holds for half a second, and each sprite has its own phase. Higher wind picks a stronger-lean row and raises the step rate (storm is 4 fps). The quad is never rotated or bent. Calm stays on the planted frame. A crown sways by at most two pixels, on that same clock. Rain drops upward-facing leaves by one pixel. `V` blends between calm, breezy, storm, and rain over about three seconds. `--weather 0..3` selects one directly. `--weather-clip dir` writes a 12 fps sequence of each.
+
+**Rain.** Storm and rain are one post pass plus ripples on the water. The grade drops the scene to about half brightness and shifts it blue (grass toward `#4e705b`, stone toward `#384a76`, water `#33668f`). Streaks are 1px, about 6° off vertical, a new set at 15 Hz, blended toward `#d1ecff`. Splashes on the ground last three of those ticks. Short dashes sit on horizontal rims. A wide soft mist drifts by a few levels. Water rings grow and break at 30 Hz. Lightning is an instant flash with a half-life of about 0.4s: bright pixels go lavender and darker pixels drop further.
 
 The shadow camera is snapped to shadow-map texels, and the sun angle is quantized, so a moving light does not swim the shadow edge inside a pixel. Polygon offset plus a normal bias keeps the ground free of acne.
 
@@ -162,7 +166,7 @@ The script writes `assets/props/*.glb` and `assets/props/stairs.meta` (step coun
    | `Grass`, `Ground`, `Terrain` | Ground |
    | anything else (`Stone`, `Step`, `Slab`, `Rock`, `Wall`, …) | Stone |
 
-4. The colour you pick in the Base Color swatch is the colour the game draws. Blender stores it as linear, glTF writes that linear value, and the loader converts it back to sRGB because the toon pass has no gamma step. Set the viewport to Standard if you want the Blender view to match the swatch. AgX will not match.
+4. The colour you pick in the Base Color swatch is the albedo. Blender stores it as linear, glTF writes that linear value, and the loader converts it back to sRGB because the toon pass has no gamma step. Noon lighting multiplies it (stone is also lifted a little), so the framebuffer is not the raw swatch. Set the viewport to Standard if you want the Blender view to match the swatch. AgX will not match.
 5. Canopies: join the spheres, then add a Data Transfer modifier from a smooth enclosing mesh (Face Corner Data → Custom Normals, mapping Poly Interpolated Nearest, or the nearest-poly equivalent). Apply it. On Blender 4.0, turn on Auto Smooth at 180° first or the modifier does nothing. Do not join that mesh onto a flat-shaded trunk afterwards; that clears the custom normals. Export the trunk and the crown as two objects in one file if they share a pivot.
 6. File → Export → glTF 2.0 (.glb), with:
    - Format: glTF Binary (`.glb`)
@@ -179,23 +183,23 @@ putOn(loadProp("props/your_prop.glb"), x, z, yawRadians, scale, blockRadius, sca
 
 `yawRadians` is a turn around Y. `blockRadius` keeps grass off the footprint (`0` skips that, a negative value uses the mesh bounds). `scatterLeaves` spawns one leaf sprite on every canopy vertex. Rebuild with the same CMake commands as before; the asset directory is compiled in, so the working directory does not matter.
 
-The grass and leaf sheets are `assets/sprites/grass.png`, `flower.png`, and `leaf.png`. They are masks (white RGB, alpha coverage). Regenerate them with `python3 tools/sprites/make_sprites.py`. Columns are wind frames, rows are shape and amplitude. The engine samples them with nearest filtering.
+The grass, flower, and leaf sheets are `assets/sprites/grass.png`, `flower.png`, and `leaf.png`. They are masks (white RGB, alpha coverage). Regenerate them with `python3 tools/sprites/make_sprites.py`. Columns are the four wind frames. Rows are shape, then lean. The engine samples them with nearest filtering.
 
 ## What this prototype does not do
 
 Verified here on Linux with llvmpipe, including the snap self-test. Not launched on macOS.
 
 - God rays are a short march through the sun shadow map with hard steps. They are not the light-aligned plane projection from the reference. The weather cycle does not turn them on.
-- Storm and rain are a grade plus 1-pixel streaks and flecks, not the full set of splashes, mist, and lightning. Rain also bobs upward-facing leaves by one pixel.
+- Rain is screenspace hashes plus ellipse ripples, not his textures. Lightning darkens the existing shadow shapes; it does not cast a second shadow map. There are no puddles.
 - No reflection probe, refraction wiggle, or quantised point lights. The day/night cycle is a single orbiting light and a palette shift, not a texture swap.
-- The flipbook sheets are small authored masks, not traced from the reference frames. Cloud shadows are one hard world-space threshold, not a projection of a painted sky.
+- The flipbook sheets are drawn to the extracted silhouettes (thin blade fans, a purple X, yellow dots). They are not his sprite textures. Leaf clusters are a stand-in; his leaves overlap too much to trace. The cloud field is FBM projected along the sun, not his exact noise.
 - Terrain and the grass scatter are still generated in code. Props are Blender meshes; there is no in-engine editor and no marching-squares authoring tool.
 - No characters, smear frames, or gameplay.
 
 ## Next steps
 
 1. Replace the ray march with a handful of light-aligned planes sampled from the shadow map, and mask a tiling dust texture with that result.
-2. The rest of the rain stack: shore splashes, top-edge spatter, water ripples, lightning.
+2. A second shadow map for the lightning bolt, and puddles if a reference for them shows up.
 3. Quantised additive point lights on top of the ramp, updated at a low frame rate.
 4. A water reflection probe and a one-pixel horizontal refraction wiggle.
 5. A Metal (or WebGPU) backend behind `renderer.cpp`, now that the snap and the passes are isolated.
