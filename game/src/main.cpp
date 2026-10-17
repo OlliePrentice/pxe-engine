@@ -47,6 +47,7 @@ struct Options {
   float time = -1.f;
   float hour = 9.f;
   std::string cycleFrames;
+  std::string weatherClip;
   bool haveTarget = false;
   glm::vec3 target{0.f};
 };
@@ -60,9 +61,10 @@ void printUsage() {
                "  --self-test               check the subpixel camera snap\n"
                "  --demo                    scripted pan and 45° rotation, then exit\n"
                "  --demo-frames dir         write that demo as a PNG sequence\n"
-               "  --yaw degrees --zoom 0..4 --weather 0|1|2 --time seconds\n"
+               "  --yaw degrees --zoom 0..4 --weather 0..3 --time seconds\n"
                "  --hour 0..24          time of day (morning is 9)\n"
                "  --cycle-frames dir    write one day of shadow frames, then exit\n"
+               "  --weather-clip dir    write calm/breezy/storm/rain frame folders, then exit\n"
                "  --target x,y,z\n"
                "  --no-vsync\n");
 }
@@ -118,6 +120,9 @@ Options parseArgs(int argc, char** argv) {
       opt.hour = std::atof(need("--hour"));
     } else if (a == "--cycle-frames") {
       opt.cycleFrames = need("--cycle-frames");
+      opt.vsync = false;
+    } else if (a == "--weather-clip") {
+      opt.weatherClip = need("--weather-clip");
       opt.vsync = false;
     } else if (a == "--target") {
       if (!parseTarget(need("--target"), opt.target)) {
@@ -221,12 +226,27 @@ const char* debugName(int view) {
 const char* weatherName(int weather) {
   switch (weather) {
     case 1:
-      return "haze";
+      return "breezy";
     case 2:
+      return "storm";
+    case 3:
       return "rain";
     default:
-      return "clear";
+      return "calm";
   }
+}
+
+pxe::WindState blendWind(const pxe::WindState& a, const pxe::WindState& b, float t) {
+  auto lerp = [&](float x, float y) { return x + (y - x) * t; };
+  pxe::WindState w;
+  w.dirX = lerp(a.dirX, b.dirX);
+  w.dirZ = lerp(a.dirZ, b.dirZ);
+  w.speed = lerp(a.speed, b.speed);
+  w.strength = lerp(a.strength, b.strength);
+  w.gust = lerp(a.gust, b.gust);
+  w.fps = lerp(a.fps, b.fps);
+  w.rain = lerp(a.rain, b.rain);
+  return w;
 }
 
 const char* dayPhase(float hour) {
@@ -307,7 +327,7 @@ int main(int argc, char** argv) {
   glfwWindowHint(GLFW_SAMPLES, 0);
   glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
   const bool headless = opt.selfTest || !opt.screenshot.empty() || !opt.shotsDir.empty() ||
-                        !opt.demoFrames.empty() || !opt.cycleFrames.empty();
+                        !opt.demoFrames.empty() || !opt.cycleFrames.empty() || !opt.weatherClip.empty();
   if (headless && !opt.demo) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
   GLFWwindow* window = glfwCreateWindow(opt.width, opt.height, "pxe", nullptr, nullptr);
@@ -351,8 +371,12 @@ int main(int argc, char** argv) {
 
   bool outlines = true;
   int debugView = 0;
-  int weather = std::clamp(opt.weather, 0, 2);
+  int weather = std::clamp(opt.weather, 0, 3);
   float timeSec = opt.time >= 0.f ? opt.time : 0.f;
+  bool windOverride = false;
+  pxe::WindState windFrom = pxe::windPreset(weather);
+  pxe::WindState windTo = windFrom;
+  float windBlend = 1.f;
   const bool freezeTime = opt.time >= 0.f;
   float hour = opt.hour;
   wrapHour(hour);
@@ -370,6 +394,18 @@ int main(int argc, char** argv) {
     params.weather = weather;
     params.time = timeSec;
     params.hour = hour;
+    if (windOverride) {
+      const float t = windBlend * windBlend * (3.f - 2.f * windBlend);
+      const pxe::WindState w = blendWind(windFrom, windTo, t);
+      params.windOverride = true;
+      params.windDirX = w.dirX;
+      params.windDirZ = w.dirZ;
+      params.windSpeed = w.speed;
+      params.windStrength = w.strength;
+      params.windGust = w.gust;
+      params.windFps = w.fps;
+      params.windRain = w.rain;
+    }
     const pxe::CameraFrame frame =
         camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH, pxe::RenderConfig::kViewH);
     renderer.render(scene, frame, params);
@@ -424,6 +460,26 @@ int main(int argc, char** argv) {
       ok = saveWindow(opt.cycleFrames + "/" + name) && ok;
     }
     std::fprintf(stderr, "pxe: wrote %d day-cycle frames to %s\n", kFrames, opt.cycleFrames.c_str());
+    exitCode = ok ? 0 : 1;
+  } else if (!opt.weatherClip.empty()) {
+    const char* names[] = {"calm", "breezy", "storm", "rain"};
+    constexpr int kFrames = 24;
+    constexpr float dt = 1.f / 12.f;
+    if (!opt.haveTarget) camera.setTarget(glm::vec3{2.1f, 1.6f, -1.1f});
+    bool ok = true;
+    for (int w = 0; w < 4; ++w) {
+      weather = w;
+      const std::string dir = opt.weatherClip + "/" + names[w];
+      std::filesystem::create_directories(dir);
+      for (int i = 0; i < kFrames; ++i) {
+        timeSec = 0.20f + dt * static_cast<float>(i);
+        hour = 9.f;
+        char name[32];
+        std::snprintf(name, sizeof(name), "frame_%03d.png", i);
+        ok = saveWindow(dir + "/" + name) && ok;
+      }
+    }
+    std::fprintf(stderr, "pxe: wrote weather clips to %s\n", opt.weatherClip.c_str());
     exitCode = ok ? 0 : 1;
   } else if (!opt.screenshot.empty()) {
     timeSec = opt.time >= 0.f ? opt.time : 1.2f;
@@ -499,7 +555,15 @@ int main(int argc, char** argv) {
       if (input.zoom) camera.zoomSteps(input.zoom);
       if (input.toggleOutline) outlines = !outlines;
       if (input.cycleDebug) debugView = (debugView + 1) % 5;
-      if (input.cycleWeather) weather = (weather + 1) % 3;
+      if (input.cycleWeather) {
+        const float t = windBlend * windBlend * (3.f - 2.f * windBlend);
+        windFrom = blendWind(windFrom, windTo, t);
+        weather = (weather + 1) % 4;
+        windTo = pxe::windPreset(weather);
+        windBlend = 0.f;
+      }
+      windOverride = true;
+      windBlend = std::min(1.f, windBlend + dt / 2.8f);
       if (input.shot) {
         const std::string path = "pxe-shot.png";
         int fbW = 0, fbH = 0;

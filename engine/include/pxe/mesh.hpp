@@ -19,8 +19,8 @@ struct FoliageInstance {
   float cr, cg, cb;
   float phase;
   float scale;
-  float kind;  // 0 grass, 1 violet flower, 2 yellow flower, 3 leaf
-  float pad;
+  float kind;  // 0 grass, 1 flower, 2 leaf
+  float pad;   // sprite variant (0 or 1)
 };
 
 static_assert(sizeof(Vertex) == sizeof(float) * 10, "Vertex layout");

@@ -15,8 +15,10 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace game {
@@ -78,20 +80,6 @@ struct MeshBuild {
     }
   }
 
-  void box(glm::vec3 mn, glm::vec3 mx, glm::vec3 color, float surface) {
-    const glm::vec3 c = (mn + mx) * 0.5f;
-    const glm::vec3 h = (mx - mn) * 0.5f;
-    auto side = [&](glm::vec3 center, glm::vec3 u, glm::vec3 v) {
-      quad(center - u - v, center + u - v, center + u + v, center - u + v, color, surface,
-           glm::cross(u, v));
-    };
-    side(c + glm::vec3(0, h.y, 0), glm::vec3(h.x, 0, 0), glm::vec3(0, 0, -h.z));
-    side(c - glm::vec3(0, h.y, 0), glm::vec3(h.x, 0, 0), glm::vec3(0, 0, h.z));
-    side(c + glm::vec3(h.x, 0, 0), glm::vec3(0, h.y, 0), glm::vec3(0, 0, h.z));
-    side(c - glm::vec3(h.x, 0, 0), glm::vec3(0, 0, h.z), glm::vec3(0, h.y, 0));
-    side(c + glm::vec3(0, 0, h.z), glm::vec3(h.x, 0, 0), glm::vec3(0, h.y, 0));
-    side(c - glm::vec3(0, 0, h.z), glm::vec3(0, h.y, 0), glm::vec3(h.x, 0, 0));
-  }
 };
 
 float hash01(int x, int z, int salt) {
@@ -156,14 +144,18 @@ Height makeHeight() {
     for (int x = 0; x < Height::N; ++x) {
       const float wx = Height::kOrigin + static_cast<float>(x);
       const float wz = Height::kOrigin + static_cast<float>(z);
-      float y = 0.62f;
-      y += 0.42f * std::sin(wx * 0.045f) + 0.30f * std::cos(wz * 0.040f);
-      y += 0.18f * std::sin((wx + wz) * 0.027f);
-      y += hill(wx, wz, 0.4f, -0.2f, 7.4f, 1.15f);
-      y += hill(wx, wz, -22.f, 16.f, 18.f, 0.85f);
-      y += hill(wx, wz, 26.f, -20.f, 22.f, 1.05f);
-      y += hill(wx, wz, -34.f, -28.f, 24.f, 0.7f);
-      y += hill(wx, wz, 18.f, 24.f, 16.f, 0.55f);
+      // Steep enough that a low sun lays a real terminator across the knoll.
+      // The grass only reads where that edge, a cast shadow, or a cloud crosses it.
+      float y = 0.55f;
+      y += 0.62f * std::sin(wx * 0.045f) + 0.46f * std::cos(wz * 0.038f);
+      y += 0.30f * std::sin((wx + wz) * 0.027f);
+      y += hill(wx, wz, -1.4f, 2.2f, 9.2f, 2.35f);
+      y += hill(wx, wz, 7.2f, -2.4f, 8.0f, 1.85f);
+      y += hill(wx, wz, -7.5f, -5.5f, 7.5f, -0.95f);
+      y += hill(wx, wz, -22.f, 16.f, 18.f, 2.15f);
+      y += hill(wx, wz, 26.f, -20.f, 22.f, 2.35f);
+      y += hill(wx, wz, -34.f, -28.f, 24.f, 1.55f);
+      y += hill(wx, wz, 18.f, 24.f, 16.f, 1.35f);
 
       const float pdx = wx - kPond.x;
       const float pdz = wz - kPond.y;
@@ -209,6 +201,119 @@ glm::vec3 terrainColor(float x, float z, float y) {
 struct Disk {
   float x, z, r;
 };
+
+struct Surf {
+  glm::vec3 pos;
+  glm::vec3 n;
+  glm::vec3 color;
+};
+
+// Same diagonal as the terrain mesh, so a tuft's height, normal, and colour
+// match the rasterised triangle instead of a bilinear sample.
+Surf sampleSurf(const Height& hm, float x, float z) {
+  const float gx = (x - Height::kOrigin) / Height::kStep;
+  const float gz = (z - Height::kOrigin) / Height::kStep;
+  const int x0 = std::clamp(static_cast<int>(std::floor(gx)), 0, Height::N - 2);
+  const int z0 = std::clamp(static_cast<int>(std::floor(gz)), 0, Height::N - 2);
+  const float u = gx - static_cast<float>(x0);
+  const float v = gz - static_cast<float>(z0);
+
+  auto corner = [&](int ix, int iz) {
+    const float wx = Height::kOrigin + static_cast<float>(ix);
+    const float wz = Height::kOrigin + static_cast<float>(iz);
+    const float y = hm.at(ix, iz);
+    const float hx = hm.at(ix + 1, iz) - hm.at(ix - 1, iz);
+    const float hz = hm.at(ix, iz + 1) - hm.at(ix, iz - 1);
+    Surf s;
+    s.pos = {wx, y, wz};
+    s.n = glm::normalize(glm::vec3{-hx, 2.f * Height::kStep, -hz});
+    s.color = terrainColor(wx, wz, y);
+    return s;
+  };
+  const Surf c00 = corner(x0, z0);
+  const Surf c10 = corner(x0 + 1, z0);
+  const Surf c01 = corner(x0, z0 + 1);
+  const Surf c11 = corner(x0 + 1, z0 + 1);
+  float w00, w10, w01, w11;
+  if (u + v <= 1.f) {
+    w00 = 1.f - u - v;
+    w10 = u;
+    w01 = v;
+    w11 = 0.f;
+  } else {
+    w00 = 0.f;
+    w10 = 1.f - v;
+    w01 = 1.f - u;
+    w11 = u + v - 1.f;
+  }
+  Surf s;
+  s.pos = c00.pos * w00 + c10.pos * w10 + c01.pos * w01 + c11.pos * w11;
+  s.n = glm::normalize(c00.n * w00 + c10.n * w10 + c01.n * w01 + c11.n * w11);
+  s.color = c00.color * w00 + c10.color * w10 + c01.color * w01 + c11.color * w11;
+  return s;
+}
+
+// Bridson Poisson disk. One pass at load, then the list is static.
+std::vector<glm::vec2> poissonDisk(float radius, float minX, float maxX, float minZ, float maxZ,
+                                   std::uint32_t seed) {
+  const float cell = radius / std::sqrt(2.f);
+  const int gw = std::max(1, static_cast<int>(std::ceil((maxX - minX) / cell)));
+  const int gh = std::max(1, static_cast<int>(std::ceil((maxZ - minZ) / cell)));
+  std::vector<int> grid(static_cast<std::size_t>(gw * gh), -1);
+  std::vector<glm::vec2> pts;
+  std::vector<int> active;
+  auto cellOf = [&](glm::vec2 p) {
+    const int x = std::clamp(static_cast<int>((p.x - minX) / cell), 0, gw - 1);
+    const int z = std::clamp(static_cast<int>((p.y - minZ) / cell), 0, gh - 1);
+    return z * gw + x;
+  };
+  auto tooClose = [&](glm::vec2 p) {
+    const int cx = static_cast<int>((p.x - minX) / cell);
+    const int cz = static_cast<int>((p.y - minZ) / cell);
+    for (int dz = -2; dz <= 2; ++dz) {
+      for (int dx = -2; dx <= 2; ++dx) {
+        const int x = cx + dx;
+        const int z = cz + dz;
+        if (x < 0 || z < 0 || x >= gw || z >= gh) continue;
+        const int id = grid[static_cast<std::size_t>(z * gw + x)];
+        if (id < 0) continue;
+        const glm::vec2 d = pts[static_cast<std::size_t>(id)] - p;
+        if (glm::dot(d, d) < radius * radius) return true;
+      }
+    }
+    return false;
+  };
+
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<float> uni(0.f, 1.f);
+  const glm::vec2 origin{(minX + maxX) * 0.5f, (minZ + maxZ) * 0.5f};
+  pts.push_back(origin);
+  active.push_back(0);
+  grid[static_cast<std::size_t>(cellOf(origin))] = 0;
+
+  while (!active.empty()) {
+    const int ai = static_cast<int>(rng() % active.size());
+    const int idx = active[static_cast<std::size_t>(ai)];
+    bool found = false;
+    for (int k = 0; k < 24; ++k) {
+      const float ang = uni(rng) * kTau;
+      const float rad = radius * (1.f + uni(rng));
+      const glm::vec2 q = pts[static_cast<std::size_t>(idx)] + glm::vec2{std::cos(ang), std::sin(ang)} * rad;
+      if (q.x < minX || q.x > maxX || q.y < minZ || q.y > maxZ) continue;
+      if (tooClose(q)) continue;
+      const int id = static_cast<int>(pts.size());
+      pts.push_back(q);
+      active.push_back(id);
+      grid[static_cast<std::size_t>(cellOf(q))] = id;
+      found = true;
+    }
+    if (!found) {
+      active[static_cast<std::size_t>(ai)] = active.back();
+      active.pop_back();
+    }
+  }
+  return pts;
+}
 
 #ifndef PXE_ASSET_DIR
 #define PXE_ASSET_DIR "assets"
@@ -268,7 +373,7 @@ glm::mat4 propXform(glm::vec3 pos, float yaw, glm::vec3 scale) {
 }
 
 // Append a glTF asset into the solid and shadow meshes. blockRadius < 0 derives a
-// disk from the non-leaf bounds. Leaf cards are scattered on the canopy rim.
+// disk from the non-leaf bounds. Canopy vertices each get one leaf sprite.
 void placeProp(MeshBuild& solid, MeshBuild& shadow, std::vector<pxe::FoliageInstance>& foliage,
                std::vector<Disk>& blocked, const pxe::GltfAsset& asset, const glm::mat4& world,
                float blockRadius, bool scatterLeaves) {
@@ -333,59 +438,38 @@ void placeProp(MeshBuild& solid, MeshBuild& shadow, std::vector<pxe::FoliageInst
   }
 
   if (!scatterLeaves || leafVerts.empty()) return;
-  glm::vec3 center{0.f};
-  for (const pxe::Vertex& v : leafVerts) center += glm::vec3{v.px, v.py, v.pz};
-  center /= static_cast<float>(leafVerts.size());
 
-  struct Cand {
-    float score;
-    pxe::Vertex v;
+  // One sprite per canopy vertex. Positions are quantised so a split normal
+  // (same point, two wedges) does not stack two cards.
+  std::unordered_map<std::uint64_t, int> seen;
+  seen.reserve(leafVerts.size());
+  auto keyOf = [](float x, float y, float z) {
+    auto q = [](float v) { return static_cast<std::uint64_t>(static_cast<int>(std::lround(v / 0.02f)) & 0x1FFFFF); };
+    return q(x) | (q(y) << 21) | (q(z) << 42);
   };
-  std::vector<Cand> cands;
-  cands.reserve(leafVerts.size());
   for (const pxe::Vertex& v : leafVerts) {
-    const glm::vec3 p{v.px, v.py, v.pz};
     const glm::vec3 n{v.nx, v.ny, v.nz};
-    const glm::vec3 out = p - center;
-    const float reach = glm::length(out);
-    if (reach < 0.15f) continue;
-    const float horiz = std::sqrt(n.x * n.x + n.z * n.z);
-    const float outward = glm::dot(n, out / reach);
-    if (outward < 0.4f || horiz < 0.35f) continue;
-    cands.push_back({reach * horiz, v});
-  }
-  std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.score > b.score; });
-
-  int added = 0;
-  for (const Cand& cand : cands) {
-    bool crowded = false;
-    const int start = std::max(0, static_cast<int>(foliage.size()) - added);
-    for (int k = static_cast<int>(foliage.size()) - 1; k >= start; --k) {
-      const pxe::FoliageInstance& f = foliage[static_cast<std::size_t>(k)];
-      const float dx = f.px - cand.v.px;
-      const float dy = f.py - cand.v.py;
-      const float dz = f.pz - cand.v.pz;
-      if (dx * dx + dy * dy + dz * dz < 0.22f * 0.22f) {
-        crowded = true;
-        break;
-      }
-    }
-    if (crowded) continue;
+    if (glm::dot(n, n) < 1e-6f) continue;
+    const std::uint64_t key = keyOf(v.px, v.py, v.pz);
+    if (!seen.insert({key, 1}).second) continue;
+    const int qx = static_cast<int>(std::lround(v.px * 50.f));
+    const int qy = static_cast<int>(std::lround(v.py * 50.f));
+    const int qz = static_cast<int>(std::lround(v.pz * 50.f));
     pxe::FoliageInstance leaf{};
-    leaf.px = cand.v.px;
-    leaf.py = cand.v.py;
-    leaf.pz = cand.v.pz;
-    leaf.nx = cand.v.nx;
-    leaf.ny = cand.v.ny;
-    leaf.nz = cand.v.nz;
-    leaf.cr = cand.v.cr;
-    leaf.cg = cand.v.cg;
-    leaf.cb = cand.v.cb;
-    leaf.phase = hash01(added, static_cast<int>(leafVerts.size()), 2) * kTau;
-    leaf.scale = 0.85f + hash01(added, 7, 4) * 0.4f;
-    leaf.kind = 3.f;
+    leaf.px = v.px;
+    leaf.py = v.py;
+    leaf.pz = v.pz;
+    leaf.nx = n.x;
+    leaf.ny = n.y;
+    leaf.nz = n.z;
+    leaf.cr = v.cr;
+    leaf.cg = v.cg;
+    leaf.cb = v.cb;
+    leaf.phase = hash01(qx, qz, qy + 3);
+    leaf.scale = 1.f;
+    leaf.kind = 2.f;
+    leaf.pad = hash01(qx, qy, 9) > 0.5f ? 1.f : 0.f;
     foliage.push_back(leaf);
-    if (++added >= 8) break;
   }
 }
 
@@ -569,54 +653,60 @@ pxe::Scene buildMeadow() {
     return false;
   };
 
-  for (int z = 2; z < Height::N - 2; ++z) {
-    for (int x = 2; x < Height::N - 2; ++x) {
-      if (hash01(x, z, 11) > 0.11f) continue;
-      const float jx = (hash01(x, z, 12) - 0.5f) * 0.8f;
-      const float jz = (hash01(x, z, 13) - 0.5f) * 0.8f;
-      const float wx = Height::kOrigin + static_cast<float>(x) + 0.5f + jx;
-      const float wz = Height::kOrigin + static_cast<float>(z) + 0.5f + jz;
-      if (occupied(wx, wz)) continue;
-      const float y = ground(wx, wz);
-      if (y < kWaterY + 0.05f) continue;
-      const float slope = hm.at(x + 1, z) - hm.at(x - 1, z);
-      const float slopeZ = hm.at(x, z + 1) - hm.at(x, z - 1);
-      if (slope * slope + slopeZ * slopeZ > 0.75f) continue;
+  // Blue noise once. Spacing is about half a metre, so a band edge breaks into
+  // tufts and the interior of a band stays empty-looking.
+  const std::vector<glm::vec2> grassPts = poissonDisk(0.48f, -40.f, 40.f, -40.f, 40.f, 0x6A09E667u);
+  int grassN = 0;
+  int flowerN = 0;
+  for (std::size_t i = 0; i < grassPts.size(); ++i) {
+    const float wx = grassPts[i].x;
+    const float wz = grassPts[i].y;
+    if (occupied(wx, wz)) continue;
+    const Surf s = sampleSurf(hm, wx, wz);
+    if (s.pos.y < kWaterY + 0.04f) continue;
+    if (s.n.y < 0.55f) continue;
+    const glm::vec3 tag = terrainColor(wx, wz, s.pos.y);
+    if (tag == kDirt || tag == kBed) continue;
 
-      const glm::vec3 tint = terrainColor(wx, wz, y);
-      if (tint == kDirt || tint == kBed) continue;
-      const float hx = hm.at(x + 1, z) - hm.at(x - 1, z);
-      const float hz = hm.at(x, z + 1) - hm.at(x, z - 1);
-      glm::vec3 n = glm::normalize(glm::vec3{-hx, 2.f, -hz});
-      const float roll = hash01(x, z, 14);
-      pxe::FoliageInstance g{};
-      g.px = wx;
-      g.py = y;
-      g.pz = wz;
-      g.nx = n.x;
-      g.ny = n.y;
-      g.nz = n.z;
-      g.phase = hash01(x, z, 15) * kTau;
-      g.scale = 0.75f + hash01(x, z, 16) * 0.7f;
-      if (roll > 0.975f) {
-        g.kind = 1.f;
-        g.cr = 0.58f;
-        g.cg = 0.38f;
-        g.cb = 0.68f;
-      } else if (roll > 0.955f) {
-        g.kind = 2.f;
-        g.cr = 0.84f;
-        g.cg = 0.74f;
-        g.cb = 0.28f;
+    const int ix = static_cast<int>(std::lround(wx * 20.f));
+    const int iz = static_cast<int>(std::lround(wz * 20.f));
+    const float roll = hash01(ix, iz, 14);
+    pxe::FoliageInstance g{};
+    g.px = s.pos.x;
+    g.py = s.pos.y;
+    g.pz = s.pos.z;
+    g.nx = s.n.x;
+    g.ny = s.n.y;
+    g.nz = s.n.z;
+    g.phase = hash01(ix, iz, 15);
+    g.scale = 1.f;
+    g.pad = hash01(ix, iz, 17) > 0.5f ? 1.f : 0.f;
+    if (roll < 0.012f) {
+      g.kind = 1.f;
+      if (roll < 0.004f) {
+        g.cr = 0.40f;
+        g.cg = 0.56f;
+        g.cb = 0.50f;
       } else {
-        g.kind = 0.f;
-        g.cr = tint.r;
-        g.cg = tint.g;
-        g.cb = tint.b;
+        g.cr = 0.93f;
+        g.cg = 0.84f;
+        g.cb = 0.40f;
       }
-      foliage.push_back(g);
+      ++flowerN;
+    } else {
+      g.kind = 0.f;
+      g.cr = s.color.r;
+      g.cg = s.color.g;
+      g.cb = s.color.b;
+      ++grassN;
     }
+    foliage.push_back(g);
   }
+  int leafN = 0;
+  for (const pxe::FoliageInstance& f : foliage) {
+    if (f.kind > 1.5f) ++leafN;
+  }
+  std::fprintf(stderr, "pxe: grass %d  flowers %d  leaves %d\n", grassN, flowerN, leafN);
 
   pxe::Scene scene;
   scene.opaque.upload(solid.verts, solid.idx);

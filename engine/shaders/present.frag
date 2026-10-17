@@ -4,7 +4,7 @@ in vec2 vUv;
 
 uniform sampler2D uTex;
 uniform int uMode;      // 0 filtered colour, 1 nearest colour, 2 normals, 3 depth
-uniform int uWeather;   // 2 = rain grade + streaks
+uniform int uWeather;   // 2 storm, 3 rain: grade + streaks
 uniform float uTime;
 
 out vec4 oColor;
@@ -40,18 +40,20 @@ void main() {
     col = max(col, vec3(0.012, 0.014, 0.016));
   }
 
-  if (uWeather == 2 && (uMode == 0 || uMode == 1)) {
+  if ((uWeather == 2 || uWeather == 3) && (uMode == 0 || uMode == 1)) {
+    float storm = uWeather == 2 ? 1.0 : 0.0;
     float l = dot(col, vec3(0.30, 0.50, 0.20));
-    col = mix(col, vec3(l), 0.42);
-    col = mix(col, vec3(0.32, 0.42, 0.52), 0.40);
-    col *= vec3(0.80, 0.90, 1.06);
+    col = mix(col, vec3(l), mix(0.28, 0.48, storm));
+    col = mix(col, vec3(0.34, 0.44, 0.54), mix(0.22, 0.42, storm));
+    col *= mix(vec3(0.88, 0.94, 1.04), vec3(0.74, 0.84, 1.02), storm);
     vec2 texSize = vec2(textureSize(uTex, 0));
     vec2 px = floor(vUv * texSize);
     float column = fract(sin(px.x * 47.11) * 917.13);
-    float y = fract(px.y * 0.02 + uTime * 0.9 + column * 4.0);
-    float streak = step(0.945, column) * step(y, 0.16);
+    float speed = mix(0.70, 1.35, storm);
+    float y = fract(px.y * 0.02 + uTime * speed + column * 4.0);
+    float streak = step(mix(0.955, 0.93, storm), column) * step(y, mix(0.14, 0.22, storm));
     float fleck = step(0.988, fract(sin(dot(px, vec2(19.1, 71.7)) + floor(uTime * 2.0)) * 13.7));
-    col += (streak * 0.50 + fleck * 0.28) * vec3(0.82, 0.88, 0.92);
+    col += (streak * 0.55 + fleck * 0.22) * vec3(0.82, 0.88, 0.92);
   }
 
   oColor = vec4(clamp(col, 0.0, 1.0), 1.0);

@@ -1,5 +1,7 @@
 #version 410 core
 
+// #include "common.glsl"
+
 in vec2 vUv;
 
 uniform sampler2D uAlbedo;
@@ -23,23 +25,9 @@ uniform float uFogFar;
 uniform float uFogMax;
 uniform float uNormalBias;
 uniform float uDepthBias;
+uniform vec2 uCloudScroll;
 
 layout(location = 0) out vec4 oColor;
-
-float shadowFactor(vec3 world, vec3 n) {
-  vec3 lit = -normalize(uLightDir);
-  float nd = clamp(dot(n, lit), 0.0, 1.0);
-  // Lift the sample off the surface so a nearest-filtered map does not speckle.
-  vec3 pworld = world + n * uNormalBias * (1.0 - nd * 0.85) + lit * (uNormalBias * 0.35);
-  vec4 lc = uLightViewProj * vec4(pworld, 1.0);
-  vec3 p = lc.xyz / lc.w;
-  vec2 suv = p.xy * 0.5 + 0.5;
-  if (suv.x <= 0.0 || suv.x >= 1.0 || suv.y <= 0.0 || suv.y >= 1.0) return 1.0;
-  float stored = texture(uShadow, suv).r;
-  float z = p.z * 0.5 + 0.5;
-  float bias = uDepthBias * mix(2.4, 0.35, nd);
-  return z <= stored + bias ? 1.0 : 0.0;
-}
 
 void main() {
   float depth = texture(uDepth, vUv).r;
@@ -52,38 +40,35 @@ void main() {
   vec3 world = uEye + uRight * ndc.x * uHalfW + uUp * ndc.y * uHalfH + uForward * depth;
 
   vec4 albedoS = texture(uAlbedo, vUv);
-  vec3 n = normalize(texture(uNormal, vUv).xyz);
+  vec4 nrm = texture(uNormal, vUv);
+  vec3 n = normalize(nrm.xyz);
   vec3 albedo = albedoS.rgb;
   float material = albedoS.a;
   float ndl = dot(n, -uLightDir);
+  float cloud = cloudShadow(world.xz, uCloudScroll);
 
-  vec3 hi = albedo * uSunColor;
-  vec3 lo = albedo * uShadowTint;
-  // Soft monochrome form inside the shadow band, so a shaded stone face
-  // still has a top and a side. Never a third colour ramp on the ground.
-  float amb = clamp(n.y * 0.10 + 0.92, 0.90, 1.0);
-  lo *= amb;
-
-  float litMask;
   vec3 col;
-  if (material > 0.75) {
-    // Canopy: the mesh normal is the smooth enclosing shape, so a few hard
-    // bands read as one blob instead of a pile of leaves.
-    float w = clamp(ndl * 0.5 + 0.5, 0.0, 0.999);
-    if (w > 0.60) {
-      col = hi;
-      litMask = 1.0;
-    } else if (w > 0.36) {
-      col = albedo * mix(uShadowTint, uSunColor, 0.58);
-      litMask = 0.55;
-    } else {
-      col = lo;
-      litMask = 0.0;
-    }
+  float litMask;
+  if (material > 0.9) {
+    // Canopy mesh. It is the shadow caster, so it does not sample the map.
+    // Cloud is evaluated here, per texel, on the same function as the ground.
+    vec4 s = shadeCanopy(albedo, n, ndl, uSunColor, uShadowTint, cloud);
+    col = s.rgb;
+    litMask = s.a;
+  } else if (material > 0.6) {
+    // Leaf sprite. normal.w is the cloud gate at the leaf, so the card is one colour.
+    vec4 s = shadeCanopy(albedo, n, ndl, uSunColor, uShadowTint, nrm.w);
+    col = s.rgb;
+    litMask = s.a;
+  } else if (material > 0.25) {
+    // Grass. normal.w is lit/shadow at the base, not at this pixel.
+    col = shadeGround(albedo, n, uSunColor, uShadowTint, nrm.w);
+    litMask = step(0.5, nrm.w);
   } else {
-    float sunVis = shadowFactor(world, n);
-    litMask = (sunVis > 0.5 && ndl > 0.02) ? 1.0 : 0.0;
-    col = mix(lo, hi, litMask);
+    float sunVis = shadowFactor(uShadow, uLightViewProj, world, n, uLightDir, uNormalBias, uDepthBias);
+    float lit = (sunVis > 0.5 && cloud > 0.5 && ndl > 0.02) ? 1.0 : 0.0;
+    col = shadeGround(albedo, n, uSunColor, uShadowTint, lit);
+    litMask = lit;
   }
 
   if (uFogMax > 0.001) {

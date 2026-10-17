@@ -72,7 +72,7 @@ The generator may place `pxe.exe` directly in `build\game\`.
 | Mouse wheel, `+` / `-` | Zoom through fixed pixels-per-unit steps (12, 16, 22, 30, 42). Default is 42 |
 | O | Outlines on / off |
 | F1 | Cycle debug view: final, raw low-res (nearest), albedo, normals, depth |
-| V | Cycle weather: clear, light haze, rain. Default is clear |
+| V | Cycle weather: calm, breezy, storm, rain. The change eases in over about three seconds. Default is calm |
 | P | Pause / resume the day-night clock |
 | `[` / `]` | Slower / faster clock (x1, x4, x16, x64) |
 | `,` / `.` | Step the clock back / forward one hour |
@@ -87,9 +87,10 @@ Zoom steps change how many low-res pixels cover one world unit and then sit stil
 
 ```text
 pxe [--width N] [--height N]
-    [--yaw degrees] [--zoom 0..4] [--weather 0|1|2] [--time seconds]
+    [--yaw degrees] [--zoom 0..4] [--weather 0..3] [--time seconds]
     [--hour 0..24] [--target x,y,z]
     [--screenshot path.png] [--shots dir] [--cycle-frames dir]
+    [--weather-clip dir]
     [--demo] [--demo-frames dir]
     [--self-test] [--no-vsync]
 ```
@@ -108,20 +109,26 @@ engine/        library, no game content
   shaders      GLSL 410
 game/          meadow scene and the GLFW loop
 assets/props   Blender meshes the meadow instances (.glb)
+assets/sprites grass, flower, and leaf flipbook sheets
 tools/blender  regenerates those meshes
+tools/sprites  regenerates the flipbook sheets
 ```
 
 **Camera.** Yaw animates with a smoothstep between 45° rests. Pan on the ground plane is smoothed with the second-order system from t3ssel8r's procedural-animation notes (frequency, damping, response), then the eye is snapped. The snap is done in the camera's right/up basis, not in world XZ, so it stays on pixel centres at a 45° yaw. The projection covers a 644×364 target: the 640×360 view plus a two-texel border. The border is real scene, so the upscale can shift by up to half a texel without clamping.
 
 **Upscale.** The present pass samples the low-res colour with the box filter he describes for pixel-art magnification: the sample is snapped to a texel centre, and it only blends in a band around the texel edge whose width is `fwidth` of the texel coordinate, clamped to one texel. The blend is a `smoothstep` (the integral of a quadratic window). At 2× or 3× the sample points miss that band, so the pixels stay hard. The snap error is a shift of the UV window into this filter.
 
-**Lighting.** One directional light orbits through the day. Morning and noon are a warm-white sun with a cool shadow tint. Dawn and dusk drop the sun and shift the lit side gold. Night keeps a dim cool moon so the meadow stays readable. Opaque surfaces use a hard lit/shadow split on N·L and the shadow map. Shadowed pixels keep a little form from a monochrome Lambert, and they are never black. Canopies are lit from a smooth normal in three bands and do not sample the shadow map, because the canopy mesh is the caster. Grass is lit from the ground normal under the tuft.
+**Lighting.** One directional light orbits through the day. Morning and noon are a warm-white sun with a cool shadow tint. Dawn and dusk drop the sun and shift the lit side gold. Night keeps a dim cool moon so the meadow stays readable. Opaque surfaces use a hard lit/shadow split on N·L and the shadow map. Shadowed pixels keep a little form from a monochrome Lambert, and they are never black. Canopies are lit from a smooth normal in three bands and do not sample the shadow map, because the canopy mesh is the caster. A hard cloud mask, scrolled by the wind, multiplies into that same split.
+
+**Grass.** Sprites are vertex-shader billboards, GPU instanced, scattered once with blue noise. Each one is a single flat colour: the terrain albedo, normal, shadow map, and cloud sampled at its base, through the same shade function as the ground. Inside a lighting band the tuft matches the ground and disappears. It shows only where a band, a cast shadow, or a cloud edge crosses it. A few sprites are a second shape with a teal or pale-yellow tint. They alpha-test and write depth. The canopy mesh is still; one camera-facing leaf sprite is spawned on each canopy vertex, with that vertex's normal.
+
+**Wind.** One state (direction, speed, strength, gustiness, step rate, rain) is shared by grass and leaves. A scrolling gust field plus position picks a flipbook cell. Time is quantised, and the step rate follows wind speed, so poses hold instead of crawling. The quad is never rotated or bent. Calm stays on the still row. Storm pushes gusts of the strong-lean row across the field in the wind direction, and sways a crown by at most two pixels. Rain drops upward-facing leaves by one pixel. `V` blends between calm, breezy, storm, and rain over about three seconds. `--weather 0..3` selects one directly. `--weather-clip dir` writes a 12 fps sequence of each.
 
 The shadow camera is snapped to shadow-map texels, and the sun angle is quantized, so a moving light does not swim the shadow edge inside a pixel. Polygon offset plus a normal bias keeps the ground free of acne.
 
 **Outlines.** A 4-neighbour pass on linear depth and view-space normals. Lit edges — the near side of a silhouette, and the convex lip of a step or pillar — are pushed brighter than the surface, tinted by the sun. Edges in shadow are darkened. Grass, flowers, and leaves opt out. Outline colour is a shade of the local colour, not black.
 
-**Scene.** A large smooth height field, so the frame is meadow rather than a floating slab. Flat colours: two or three greens, grey-taupe stone, beige steps, light-blue water. The ruin, rocks, and trees are glTF props authored in Blender (see below): chunky displaced rocks, an arrayed stair flight, and canopies whose normals were transferred from a smooth enclosing sphere so each crown shades as one blob. A handful of leaf cards sit on the rim. Grass is a sparse scatter of short tufts. The pond is a clear blue plane with a 1-pixel white shore where it meets the bank. Wind moves the canopy and the tufts. Static surfaces do not change while the camera pans by less than a pixel.
+**Scene.** A large hilly height field, so a low sun lays terminators across the slopes. Flat colours: two or three greens, grey-taupe stone, beige steps, light-blue water. The ruin, rocks, and trees are glTF props authored in Blender (see below): chunky displaced rocks, an arrayed stair flight, and canopies whose normals were transferred from a smooth enclosing sphere so each crown shades as one blob. Leaf sprites sit on those vertices. Grass is the blue-noise billboards above. The pond is a clear blue plane with a 1-pixel white shore where it meets the bank. The canopy mesh and the shadow map do not move with the wind, so a pan of less than a pixel does not shimmer.
 
 ## Blender props
 
@@ -149,7 +156,7 @@ The script writes `assets/props/*.glb` and `assets/props/stairs.meta` (step coun
 
    | Name contains | Treated as |
    |---|---|
-   | `Leaf`, `Canopy`, `Bush`, `Foliage` | Canopy. Sways, lit from the smooth normal, no outline, no shadow-map sample |
+   | `Leaf`, `Canopy`, `Bush`, `Foliage` | Canopy. Lit from the smooth normal, no outline, no shadow-map sample. Each vertex gets a leaf sprite |
    | `Bark`, `Trunk`, `Wood` | Trunk |
    | `Dirt`, `Path` | Path |
    | `Grass`, `Ground`, `Terrain` | Ground |
@@ -170,25 +177,26 @@ The script writes `assets/props/*.glb` and `assets/props/stairs.meta` (step coun
 putOn(loadProp("props/your_prop.glb"), x, z, yawRadians, scale, blockRadius, scatterLeaves);
 ```
 
-`yawRadians` is a turn around Y. `blockRadius` keeps grass off the footprint (`0` skips that, a negative value uses the mesh bounds). `scatterLeaves` adds a few leaf cards on canopy vertices. Rebuild with the same CMake commands as before; the asset directory is compiled in, so the working directory does not matter.
+`yawRadians` is a turn around Y. `blockRadius` keeps grass off the footprint (`0` skips that, a negative value uses the mesh bounds). `scatterLeaves` spawns one leaf sprite on every canopy vertex. Rebuild with the same CMake commands as before; the asset directory is compiled in, so the working directory does not matter.
+
+The grass and leaf sheets are `assets/sprites/grass.png`, `flower.png`, and `leaf.png`. They are masks (white RGB, alpha coverage). Regenerate them with `python3 tools/sprites/make_sprites.py`. Columns are wind frames, rows are shape and amplitude. The engine samples them with nearest filtering.
 
 ## What this prototype does not do
 
 Verified here on Linux with llvmpipe, including the snap self-test. Not launched on macOS.
 
-- God rays are a short march through the sun shadow map with hard steps. They are not the light-aligned plane projection from the reference. Clear weather, the default, draws none. The haze preset keeps them very light.
-- Rain is a grade plus 1-pixel streaks and flecks, not the full set of splashes, mist, and lightning.
+- God rays are a short march through the sun shadow map with hard steps. They are not the light-aligned plane projection from the reference. The weather cycle does not turn them on.
+- Storm and rain are a grade plus 1-pixel streaks and flecks, not the full set of splashes, mist, and lightning. Rain also bobs upward-facing leaves by one pixel.
 - No reflection probe, refraction wiggle, or quantised point lights. The day/night cycle is a single orbiting light and a palette shift, not a texture swap.
-- Grass placement is a jittered grid, not blue noise. The leaf cards on a crown are analytic blobs, not a drawn sprite sheet.
-- Terrain is still generated in code. Props are Blender meshes; there is no in-engine editor and no marching-squares authoring tool.
+- The flipbook sheets are small authored masks, not traced from the reference frames. Cloud shadows are one hard world-space threshold, not a projection of a painted sky.
+- Terrain and the grass scatter are still generated in code. Props are Blender meshes; there is no in-engine editor and no marching-squares authoring tool.
 - No characters, smear frames, or gameplay.
 
 ## Next steps
 
 1. Replace the ray march with a handful of light-aligned planes sampled from the shadow map, and mask a tiling dust texture with that result.
-2. A world-space cloud shadow (flat-relief FBM blended with the real projection) so the meadow changes without the camera.
-3. The rest of the rain stack: shore splashes, top-edge spatter, water ripples.
-4. Quantised additive point lights on top of the ramp, updated at a low frame rate.
-5. A water reflection probe and a one-pixel horizontal refraction wiggle.
-6. A Metal (or WebGPU) backend behind `renderer.cpp`, now that the snap and the passes are isolated.
-7. An authoring path for the terrace height field, then a character animated on stepped keys. Props already load from glTF.
+2. The rest of the rain stack: shore splashes, top-edge spatter, water ripples, lightning.
+3. Quantised additive point lights on top of the ramp, updated at a low frame rate.
+4. A water reflection probe and a one-pixel horizontal refraction wiggle.
+5. A Metal (or WebGPU) backend behind `renderer.cpp`, now that the snap and the passes are isolated.
+6. An authoring path for the terrace height field, then a character animated on stepped keys. Props already load from glTF.

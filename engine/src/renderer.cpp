@@ -7,9 +7,23 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#pragma GCC diagnostic ignored "-Wcast-qual"
+#endif
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
@@ -124,6 +138,32 @@ DayLight evaluateDay(float hour, float azimuth0) {
 
 // Lock the shadow projection to texel centres so a slow sun (and a panning
 // camera) does not shimmer the edge between shadow texels.
+#ifndef PXE_ASSET_DIR
+#define PXE_ASSET_DIR "assets"
+#endif
+
+unsigned loadSprite(const std::string& path) {
+  stbi_set_flip_vertically_on_load(1);
+  int w = 0, h = 0, n = 0;
+  unsigned char* data = stbi_load(path.c_str(), &w, &h, &n, 4);
+  if (!data || w <= 0 || h <= 0) {
+    std::fprintf(stderr, "pxe: failed to load sprite %s (%s)\n", path.c_str(),
+                 stbi_failure_reason());
+    throw std::runtime_error("missing sprite");
+  }
+  unsigned tex = 0;
+  glGenTextures(1, &tex);
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  stbi_image_free(data);
+  std::fprintf(stderr, "pxe: sprite %s %dx%d\n", path.c_str(), w, h);
+  return tex;
+}
+
 glm::mat4 snapShadowMatrix(const glm::mat4& lightVP, float shadowSize) {
   glm::vec4 origin = lightVP * glm::vec4(0.f, 0.f, 0.f, 1.f);
   origin *= shadowSize * 0.5f;
@@ -135,11 +175,23 @@ glm::mat4 snapShadowMatrix(const glm::mat4& lightVP, float shadowSize) {
 
 }  // namespace
 
+WindState windPreset(int weather) {
+  static const WindState kPresets[] = {
+      {0.80f, 0.60f, 0.30f, 0.10f, 0.20f, 4.f, 0.f},
+      {0.80f, 0.60f, 1.50f, 0.40f, 0.50f, 8.f, 0.f},
+      {0.80f, 0.60f, 4.00f, 0.90f, 0.80f, 12.f, 1.f},
+      {0.80f, 0.60f, 1.00f, 0.30f, 0.40f, 6.f, 0.6f},
+  };
+  const int i = std::clamp(weather, 0, 3);
+  return kPresets[i];
+}
+
 Renderer::~Renderer() { destroyTargets(); }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {albedo_, normal_, linDepth_, depth_, colorA_, colorB_, shadowTex_};
-  glDeleteTextures(7, textures);
+  unsigned textures[] = {albedo_, normal_, linDepth_, depth_, colorA_, colorB_, shadowTex_,
+                         texGrass_, texFlower_, texLeaf_};
+  glDeleteTextures(10, textures);
   unsigned fbos[] = {fboG_, fboLight_, fboComp_, fboShadow_};
   glDeleteFramebuffers(4, fbos);
   if (foliageEbo_) glDeleteBuffers(1, &foliageEbo_);
@@ -285,7 +337,7 @@ void Renderer::init() {
   progG_ = linkProgram(dir + "/gbuffer.vert", dir + "/gbuffer.frag", dir + "/common.glsl");
   progFoliage_ = linkProgram(dir + "/foliage.vert", dir + "/foliage.frag", dir + "/common.glsl");
   progShadow_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag");
-  progLight_ = linkProgram(dir + "/fullscreen.vert", dir + "/light.frag");
+  progLight_ = linkProgram(dir + "/fullscreen.vert", dir + "/light.frag", dir + "/common.glsl");
   progOutline_ = linkProgram(dir + "/fullscreen.vert", dir + "/outline.frag");
   progWater_ = linkProgram(dir + "/water.vert", dir + "/water.frag");
   progRays_ = linkProgram(dir + "/fullscreen.vert", dir + "/rays.frag");
@@ -293,6 +345,10 @@ void Renderer::init() {
 
   createTargets();
   createPresentQuad();
+  const std::filesystem::path sprites = std::filesystem::path(PXE_ASSET_DIR) / "sprites";
+  texGrass_ = loadSprite((sprites / "grass.png").string());
+  texFlower_ = loadSprite((sprites / "flower.png").string());
+  texLeaf_ = loadSprite((sprites / "leaf.png").string());
 
   glDisable(GL_DITHER);
   glDisable(GL_MULTISAMPLE);
@@ -383,19 +439,44 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   const float shadowTexel = (2.f * ext) / static_cast<float>(RenderConfig::kShadow);
   const float depthSpan = std::max(farP - nearP, 1.f);
 
+  WindState wind = windPreset(params.weather);
+  if (params.windOverride) {
+    wind.dirX = params.windDirX;
+    wind.dirZ = params.windDirZ;
+    wind.speed = params.windSpeed;
+    wind.strength = params.windStrength;
+    wind.gust = params.windGust;
+    wind.fps = params.windFps;
+    wind.rain = params.windRain;
+  }
+  const float windLen = std::sqrt(wind.dirX * wind.dirX + wind.dirZ * wind.dirZ);
+  if (windLen > 1e-4f) {
+    wind.dirX /= windLen;
+    wind.dirZ /= windLen;
+  } else {
+    wind.dirX = 1.f;
+    wind.dirZ = 0.f;
+  }
+  // Clouds drift with the wind at full frame rate. The flipbook uses a
+  // quantised clock inside the foliage shader; this scroll does not.
+  // Slow enough that calm clouds barely move, and a storm still drifts them.
+  const glm::vec2 cloudScroll{wind.dirX * wind.speed * params.time * 0.16f,
+                              wind.dirZ * wind.speed * params.time * 0.16f};
+
   glm::vec3 sky = day.skyColor;
   float fogNear = 10.f;
   float fogFar = 28.f;
   float fogMax = 0.f;
-  if (params.weather == 1) {
-    fogNear = 8.f;
-    fogFar = 26.f;
-    fogMax = 0.18f;
-  } else if (params.weather == 2) {
-    sky = glm::mix(sky, glm::vec3{0.38f, 0.46f, 0.56f}, 0.55f);
-    fogNear = 4.f;
-    fogFar = 18.f;
-    fogMax = 0.28f;
+  if (params.weather == 2) {
+    sky = glm::mix(sky, glm::vec3{0.34f, 0.40f, 0.50f}, 0.48f);
+    fogNear = 6.f;
+    fogFar = 22.f;
+    fogMax = 0.22f;
+  } else if (params.weather == 3) {
+    sky = glm::mix(sky, glm::vec3{0.40f, 0.48f, 0.58f}, 0.35f);
+    fogNear = 7.f;
+    fogFar = 24.f;
+    fogMax = 0.16f;
   }
   const float focusDepth = glm::dot(camera.target - camera.eye, camera.forward);
 
@@ -412,7 +493,6 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glClear(GL_DEPTH_BUFFER_BIT);
   glUseProgram(progShadow_);
   setMat4(progShadow_, "uLightViewProj", lightVP);
-  set1f(progShadow_, "uTime", params.time);
   scene.shadowCasters.draw();
   glDisable(GL_POLYGON_OFFSET_FILL);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -433,19 +513,41 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glUseProgram(progG_);
   setMat4(progG_, "uViewProj", viewProj);
   setMat4(progG_, "uView", camera.view);
-  set1f(progG_, "uTime", params.time);
   scene.opaque.draw();
 
   if (foliageCount_ > 0) {
     glDisable(GL_CULL_FACE);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-1.5f, -2.f);
     glUseProgram(progFoliage_);
     setMat4(progFoliage_, "uViewProj", viewProj);
     setMat4(progFoliage_, "uView", camera.view);
     set3f(progFoliage_, "uCamRight", camera.right);
     set3f(progFoliage_, "uCamUp", camera.up);
     set1f(progFoliage_, "uTime", params.time);
+    set1f(progFoliage_, "uTexelWorld", camera.texelWorld);
+    set2f(progFoliage_, "uWindDir", wind.dirX, wind.dirZ);
+    set1f(progFoliage_, "uWindSpeed", wind.speed);
+    set1f(progFoliage_, "uWindStrength", wind.strength);
+    set1f(progFoliage_, "uWindGust", wind.gust);
+    set1f(progFoliage_, "uWindFps", wind.fps);
+    set1f(progFoliage_, "uRain", wind.rain);
+    setMat4(progFoliage_, "uLightViewProj", lightVP);
+    set3f(progFoliage_, "uLightDir", lightDir);
+    set1f(progFoliage_, "uNormalBias", shadowTexel * 1.6f);
+    set1f(progFoliage_, "uDepthBias", (shadowTexel * 0.85f) / depthSpan);
+    set2f(progFoliage_, "uCloudScroll", cloudScroll.x, cloudScroll.y);
+    bindTex(0, texGrass_);
+    bindTex(1, texFlower_);
+    bindTex(2, texLeaf_);
+    bindTex(3, shadowTex_);
+    set1i(progFoliage_, "uGrass", 0);
+    set1i(progFoliage_, "uFlower", 1);
+    set1i(progFoliage_, "uLeaf", 2);
+    set1i(progFoliage_, "uShadow", 3);
     glBindVertexArray(foliageVao_);
     glDrawElementsInstanced(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr, foliageCount_);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glEnable(GL_CULL_FACE);
   }
 
@@ -485,6 +587,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   set1f(progLight_, "uFogMax", fogMax);
   set1f(progLight_, "uNormalBias", shadowTexel * 1.6f);
   set1f(progLight_, "uDepthBias", (shadowTexel * 0.85f) / depthSpan);
+  set2f(progLight_, "uCloudScroll", cloudScroll.x, cloudScroll.y);
   drawFullscreen(progLight_);
 
   // ---- outlines into the composite buffer ----
@@ -533,8 +636,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   // ---- god rays, hard bands from the sun shadow map ----
   float facing = glm::dot(camera.forward, -lightDir);
   facing = glm::clamp(facing, 0.f, 1.f);
+  // The weather cycle is wind, not haze. Rays stay available but off.
   float rayStrength = 0.f;
-  if (params.weather == 1) rayStrength = 0.05f;
   rayStrength *= 0.55f + 0.45f * facing;
   if (rayStrength > 0.001f) {
     glEnable(GL_BLEND);

@@ -12,10 +12,12 @@ target_include_directories(pxe_engine
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
   PRIVATE ${CMAKE_SOURCE_DIR}/third_party/khronos
   PRIVATE ${CMAKE_SOURCE_DIR}/third_party/cgltf
+  PRIVATE ${CMAKE_SOURCE_DIR}/third_party/stb
 )
 
 target_compile_definitions(pxe_engine
   PRIVATE PXE_SHADER_DIR="${CMAKE_SOURCE_DIR}/engine/shaders"
+  PRIVATE PXE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets"
 )
 
 target_compile_options(pxe_engine PRIVATE
