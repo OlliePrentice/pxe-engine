@@ -12,6 +12,8 @@ target_compile_options(pxe PRIVATE
   $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic>
 )
 
+target_compile_definitions(pxe PRIVATE PXE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets")
+
 target_link_libraries(pxe PRIVATE pxe_engine glfw)
 
 # Keep the binary name stable across generators (pxe, pxe.exe).

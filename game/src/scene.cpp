@@ -1,14 +1,22 @@
 #include "scene.hpp"
 
+#include "pxe/gltf.hpp"
+
 #include <glm/geometric.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <unordered_map>
-#include <utility>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace game {
@@ -24,18 +32,9 @@ const glm::vec3 kGrassDeep{0.48f, 0.62f, 0.27f};
 const glm::vec3 kGrassLight{0.64f, 0.76f, 0.36f};
 const glm::vec3 kDirt{0.64f, 0.50f, 0.32f};
 const glm::vec3 kBed{0.30f, 0.46f, 0.44f};
-const glm::vec3 kPillar{0.67f, 0.62f, 0.54f};
-const glm::vec3 kStep{0.72f, 0.63f, 0.48f};
-const glm::vec3 kSlab{0.60f, 0.56f, 0.50f};
-const glm::vec3 kRock{0.56f, 0.53f, 0.49f};
-const glm::vec3 kBark{0.50f, 0.37f, 0.28f};
-const glm::vec3 kLeaf{0.50f, 0.66f, 0.27f};
-const glm::vec3 kLeafDeep{0.42f, 0.56f, 0.22f};
-const glm::vec3 kBush{0.44f, 0.60f, 0.24f};
 
 // Ground axes of the default 45° camera, so the ruin sits in frame on launch.
-const glm::vec3 kFore{-0.70710678f, 0.f, 0.70710678f};   // toward the camera
-const glm::vec3 kAcross{0.70710678f, 0.f, 0.70710678f};  // screen right
+const glm::vec3 kFore{-0.70710678f, 0.f, 0.70710678f};  // toward the camera
 
 const glm::vec2 kPond{5.6f, -3.9f};
 constexpr float kPondR = 2.35f;
@@ -207,172 +206,231 @@ glm::vec3 terrainColor(float x, float z, float y) {
   return kGrass;
 }
 
-void addCylinder(MeshBuild& m, glm::vec3 base, glm::vec3 axis, float r0, float r1, int sides,
-                 glm::vec3 color, float surface) {
-  const float height = glm::length(axis);
-  if (height < 1e-4f || sides < 3) return;
-  const glm::vec3 up = axis / height;
-  const glm::vec3 helper = std::fabs(up.y) < 0.92f ? glm::vec3{0.f, 1.f, 0.f} : glm::vec3{1.f, 0.f, 0.f};
-  const glm::vec3 side = glm::normalize(glm::cross(up, helper));
-  const glm::vec3 front = glm::cross(side, up);
-  for (int i = 0; i < sides; ++i) {
-    const float a0 = kTau * static_cast<float>(i) / static_cast<float>(sides);
-    const float a1 = kTau * static_cast<float>(i + 1) / static_cast<float>(sides);
-    const glm::vec3 d0 = side * std::cos(a0) + front * std::sin(a0);
-    const glm::vec3 d1 = side * std::cos(a1) + front * std::sin(a1);
-    const glm::vec3 bl = base + d0 * r0;
-    const glm::vec3 br = base + d1 * r0;
-    const glm::vec3 tl = base + axis + d0 * r1;
-    const glm::vec3 tr = base + axis + d1 * r1;
-    m.quad(bl, br, tr, tl, color, surface, d0 + d1);
-  }
-}
-
-void addFacetRock(MeshBuild& m, glm::vec3 center, float radius, glm::vec3 color, int seed, float jag) {
-  constexpr int kStacks = 4;
-  constexpr int kSlices = 6;
-  auto point = [&](int st, int sl) {
-    const float v = static_cast<float>(st) / static_cast<float>(kStacks);
-    const float u = static_cast<float>(sl % kSlices) / static_cast<float>(kSlices);
-    const float phi = v * kPi;
-    const float th = u * kTau;
-    glm::vec3 d{std::sin(phi) * std::cos(th), std::cos(phi), std::sin(phi) * std::sin(th)};
-    const float warp = 1.f - jag * 0.45f + jag * hash01(st + seed * 3, sl, seed);
-    return center + d * radius * warp;
-  };
-  for (int st = 0; st < kStacks; ++st) {
-    for (int sl = 0; sl < kSlices; ++sl) {
-      glm::vec3 a = point(st, sl);
-      glm::vec3 b = point(st, sl + 1);
-      glm::vec3 c = point(st + 1, sl + 1);
-      glm::vec3 d = point(st + 1, sl);
-      const glm::vec3 mid = (a + b + c + d) * 0.25f;
-      m.quad(a, b, c, d, color, pxe::kSurfStone, mid - center);
-    }
-  }
-}
-
-struct EdgeKey {
-  int a;
-  int b;
-  bool operator==(const EdgeKey& o) const { return a == o.a && b == o.b; }
-};
-struct EdgeHash {
-  std::size_t operator()(const EdgeKey& k) const {
-    return static_cast<std::size_t>(k.a) * 73856093u ^ static_cast<std::size_t>(k.b) * 19349663u;
-  }
-};
-
-// Displaced icosphere. Normals come from the smooth pre-displacement shell
-// around shadeCenter, so the whole canopy lights as one blob.
-void addCanopy(MeshBuild& m, glm::vec3 center, float radius, glm::vec3 shadeCenter, glm::vec3 color,
-               int seed, float jag, int subdiv) {
-  const float g = 1.6180339887f;
-  std::vector<glm::vec3> v = {
-      {-1, g, 0}, {1, g, 0}, {-1, -g, 0}, {1, -g, 0}, {0, -1, g}, {0, 1, g},
-      {0, -1, -g}, {0, 1, -g}, {g, 0, -1}, {g, 0, 1}, {-g, 0, -1}, {-g, 0, 1},
-  };
-  for (glm::vec3& p : v) p = glm::normalize(p);
-  std::vector<glm::ivec3> f = {
-      {0, 11, 5}, {0, 5, 1},  {0, 1, 7},  {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4},
-      {11, 10, 2}, {10, 7, 6}, {7, 1, 8}, {3, 9, 4}, {3, 4, 2},   {3, 2, 6},  {3, 6, 8},
-      {3, 8, 9},  {4, 9, 5},  {2, 4, 11}, {6, 2, 10}, {8, 6, 7},  {9, 8, 1},
-  };
-  for (int s = 0; s < subdiv; ++s) {
-    std::unordered_map<EdgeKey, int, EdgeHash> mid;
-    mid.reserve(f.size() * 2);
-    auto midpoint = [&](int a, int b) {
-      if (a > b) std::swap(a, b);
-      const EdgeKey key{a, b};
-      const auto it = mid.find(key);
-      if (it != mid.end()) return it->second;
-      const int id = static_cast<int>(v.size());
-      v.push_back(glm::normalize(v[static_cast<std::size_t>(a)] + v[static_cast<std::size_t>(b)]));
-      mid.emplace(key, id);
-      return id;
-    };
-    std::vector<glm::ivec3> next;
-    next.reserve(f.size() * 4);
-    for (glm::ivec3 t : f) {
-      const int ab = midpoint(t.x, t.y);
-      const int bc = midpoint(t.y, t.z);
-      const int ca = midpoint(t.z, t.x);
-      next.push_back({t.x, ab, ca});
-      next.push_back({t.y, bc, ab});
-      next.push_back({t.z, ca, bc});
-      next.push_back({ab, bc, ca});
-    }
-    f.swap(next);
-  }
-
-  auto place = [&](int index, glm::vec3& pos, glm::vec3& nrm) {
-    const glm::vec3 dir = v[static_cast<std::size_t>(index)];
-    const float warp = 1.f + jag * (hash01(index, seed, seed * 17 + 3) - 0.5f);
-    const glm::vec3 smoothP = center + dir * radius;
-    pos = center + dir * radius * warp;
-    nrm = glm::normalize(smoothP - shadeCenter);
-  };
-
-  for (glm::ivec3 t : f) {
-    glm::vec3 p0, p1, p2, n0, n1, n2;
-    place(t.x, p0, n0);
-    place(t.y, p1, n1);
-    place(t.z, p2, n2);
-    const glm::vec3 fn = glm::cross(p1 - p0, p2 - p0);
-    const glm::vec3 outward = (p0 + p1 + p2) / 3.f - center;
-    if (glm::dot(fn, outward) < 0.f) {
-      m.tri(p0, n0, p2, n2, p1, n1, color, pxe::kSurfLeaf);
-    } else {
-      m.tri(p0, n0, p1, n1, p2, n2, color, pxe::kSurfLeaf);
-    }
-  }
-}
-
-void addPillar(MeshBuild& m, glm::vec3 base, float shaft, float width, float chip) {
-  float y = base.y;
-  const float w = width;
-  m.box({base.x - w * 0.78f, y, base.z - w * 0.78f},
-        {base.x + w * 0.78f, y + 0.22f, base.z + w * 0.78f}, kPillar, pxe::kSurfStone);
-  y += 0.22f;
-  m.box({base.x - w * 0.50f, y, base.z - w * 0.50f},
-        {base.x + w * 0.50f, y + shaft, base.z + w * 0.50f}, kPillar, pxe::kSurfStone);
-  y += shaft;
-  m.box({base.x - w * 0.70f, y, base.z - w * 0.70f},
-        {base.x + w * 0.70f - chip, y + 0.26f, base.z + w * 0.64f}, kPillar, pxe::kSurfStone);
-}
-
 struct Disk {
   float x, z, r;
 };
+
+#ifndef PXE_ASSET_DIR
+#define PXE_ASSET_DIR "assets"
+#endif
+
+struct StairSpec {
+  int count = 7;
+  float width = 1.4f;
+  float depth = 0.64f;
+  float rise = 0.18f;
+  float thick = 0.24f;
+};
+
+StairSpec loadStairs(const std::filesystem::path& path) {
+  StairSpec spec;
+  std::ifstream in(path);
+  if (!in) {
+    std::fprintf(stderr, "pxe: missing stair description %s\n", path.string().c_str());
+    std::exit(1);
+  }
+  std::string key;
+  while (in >> key) {
+    if (key == "count") in >> spec.count;
+    else if (key == "width") in >> spec.width;
+    else if (key == "depth") in >> spec.depth;
+    else if (key == "rise") in >> spec.rise;
+    else if (key == "thick") in >> spec.thick;
+  }
+  if (spec.count < 2 || spec.depth <= 0.f || spec.rise <= 0.f) {
+    std::fprintf(stderr, "pxe: bad stair description %s\n", path.string().c_str());
+    std::exit(1);
+  }
+  return spec;
+}
+
+pxe::GltfAsset loadProp(const char* rel) {
+  const auto path = (std::filesystem::path(PXE_ASSET_DIR) / rel).string();
+  try {
+    pxe::GltfAsset asset = pxe::loadGltf(path);
+    int tris = 0;
+    for (const pxe::GltfNode& node : asset.nodes) {
+      for (const pxe::GltfPrimitive& prim : node.primitives) {
+        tris += static_cast<int>(prim.indices.size() / 3);
+      }
+    }
+    std::fprintf(stderr, "pxe: loaded %s (%d tris)\n", rel, tris);
+    return asset;
+  } catch (const std::exception& ex) {
+    std::fprintf(stderr, "pxe: %s\n", ex.what());
+    std::exit(1);
+  }
+}
+
+glm::mat4 propXform(glm::vec3 pos, float yaw, glm::vec3 scale) {
+  return glm::translate(glm::mat4(1.f), pos) * glm::rotate(glm::mat4(1.f), yaw, glm::vec3(0.f, 1.f, 0.f)) *
+         glm::scale(glm::mat4(1.f), scale);
+}
+
+// Append a glTF asset into the solid and shadow meshes. blockRadius < 0 derives a
+// disk from the non-leaf bounds. Leaf cards are scattered on the canopy rim.
+void placeProp(MeshBuild& solid, MeshBuild& shadow, std::vector<pxe::FoliageInstance>& foliage,
+               std::vector<Disk>& blocked, const pxe::GltfAsset& asset, const glm::mat4& world,
+               float blockRadius, bool scatterLeaves) {
+  const glm::vec3 origin = glm::vec3(world[3]);
+  std::vector<pxe::Vertex> leafVerts;
+  float autoR = 0.f;
+
+  auto consume = [&](MeshBuild& dst, bool record) {
+    for (const pxe::GltfNode& node : asset.nodes) {
+      const glm::mat4 m = world * node.transform;
+      const glm::mat3 nm = glm::transpose(glm::inverse(glm::mat3(m)));
+      const bool flip = glm::determinant(glm::mat3(m)) < 0.f;
+      for (const pxe::GltfPrimitive& prim : node.primitives) {
+        const auto base = static_cast<std::uint32_t>(dst.verts.size());
+        for (const pxe::Vertex& src : prim.vertices) {
+          const glm::vec3 p = glm::vec3(m * glm::vec4(src.px, src.py, src.pz, 1.f));
+          glm::vec3 n = nm * glm::vec3(src.nx, src.ny, src.nz);
+          const float nlen = glm::length(n);
+          if (nlen > 1e-8f) n /= nlen;
+          pxe::Vertex v = src;
+          v.px = p.x;
+          v.py = p.y;
+          v.pz = p.z;
+          v.nx = n.x;
+          v.ny = n.y;
+          v.nz = n.z;
+          dst.verts.push_back(v);
+          if (!record) continue;
+          if (src.surface > 3.5f) {
+            leafVerts.push_back(v);
+          } else {
+            const float dx = p.x - origin.x;
+            const float dz = p.z - origin.z;
+            autoR = std::max(autoR, std::sqrt(dx * dx + dz * dz));
+          }
+        }
+        for (std::size_t i = 0; i + 2 < prim.indices.size(); i += 3) {
+          const auto i0 = base + prim.indices[i];
+          const auto i1 = base + prim.indices[i + 1];
+          const auto i2 = base + prim.indices[i + 2];
+          if (!flip) {
+            dst.idx.push_back(i0);
+            dst.idx.push_back(i1);
+            dst.idx.push_back(i2);
+          } else {
+            dst.idx.push_back(i0);
+            dst.idx.push_back(i2);
+            dst.idx.push_back(i1);
+          }
+        }
+      }
+    }
+  };
+
+  consume(solid, true);
+  consume(shadow, false);
+
+  if (blockRadius > 0.f) {
+    blocked.push_back({origin.x, origin.z, blockRadius});
+  } else if (blockRadius < 0.f && autoR > 0.05f) {
+    blocked.push_back({origin.x, origin.z, autoR * 0.8f});
+  }
+
+  if (!scatterLeaves || leafVerts.empty()) return;
+  glm::vec3 center{0.f};
+  for (const pxe::Vertex& v : leafVerts) center += glm::vec3{v.px, v.py, v.pz};
+  center /= static_cast<float>(leafVerts.size());
+
+  struct Cand {
+    float score;
+    pxe::Vertex v;
+  };
+  std::vector<Cand> cands;
+  cands.reserve(leafVerts.size());
+  for (const pxe::Vertex& v : leafVerts) {
+    const glm::vec3 p{v.px, v.py, v.pz};
+    const glm::vec3 n{v.nx, v.ny, v.nz};
+    const glm::vec3 out = p - center;
+    const float reach = glm::length(out);
+    if (reach < 0.15f) continue;
+    const float horiz = std::sqrt(n.x * n.x + n.z * n.z);
+    const float outward = glm::dot(n, out / reach);
+    if (outward < 0.4f || horiz < 0.35f) continue;
+    cands.push_back({reach * horiz, v});
+  }
+  std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.score > b.score; });
+
+  int added = 0;
+  for (const Cand& cand : cands) {
+    bool crowded = false;
+    const int start = std::max(0, static_cast<int>(foliage.size()) - added);
+    for (int k = static_cast<int>(foliage.size()) - 1; k >= start; --k) {
+      const pxe::FoliageInstance& f = foliage[static_cast<std::size_t>(k)];
+      const float dx = f.px - cand.v.px;
+      const float dy = f.py - cand.v.py;
+      const float dz = f.pz - cand.v.pz;
+      if (dx * dx + dy * dy + dz * dz < 0.22f * 0.22f) {
+        crowded = true;
+        break;
+      }
+    }
+    if (crowded) continue;
+    pxe::FoliageInstance leaf{};
+    leaf.px = cand.v.px;
+    leaf.py = cand.v.py;
+    leaf.pz = cand.v.pz;
+    leaf.nx = cand.v.nx;
+    leaf.ny = cand.v.ny;
+    leaf.nz = cand.v.nz;
+    leaf.cr = cand.v.cr;
+    leaf.cg = cand.v.cg;
+    leaf.cb = cand.v.cb;
+    leaf.phase = hash01(added, static_cast<int>(leafVerts.size()), 2) * kTau;
+    leaf.scale = 0.85f + hash01(added, 7, 4) * 0.4f;
+    leaf.kind = 3.f;
+    foliage.push_back(leaf);
+    if (++added >= 8) break;
+  }
+}
 
 }  // namespace
 
 pxe::Scene buildMeadow() {
   Height hm = makeHeight();
 
-  // Cut the ground just under the stair treads so the steps read as a flight
-  // set into the knoll, not a row of floating boxes.
-  const glm::vec3 stairTop{0.15f, 0.f, 0.55f};
-  const glm::vec3 stairBot = stairTop + kFore * 6.6f;
-  const float yTop = hm.sample(stairTop.x, stairTop.z) + 0.02f;
-  const float yBot = hm.sample(stairBot.x, stairBot.z) + 0.04f;
+  // The flight is the Blender array in props/stairs.glb. Local +Z runs downhill,
+  // which is kFore at yaw -45°, so the steps face the default camera.
+  const StairSpec stairs = loadStairs(std::filesystem::path(PXE_ASSET_DIR) / "props/stairs.meta");
+  const float stairYaw = -kPi * 0.25f;
+  const glm::vec3 stairAnchor{0.15f, 0.f, 0.55f};
+  const glm::mat4 stairRot = glm::rotate(glm::mat4(1.f), stairYaw, glm::vec3(0.f, 1.f, 0.f));
+  const glm::vec3 stairAlong = glm::vec3(stairRot * glm::vec4(0.f, 0.f, 1.f, 0.f));
+  const float meshDrop = stairs.rise * static_cast<float>(stairs.count - 1);
+  const glm::vec3 stairEnd =
+      stairAnchor + stairAlong * (stairs.depth * static_cast<float>(stairs.count - 1));
+  const float yHillTop = hm.sample(stairAnchor.x, stairAnchor.z);
+  const float yHillBot = hm.sample(stairEnd.x, stairEnd.z);
+  float yPlace = yHillTop;
+  if (yPlace - meshDrop > yHillBot + 0.02f) yPlace -= (yPlace - meshDrop) - yHillBot;
+  const glm::mat4 stairWorld =
+      glm::translate(glm::mat4(1.f), glm::vec3(stairAnchor.x, yPlace, stairAnchor.z)) * stairRot;
+  const glm::mat4 stairInv = glm::inverse(stairWorld);
+  const float halfW = stairs.width * 0.5f;
+  const float halfD = stairs.depth * 0.5f;
+  const float z0 = -halfD;
+  const float z1 = stairs.depth * static_cast<float>(stairs.count - 1) + halfD;
+
   for (int z = 0; z < Height::N; ++z) {
     for (int x = 0; x < Height::N; ++x) {
       const float wx = Height::kOrigin + static_cast<float>(x);
       const float wz = Height::kOrigin + static_cast<float>(z);
-      const glm::vec2 p{wx, wz};
-      const glm::vec2 a{stairTop.x, stairTop.z};
-      const glm::vec2 b{stairBot.x, stairBot.z};
-      const glm::vec2 ab = b - a;
-      const float len2 = glm::dot(ab, ab);
-      float t = glm::dot(p - a, ab) / len2;
-      if (t < -0.05f || t > 1.05f) continue;
-      const float across = glm::length(p - (a + ab * std::clamp(t, 0.f, 1.f)));
-      if (across > 1.35f) continue;
-      t = std::clamp(t, 0.f, 1.f);
-      const float tread = glm::mix(yTop, yBot, t) - 0.08f;
-      const float edge = smoothFalloff(across, 1.35f);
-      hm.set(x, z, glm::mix(hm.at(x, z), std::min(hm.at(x, z), tread), edge));
+      const glm::vec3 local = glm::vec3(stairInv * glm::vec4(wx, 0.f, wz, 1.f));
+      const float outsideX = std::max(0.f, std::fabs(local.x) - halfW);
+      const float outsideZ = std::max(0.f, std::max(z0 - local.z, local.z - z1));
+      const float outside = std::max(outsideX, outsideZ);
+      if (outside > 0.7f) continue;
+      const int step = std::clamp(static_cast<int>(std::round(local.z / stairs.depth)), 0, stairs.count - 1);
+      // Full cut on the treads, feathered over the last 0.7 m so the bank is not a trench wall.
+      const float blend = outside <= 0.f ? 1.f : smoothFalloff(outside, 0.7f);
+      const float tread = yPlace - static_cast<float>(step) * stairs.rise - 0.06f;
+      const float carved = std::min(hm.at(x, z), tread);
+      hm.set(x, z, glm::mix(hm.at(x, z), carved, blend));
     }
   }
 
@@ -382,11 +440,6 @@ pxe::Scene buildMeadow() {
   std::vector<pxe::FoliageInstance> foliage;
   std::vector<Disk> blocked;
   blocked.push_back({kPond.x, kPond.y, kPondR + 0.3f});
-
-  auto prop = [&](auto&& fn) {
-    fn(solid);
-    fn(shadow);
-  };
 
   for (int z = 0; z < Height::N - 1; ++z) {
     for (int x = 0; x < Height::N - 1; ++x) {
@@ -435,146 +488,77 @@ pxe::Scene buildMeadow() {
   }
 
   auto ground = [&](float x, float z) { return hm.sample(x, z); };
-
-  // Two pillars on the knoll, a short broken one in the foreground.
-  const glm::vec3 pillarA{-0.35f, ground(-0.35f, 0.15f), 0.15f};
-  const glm::vec3 pillarB{1.25f, ground(1.25f, -1.05f), -1.05f};
-  const glm::vec3 pillarC = kFore * 3.4f + glm::vec3{-0.4f, 0.f, 0.2f};
-  prop([&](MeshBuild& m) { addPillar(m, {pillarA.x, pillarA.y, pillarA.z}, 2.55f, 0.62f, 0.10f); });
-  prop([&](MeshBuild& m) { addPillar(m, pillarB, 2.85f, 0.58f, 0.18f); });
-  prop([&](MeshBuild& m) {
-    addPillar(m, {pillarC.x, ground(pillarC.x, pillarC.z), pillarC.z}, 1.15f, 0.55f, 0.22f);
-  });
-  blocked.push_back({pillarA.x, pillarA.z, 0.9f});
-  blocked.push_back({pillarB.x, pillarB.z, 0.9f});
-  blocked.push_back({pillarC.x, pillarC.z, 0.8f});
-
-  constexpr int kSteps = 8;
-  for (int i = 0; i < kSteps; ++i) {
-    const float t = (static_cast<float>(i) + 0.5f) / static_cast<float>(kSteps);
-    const glm::vec3 p = glm::mix(stairTop, stairBot, t);
-    const float y = glm::mix(yTop, yBot, t);
-    const glm::vec3 side = kAcross;
-    const float halfW = 0.72f;
-    const float halfD = 0.40f;
-    prop([&](MeshBuild& m) {
-      m.box(p - side * halfW - kFore * halfD + glm::vec3{0, y - p.y - 0.18f, 0},
-            p + side * halfW + kFore * halfD + glm::vec3{0, y - p.y, 0}, kStep, pxe::kSurfStone);
-    });
-    blocked.push_back({p.x, p.z, 0.95f});
-  }
-
-  auto slab = [&](glm::vec3 c, float sx, float sz, float thick) {
-    const float y = ground(c.x, c.z);
-    prop([&](MeshBuild& m) {
-      m.box({c.x - sx, y, c.z - sz}, {c.x + sx, y + thick, c.z + sz}, kSlab, pxe::kSurfStone);
-    });
-    blocked.push_back({c.x, c.z, std::max(sx, sz) * 0.8f});
+  auto put = [&](const pxe::GltfAsset& asset, glm::vec3 pos, float yaw, glm::vec3 scale, float block,
+                 bool leaves) {
+    placeProp(solid, shadow, foliage, blocked, asset, propXform(pos, yaw, scale), block, leaves);
   };
-  slab({-1.7f, 0.f, -1.35f}, 1.15f, 0.85f, 0.14f);
-  slab({2.3f, 0.f, 0.9f}, 0.9f, 1.25f, 0.12f);
-  slab({-0.2f, 0.f, -2.4f}, 0.7f, 0.55f, 0.16f);
-  slab({3.4f, 0.f, -2.6f}, 1.3f, 0.7f, 0.10f);
-
-  auto rock = [&](float x, float z, float r, int seed) {
-    const glm::vec3 c{x, ground(x, z) + r * 0.42f, z};
-    prop([&](MeshBuild& m) { addFacetRock(m, c, r, kRock, seed, 0.42f); });
-    blocked.push_back({x, z, r * 0.8f});
+  auto putOn = [&](const pxe::GltfAsset& asset, float x, float z, float yaw, float scale, float block,
+                   bool leaves) {
+    put(asset, {x, ground(x, z), z}, yaw, glm::vec3(scale), block, leaves);
   };
-  rock(kPond.x - 1.7f, kPond.y + 1.15f, 0.62f, 21);
-  rock(kPond.x - 1.05f, kPond.y + 1.7f, 0.36f, 22);
-  rock(kPond.x + 1.55f, kPond.y - 0.9f, 0.7f, 23);
-  rock(kPond.x - 0.3f, kPond.y - 1.35f, 0.42f, 25);
-  rock(-3.6f, 3.4f, 0.55f, 26);
-  rock(4.2f, 2.8f, 0.4f, 27);
-  rock(-7.4f, -3.2f, 0.65f, 28);
 
+  const pxe::GltfAsset pillar = loadProp("props/pillar.glb");
+  const pxe::GltfAsset pillarBroken = loadProp("props/pillar_broken.glb");
+  const pxe::GltfAsset stairMesh = loadProp("props/stairs.glb");
+  const pxe::GltfAsset wall = loadProp("props/wall.glb");
+  const pxe::GltfAsset wallLow = loadProp("props/wall_low.glb");
+  const pxe::GltfAsset slab = loadProp("props/slab.glb");
+  const pxe::GltfAsset rockA = loadProp("props/rock_a.glb");
+  const pxe::GltfAsset rockB = loadProp("props/rock_b.glb");
+  const pxe::GltfAsset rockC = loadProp("props/rock_c.glb");
+  const pxe::GltfAsset treeA = loadProp("props/tree_a.glb");
+  const pxe::GltfAsset treeB = loadProp("props/tree_b.glb");
+  const pxe::GltfAsset treeC = loadProp("props/tree_c.glb");
+  const pxe::GltfAsset bush = loadProp("props/bush.glb");
+
+  // Square pillars aligned near the world axes so the 45° camera sees two faces.
+  putOn(pillar, -0.35f, 0.15f, 0.18f, 1.f, 0.75f, false);
+  putOn(pillar, 1.25f, -1.05f, -0.22f, 1.05f, 0.8f, false);
   {
-    const float x = kPond.x + 0.45f;
-    const float z = kPond.y - 0.25f;
-    prop([&](MeshBuild& m) { addFacetRock(m, {x, kWaterY + 0.02f, z}, 0.34f, kRock, 31, 0.35f); });
+    const glm::vec3 broken = kFore * 3.15f + glm::vec3{-0.35f, 0.f, 0.15f};
+    put(pillarBroken, {broken.x, ground(broken.x, broken.z), broken.z}, 0.4f, glm::vec3(0.95f), 0.7f,
+        false);
   }
 
-  auto leaves = [&](glm::vec3 shadeCenter, glm::vec3 lobe, float radius, glm::vec3 color, int seed,
-                    int count) {
-    constexpr float kGolden = 2.39996323f;
-    for (int i = 0; i < count; ++i) {
-      const float y = 1.f - (static_cast<float>(i) + 0.5f) / static_cast<float>(count) * 2.f;
-      const float ring = std::sqrt(std::max(0.f, 1.f - y * y));
-      const float th = static_cast<float>(i) * kGolden + hash01(i, seed, 1);
-      glm::vec3 dir{std::cos(th) * ring, y * 0.92f, std::sin(th) * ring};
-      dir = glm::normalize(dir);
-      const glm::vec3 p = lobe + dir * radius * 0.98f;
-      const glm::vec3 n = glm::normalize(p - shadeCenter);
-      pxe::FoliageInstance leaf{};
-      leaf.px = p.x;
-      leaf.py = p.y;
-      leaf.pz = p.z;
-      leaf.nx = n.x;
-      leaf.ny = n.y;
-      leaf.nz = n.z;
-      leaf.cr = color.r;
-      leaf.cg = color.g;
-      leaf.cb = color.b;
-      leaf.phase = hash01(i, seed, 2) * kTau;
-      leaf.scale = 0.85f + hash01(i, seed, 4) * 0.5f;
-      leaf.kind = 3.f;
-      foliage.push_back(leaf);
-    }
-  };
-
-  auto tree = [&](glm::vec3 base, glm::vec3 lean, float trunkH, float crownR, int seed, int lobes,
-                  bool bush) {
-    const glm::vec3 axis = glm::vec3{lean.x, trunkH, lean.z};
-    const glm::vec3 top = base + axis;
-    if (!bush) {
-      prop([&](MeshBuild& m) {
-        addCylinder(m, base, axis, 0.20f * std::max(crownR / 1.8f, 0.7f), 0.11f, 7, kBark,
-                    pxe::kSurfBark);
-      });
-    }
-    const glm::vec3 crown = top + glm::vec3{lean.x * 0.15f, crownR * 0.55f, lean.z * 0.15f};
-    const glm::vec3 shade = crown;
-    const int subdiv = 2;
-    const float jag = 0.07f;
-    prop([&](MeshBuild& m) {
-      addCanopy(m, crown, crownR, shade, kLeaf, seed, jag, subdiv);
-      if (lobes > 1) {
-        const glm::vec3 o{crownR * 0.62f, crownR * 0.05f, crownR * 0.18f};
-        addCanopy(m, crown + o, crownR * 0.62f, shade, kLeaf, seed + 5, jag, 1);
-      }
-      if (lobes > 2) {
-        const glm::vec3 o{-crownR * 0.48f, -crownR * 0.02f, -crownR * 0.5f};
-        addCanopy(m, crown + o, crownR * 0.55f, shade, kLeafDeep, seed + 9, jag, 1);
-      }
-    });
-    leaves(shade, crown, crownR, kLeaf, seed, bush ? 6 : 10);
-    blocked.push_back({base.x, base.z, std::max(0.6f, crownR * 0.45f)});
-  };
-
-  // Hero tree leaning over the pond. The canopy is the shadow caster.
-  {
-    const float x = 3.55f;
-    const float z = -2.15f;
-    const glm::vec3 base{x, ground(x, z), z};
-    tree(base, {0.55f, 0.f, -0.7f}, 2.45f, 1.85f, 3, 3, false);
+  placeProp(solid, shadow, foliage, blocked, stairMesh, stairWorld, 0.f, false);
+  for (int i = 0; i < stairs.count; ++i) {
+    const glm::vec3 at = glm::vec3(stairWorld * glm::vec4(0.f, 0.f, stairs.depth * static_cast<float>(i), 1.f));
+    blocked.push_back({at.x, at.z, stairs.width * 0.42f});
   }
-  tree({-8.2f, ground(-8.2f, -2.4f), -2.4f}, {0.1f, 0.f, 0.05f}, 2.2f, 1.65f, 4, 3, false);
-  tree({-3.4f, ground(-3.4f, -8.2f), -8.2f}, {-0.1f, 0.f, 0.15f}, 2.4f, 1.75f, 5, 3, false);
-  tree({9.4f, ground(9.4f, 2.2f), 2.2f}, {0.f, 0.f, 0.1f}, 2.05f, 1.5f, 6, 2, false);
-  tree({7.2f, ground(7.2f, 6.4f), 6.4f}, {0.15f, 0.f, -0.1f}, 1.7f, 1.25f, 7, 2, false);
-  tree({-9.5f, ground(-9.5f, 5.8f), 5.8f}, {0.f, 0.f, 0.f}, 2.3f, 1.8f, 8, 3, false);
 
-  auto bush = [&](float x, float z, float r, int seed) {
-    const glm::vec3 base{x, ground(x, z), z};
-    tree(base, {0.f, 0.f, 0.f}, 0.15f, r, seed, 2, true);
-  };
-  bush(-2.4f, 4.6f, 0.85f, 40);
-  bush(-1.1f, 5.3f, 0.62f, 41);
-  bush(1.8f, 4.2f, 0.7f, 42);
-  bush(7.4f, -2.2f, 0.78f, 43);
-  bush(3.6f, -5.4f, 0.66f, 44);
-  bush(-6.8f, 1.8f, 0.9f, 45);
+  // Long axis of the wall mesh is local +X, which this yaw lays across the view.
+  putOn(wall, -1.15f, -1.55f, stairYaw, 1.f, -1.f, false);
+  putOn(wallLow, 2.55f, 1.15f, stairYaw + 1.2f, 1.f, -1.f, false);
+
+  put(slab, {-1.7f, ground(-1.7f, -1.35f), -1.35f}, 0.4f, {1.35f, 1.f, 1.15f}, -1.f, false);
+  put(slab, {2.35f, ground(2.35f, 0.85f), 0.85f}, -0.3f, {1.05f, 1.f, 1.45f}, -1.f, false);
+  put(slab, {-0.15f, ground(-0.15f, -2.35f), -2.35f}, 0.9f, {0.85f, 1.f, 0.9f}, -1.f, false);
+  put(slab, {3.5f, ground(3.5f, -2.7f), -2.7f}, 0.2f, {1.4f, 1.f, 1.05f}, -1.f, false);
+
+  putOn(rockA, kPond.x - 1.85f, kPond.y + 1.2f, 0.4f, 1.05f, -1.f, false);
+  putOn(rockB, kPond.x - 1.05f, kPond.y + 1.75f, 1.1f, 0.9f, -1.f, false);
+  putOn(rockC, kPond.x + 1.65f, kPond.y - 0.85f, 0.2f, 1.15f, -1.f, false);
+  putOn(rockB, kPond.x - 0.35f, kPond.y - 1.45f, 2.0f, 1.f, -1.f, false);
+  putOn(rockA, -3.6f, 3.4f, 0.8f, 0.85f, -1.f, false);
+  putOn(rockC, 4.4f, 2.6f, 1.4f, 0.7f, -1.f, false);
+  putOn(rockA, -7.2f, -3.1f, 0.3f, 0.95f, -1.f, false);
+  // A stone breaking the water line. The pivot is the bottom of the rock.
+  put(rockB, {kPond.x + 0.35f, kWaterY - 0.22f, kPond.y - 0.15f}, 0.6f, glm::vec3(0.85f), 0.f, false);
+
+  // tree_a is authored leaning; yaw turns that lean toward the pond.
+  putOn(treeA, 3.55f, -2.15f, 0.9f, 1.f, 0.7f, true);
+  putOn(treeB, -8.2f, -2.4f, 0.4f, 1.05f, 0.65f, true);
+  putOn(treeC, -3.4f, -8.2f, 1.2f, 1.f, 0.6f, true);
+  putOn(treeB, 9.4f, 2.2f, -0.5f, 0.95f, 0.6f, true);
+  putOn(treeC, 7.2f, 6.4f, 0.2f, 0.85f, 0.55f, true);
+  putOn(treeA, -9.5f, 5.8f, 2.1f, 1.1f, 0.75f, true);
+
+  putOn(bush, -2.4f, 4.6f, 0.3f, 1.15f, 0.55f, true);
+  putOn(bush, -1.05f, 5.35f, 1.4f, 0.85f, 0.45f, true);
+  putOn(bush, 1.9f, 4.15f, 0.8f, 1.f, 0.5f, true);
+  putOn(bush, 7.4f, -2.2f, 2.2f, 1.05f, 0.5f, true);
+  putOn(bush, 3.6f, -5.4f, 0.5f, 0.9f, 0.45f, true);
+  putOn(bush, -6.8f, 1.8f, 1.7f, 1.2f, 0.55f, true);
 
   auto occupied = [&](float x, float z) {
     for (const Disk& d : blocked) {

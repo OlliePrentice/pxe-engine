@@ -4,12 +4,14 @@ add_library(pxe_engine
   src/mesh.cpp
   src/camera.cpp
   src/renderer.cpp
+  src/gltf.cpp
 )
 
 target_include_directories(pxe_engine
   PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
   PRIVATE ${CMAKE_SOURCE_DIR}/third_party/khronos
+  PRIVATE ${CMAKE_SOURCE_DIR}/third_party/cgltf
 )
 
 target_compile_definitions(pxe_engine

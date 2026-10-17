@@ -15,7 +15,7 @@ That is a deliberate trade against the longer-term options:
 - **Metal, WebGPU/Dawn, bgfx, sokol with a Metal backend** are the right destination on Apple, where GL is deprecated. They also need a shader toolchain (MSL, WGSL, `shaderc`, `sokol-shdc`) on the first build. Dawn in particular is a large dependency. None of that is required to draw this prototype, and it makes a headless Linux check harder.
 - The GL calls live in one place: `engine/src/gl.hpp` (the loader) and `engine/src/renderer.cpp` plus `engine/shaders/`. The camera math, meshes, and the game do not include GL. Replacing that module with Metal or WebGPU later does not require rewriting the snap or the scene.
 
-Khronos `glcorearb.h` is vendored so the build does not depend on a system GL header. GLFW and glm are fetched by CMake.
+Khronos `glcorearb.h` is vendored so the build does not depend on a system GL header. GLFW and glm are fetched by CMake. cgltf 1.14 is vendored as one header, so the glTF props load without a further download.
 
 ## Build
 
@@ -101,11 +101,14 @@ pxe [--width N] [--height N]
 ## Architecture
 
 ```text
-engine/     library, no game content
-  camera    30° pitch, 45° yaw steps, view-plane pixel snap, second-order pan
-  renderer  shadow map, g-buffer, toon light, outlines, water, rays, upscale
-  shaders   GLSL 410
-game/       meadow scene and the GLFW loop
+engine/        library, no game content
+  camera       30° pitch, 45° yaw steps, view-plane pixel snap, second-order pan
+  renderer     shadow map, g-buffer, toon light, outlines, water, rays, upscale
+  gltf         glTF 2.0 meshes, custom normals, material colour, node transforms
+  shaders      GLSL 410
+game/          meadow scene and the GLFW loop
+assets/props   Blender meshes the meadow instances (.glb)
+tools/blender  regenerates those meshes
 ```
 
 **Camera.** Yaw animates with a smoothstep between 45° rests. Pan on the ground plane is smoothed with the second-order system from t3ssel8r's procedural-animation notes (frequency, damping, response), then the eye is snapped. The snap is done in the camera's right/up basis, not in world XZ, so it stays on pixel centres at a 45° yaw. The projection covers a 644×364 target: the 640×360 view plus a two-texel border. The border is real scene, so the upscale can shift by up to half a texel without clamping.
@@ -118,7 +121,56 @@ The shadow camera is snapped to shadow-map texels, and the sun angle is quantize
 
 **Outlines.** A 4-neighbour pass on linear depth and view-space normals. Lit edges — the near side of a silhouette, and the convex lip of a step or pillar — are pushed brighter than the surface, tinted by the sun. Edges in shadow are darkened. Grass, flowers, and leaves opt out. Outline colour is a shade of the local colour, not black.
 
-**Scene.** A large smooth height field, so the frame is meadow rather than a floating slab. Flat colours: two or three greens, grey-taupe stone, beige steps, light-blue water. The ruin is a pair of pillars, a flight of steps, and a few slabs. Trees are displaced icospheres whose normals come from the smooth shell, with a handful of leaf cards on the rim. Grass is a sparse scatter of short tufts. The pond is a clear blue plane with a 1-pixel white shore where it meets the bank. Wind moves the canopy and the tufts. Static surfaces do not change while the camera pans by less than a pixel.
+**Scene.** A large smooth height field, so the frame is meadow rather than a floating slab. Flat colours: two or three greens, grey-taupe stone, beige steps, light-blue water. The ruin, rocks, and trees are glTF props authored in Blender (see below): chunky displaced rocks, an arrayed stair flight, and canopies whose normals were transferred from a smooth enclosing sphere so each crown shades as one blob. A handful of leaf cards sit on the rim. Grass is a sparse scatter of short tufts. The pond is a clear blue plane with a 1-pixel white shore where it meets the bank. Wind moves the canopy and the tufts. Static surfaces do not change while the camera pans by less than a pixel.
+
+## Blender props
+
+The meadow does not build pillars, rocks, or trees in code. Those meshes live in `assets/props/` as glTF binary (`.glb`). `game/src/scene.cpp` loads them and places them on the height field. The same vertices go to the colour pass and the shadow map, so a canopy casts the shadow you see.
+
+Regenerate the set (Blender 4.0 or newer, tested on 4.0.2):
+
+```bash
+blender --background --python tools/blender/generate_props.py
+```
+
+On macOS the binary is usually inside the app:
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender --background --python tools/blender/generate_props.py
+```
+
+The script writes `assets/props/*.glb` and `assets/props/stairs.meta` (step count, width, depth, rise, thickness). The stair cut in the height field reads that file, so the ground stays tucked under the treads. Details of the modifiers are in `tools/blender/README.md`.
+
+### Add your own model
+
+1. Model in Blender with metric units and unit scale 1. One Blender metre is one world unit. Blender's Z is up; the exporter turns that into glTF Y-up, which is the engine's up axis.
+2. Put the object's origin at the base, on the ground, so the meadow can drop it onto the height field. Apply scale before export.
+3. One flat material per colour. Principled BSDF, metallic 0, roughness 1, no image textures. Name the material so the engine knows what it is:
+
+   | Name contains | Treated as |
+   |---|---|
+   | `Leaf`, `Canopy`, `Bush`, `Foliage` | Canopy. Sways, lit from the smooth normal, no outline, no shadow-map sample |
+   | `Bark`, `Trunk`, `Wood` | Trunk |
+   | `Dirt`, `Path` | Path |
+   | `Grass`, `Ground`, `Terrain` | Ground |
+   | anything else (`Stone`, `Step`, `Slab`, `Rock`, `Wall`, …) | Stone |
+
+4. The colour you pick in the Base Color swatch is the colour the game draws. Blender stores it as linear, glTF writes that linear value, and the loader converts it back to sRGB because the toon pass has no gamma step. Set the viewport to Standard if you want the Blender view to match the swatch. AgX will not match.
+5. Canopies: join the spheres, then add a Data Transfer modifier from a smooth enclosing mesh (Face Corner Data → Custom Normals, mapping Poly Interpolated Nearest, or the nearest-poly equivalent). Apply it. On Blender 4.0, turn on Auto Smooth at 180° first or the modifier does nothing. Do not join that mesh onto a flat-shaded trunk afterwards; that clears the custom normals. Export the trunk and the crown as two objects in one file if they share a pivot.
+6. File → Export → glTF 2.0 (.glb), with:
+   - Format: glTF Binary (`.glb`)
+   - Include: the prop only (selected objects is fine)
+   - Transform: **+Y Up** on
+   - Data → Mesh: Apply Modifiers on, UVs optional, Normals on, Tangents off, Vertex Colors off
+   - Data → Material: Export
+   - Animation, skinning, shape keys, cameras, and lights off
+7. Save the file under `assets/props/`. Instance it in `game/src/scene.cpp` next to the other `putOn` calls:
+
+```cpp
+putOn(loadProp("props/your_prop.glb"), x, z, yawRadians, scale, blockRadius, scatterLeaves);
+```
+
+`yawRadians` is a turn around Y. `blockRadius` keeps grass off the footprint (`0` skips that, a negative value uses the mesh bounds). `scatterLeaves` adds a few leaf cards on canopy vertices. Rebuild with the same CMake commands as before; the asset directory is compiled in, so the working directory does not matter.
 
 ## What this prototype does not do
 
@@ -127,8 +179,8 @@ Verified here on Linux with llvmpipe, including the snap self-test. Not launched
 - God rays are a short march through the sun shadow map with hard steps. They are not the light-aligned plane projection from the reference. Clear weather, the default, draws none. The haze preset keeps them very light.
 - Rain is a grade plus 1-pixel streaks and flecks, not the full set of splashes, mist, and lightning.
 - No reflection probe, refraction wiggle, or quantised point lights. The day/night cycle is a single orbiting light and a palette shift, not a texture swap.
-- Grass placement is a jittered grid, not blue noise. Leaves are analytic blobs, not a drawn sprite sheet.
-- Terrain is generated in code. There is no editor and no marching-squares authoring tool.
+- Grass placement is a jittered grid, not blue noise. The leaf cards on a crown are analytic blobs, not a drawn sprite sheet.
+- Terrain is still generated in code. Props are Blender meshes; there is no in-engine editor and no marching-squares authoring tool.
 - No characters, smear frames, or gameplay.
 
 ## Next steps
@@ -139,4 +191,4 @@ Verified here on Linux with llvmpipe, including the snap self-test. Not launched
 4. Quantised additive point lights on top of the ramp, updated at a low frame rate.
 5. A water reflection probe and a one-pixel horizontal refraction wiggle.
 6. A Metal (or WebGPU) backend behind `renderer.cpp`, now that the snap and the passes are isolated.
-7. An authoring path for the terrace height field, then a character animated on stepped keys.
+7. An authoring path for the terrace height field, then a character animated on stepped keys. Props already load from glTF.
