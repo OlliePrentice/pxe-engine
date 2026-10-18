@@ -26,40 +26,46 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
 
 struct Options {
-  int width = 1280;
-  int height = 720;
-  std::string screenshot;
-  std::string shotsDir;
-  std::string demoFrames;
+  int width = 1920;
+  int height = 1080;
+  std::string capture;
+  std::string windowPng;
   bool selfTest = false;
-  bool demo = false;
   bool vsync = true;
+  bool hideGrass = false;
+  bool magenta = false;
+  bool ndl = false;
+  bool testColours = false;
+  bool noDepth = false;
+  bool stamps = false;
+  bool accents = true;
   float yawDeg = 45.f;
-  int zoom = 3;
-  int weather = 1;
-  float time = -1.f;
+  float slide = 0.f;
+  float minDist = 0.62f;
   bool haveTarget = false;
   glm::vec3 target{0.f};
 };
 
 void printUsage() {
   std::fprintf(stderr,
-               "pxe — 3D pixel-art prototype\n"
+               "pxe — contoured terrain and grass\n"
                "  --width N --height N\n"
-               "  --screenshot path.png     save one frame and exit\n"
-               "  --shots dir               save a small set of views and exit\n"
-               "  --self-test               check the subpixel camera snap\n"
-               "  --demo                    scripted pan and 45° rotation, then exit\n"
-               "  --demo-frames dir         write that demo as a PNG sequence\n"
-               "  --yaw degrees --zoom 0..4 --weather 0|1|2 --time seconds\n"
+               "  --capture path.png       640x360 low-res framebuffer, then exit\n"
+               "  --window-png path.png    integer-upscaled window, then exit\n"
+               "  --yaw degrees            default 45\n"
+               "  --slide metres           move the focus along horizontal forward\n"
                "  --target x,y,z\n"
+               "  --min-dist metres        Poisson spacing (default 0.62)\n"
+               "  --hide-grass --magenta --ndl --test-colours --no-accent\n"
+               "  --stamps --no-depth\n"
+               "  --self-test              snap stability of the low-res image\n"
                "  --no-vsync\n");
 }
 
@@ -88,34 +94,40 @@ Options parseArgs(int argc, char** argv) {
       opt.width = std::atoi(need("--width"));
     } else if (a == "--height") {
       opt.height = std::atoi(need("--height"));
-    } else if (a == "--screenshot") {
-      opt.screenshot = need("--screenshot");
-    } else if (a == "--shots") {
-      opt.shotsDir = need("--shots");
-    } else if (a == "--self-test") {
-      opt.selfTest = true;
-    } else if (a == "--demo") {
-      opt.demo = true;
-      opt.vsync = false;
-    } else if (a == "--demo-frames") {
-      opt.demoFrames = need("--demo-frames");
-      opt.vsync = false;
-    } else if (a == "--no-vsync") {
-      opt.vsync = false;
+    } else if (a == "--capture") {
+      opt.capture = need("--capture");
+    } else if (a == "--window-png") {
+      opt.windowPng = need("--window-png");
     } else if (a == "--yaw") {
       opt.yawDeg = std::atof(need("--yaw"));
-    } else if (a == "--zoom") {
-      opt.zoom = std::atoi(need("--zoom"));
-    } else if (a == "--weather") {
-      opt.weather = std::atoi(need("--weather"));
-    } else if (a == "--time") {
-      opt.time = std::atof(need("--time"));
+    } else if (a == "--slide") {
+      opt.slide = std::atof(need("--slide"));
+    } else if (a == "--min-dist") {
+      opt.minDist = std::atof(need("--min-dist"));
     } else if (a == "--target") {
       if (!parseTarget(need("--target"), opt.target)) {
         std::fprintf(stderr, "bad --target, expected x,y,z\n");
         std::exit(1);
       }
       opt.haveTarget = true;
+    } else if (a == "--hide-grass") {
+      opt.hideGrass = true;
+    } else if (a == "--magenta") {
+      opt.magenta = true;
+    } else if (a == "--ndl") {
+      opt.ndl = true;
+    } else if (a == "--test-colours" || a == "--test-colors") {
+      opt.testColours = true;
+    } else if (a == "--no-accent") {
+      opt.accents = false;
+    } else if (a == "--stamps") {
+      opt.stamps = true;
+    } else if (a == "--no-depth") {
+      opt.noDepth = true;
+    } else if (a == "--self-test") {
+      opt.selfTest = true;
+    } else if (a == "--no-vsync") {
+      opt.vsync = false;
     } else {
       std::fprintf(stderr, "unknown argument %s\n", a.c_str());
       printUsage();
@@ -142,10 +154,9 @@ struct Input {
   float panX = 0.f;
   float panY = 0.f;
   int rotate = 0;
-  int zoom = 0;
-  bool toggleOutline = false;
-  bool cycleDebug = false;
-  bool cycleWeather = false;
+  bool toggleGrass = false;
+  bool toggleMagenta = false;
+  bool toggleNdl = false;
   bool shot = false;
   bool quit = false;
 };
@@ -157,104 +168,98 @@ bool pressed(GLFWwindow* win, int key, bool& latch) {
   return edge;
 }
 
-Input pollInput(GLFWwindow* win, double& wheel) {
+Input pollInput(GLFWwindow* win) {
   Input in;
   auto down = [&](int key) { return glfwGetKey(win, key) == GLFW_PRESS; };
   if (down(GLFW_KEY_A) || down(GLFW_KEY_LEFT)) in.panX -= 1.f;
   if (down(GLFW_KEY_D) || down(GLFW_KEY_RIGHT)) in.panX += 1.f;
   if (down(GLFW_KEY_W) || down(GLFW_KEY_UP)) in.panY += 1.f;
   if (down(GLFW_KEY_S) || down(GLFW_KEY_DOWN)) in.panY -= 1.f;
-  const float speed = (down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT)) ? 9.f : 4.5f;
+  const float speed = (down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT)) ? 14.f : 6.f;
   in.panX *= speed;
   in.panY *= speed;
 
-  static bool q = false, e = false, o = false, f1 = false, v = false, f12 = false;
-  static bool minus = false, plus = false, equal = false, esc = false;
+  static bool q = false, e = false, f1 = false, f2 = false, f3 = false, f4 = false, esc = false;
   if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
   if (pressed(win, GLFW_KEY_E, e)) in.rotate += 1;
-  if (pressed(win, GLFW_KEY_O, o)) in.toggleOutline = true;
-  if (pressed(win, GLFW_KEY_F1, f1)) in.cycleDebug = true;
-  if (pressed(win, GLFW_KEY_V, v)) in.cycleWeather = true;
-  if (pressed(win, GLFW_KEY_F12, f12)) in.shot = true;
-  if (pressed(win, GLFW_KEY_MINUS, minus) || pressed(win, GLFW_KEY_KP_SUBTRACT, minus)) in.zoom -= 1;
-  if (pressed(win, GLFW_KEY_EQUAL, equal) || pressed(win, GLFW_KEY_KP_ADD, plus)) in.zoom += 1;
+  if (pressed(win, GLFW_KEY_F1, f1)) in.toggleNdl = true;
+  if (pressed(win, GLFW_KEY_F2, f2)) in.toggleGrass = true;
+  if (pressed(win, GLFW_KEY_F3, f3)) in.toggleMagenta = true;
+  if (pressed(win, GLFW_KEY_F4, f4)) in.shot = true;
   if (pressed(win, GLFW_KEY_ESCAPE, esc)) in.quit = true;
-
-  in.zoom += static_cast<int>(wheel);
-  wheel = 0.0;
   return in;
-}
-
-const char* debugName(int view) {
-  switch (view) {
-    case 1:
-      return "raw low-res";
-    case 2:
-      return "albedo";
-    case 3:
-      return "normals";
-    case 4:
-      return "depth";
-    default:
-      return "final";
-  }
-}
-
-const char* weatherName(int weather) {
-  switch (weather) {
-    case 0:
-      return "clear";
-    case 2:
-      return "rain";
-    default:
-      return "haze";
-  }
 }
 
 int differingPixels(const std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b) {
   int diff = 0;
   const std::size_t n = std::min(a.size(), b.size());
-  for (std::size_t i = 0; i < n; i += 4) {
+  for (std::size_t i = 0; i + 2 < n; i += 4) {
     if (a[i] != b[i] || a[i + 1] != b[i + 1] || a[i + 2] != b[i + 2]) ++diff;
   }
   return diff;
 }
 
+// Camera moved +dx texels along screen x, so shifted[x] equals base[x+dx].
+int shiftedDiff(const std::vector<std::uint8_t>& base, const std::vector<std::uint8_t>& shifted, int w,
+                int h, int dx) {
+  int diff = 0;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const int bx = x + dx;
+      if (bx < 0 || bx >= w) continue;
+      const std::size_t ib = (static_cast<std::size_t>(y) * w + bx) * 4;
+      const std::size_t is = (static_cast<std::size_t>(y) * w + x) * 4;
+      if (base[ib] != shifted[is] || base[ib + 1] != shifted[is + 1] || base[ib + 2] != shifted[is + 2])
+        ++diff;
+    }
+  }
+  return diff;
+}
+
+pxe::FrameParams makeParams(const Options& opt) {
+  pxe::FrameParams params;
+  params.framebufferW = opt.width;
+  params.framebufferH = opt.height;
+  params.showGrass = !opt.hideGrass;
+  params.magentaGrass = opt.magenta;
+  params.showNdl = opt.ndl;
+  params.testColours = opt.testColours;
+  params.grassDepthTest = !opt.noDepth;
+  params.present = true;
+  return params;
+}
+
 int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& scene) {
   pxe::FrameParams params;
-  params.framebufferW = 640;
-  params.framebufferH = 360;
-  params.outlines = true;
-  params.weather = 1;
-  params.time = 0.4f;
-  params.debugView = 0;
+  params.framebufferW = 320;
+  params.framebufferH = 180;
+  params.present = false;
 
-  auto renderLow = [&]() {
-    const pxe::CameraFrame frame =
-        camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH, pxe::RenderConfig::kViewH);
+  auto grab = [&]() {
+    const pxe::CameraFrame frame = camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH);
     renderer.render(scene, frame, params);
-    return std::pair{frame, renderer.readLowRes()};
+    return std::pair{frame, renderer.readView()};
   };
 
-  auto [frameA, imageA] = renderLow();
-  // Step less than half a texel, and stay inside the current snap cell.
-  float room = 0.49f - frameA.texelError.x;
-  float deltaTexel = (room > 0.08f) ? room * 0.5f : -0.2f;
-  camera.nudgeImmediate(frameA.right * frameA.texelWorld * deltaTexel);
-  auto [frameB, imageB] = renderLow();
+  auto [frameA, imageA] = grab();
+  auto [frameA2, imageA2] = grab();
+  const int repeatDiff = differingPixels(imageA, imageA2);
+
+  camera.nudgeImmediate(frameA.right * frameA.texelWorld * 0.25f);
+  auto [frameB, imageB] = grab();
   const int subpixelDiff = differingPixels(imageA, imageB);
 
-  camera.nudgeImmediate(frameB.right * frameB.texelWorld * 1.05f);
-  auto [frameC, imageC] = renderLow();
-  const int steppedDiff = differingPixels(imageA, imageC);
+  camera.nudgeImmediate(frameB.right * frameB.texelWorld * 1.f);
+  auto [frameC, imageC] = grab();
+  const int panDiff = shiftedDiff(imageA, imageC, pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH, 1);
 
-  const bool errorMoved = glm::distance(frameA.texelError, frameB.texelError) > 0.02f;
-  const bool pass = subpixelDiff == 0 && steppedDiff > 50 && errorMoved;
+  const bool errorMoved = glm::distance(frameA.texelError, frameB.texelError) > 0.05f;
+  const bool pass = repeatDiff == 0 && subpixelDiff == 0 && panDiff == 0 && errorMoved;
+  std::printf("self-test: repeat differing pixels = %d (want 0)\n", repeatDiff);
   std::printf("self-test: subpixel differing pixels = %d (want 0)\n", subpixelDiff);
-  std::printf("self-test: one-texel differing pixels = %d (want > 50)\n", steppedDiff);
-  std::printf("self-test: snap error moved = %s  (%.3f, %.3f) -> (%.3f, %.3f)\n",
-              errorMoved ? "yes" : "no", frameA.texelError.x, frameA.texelError.y,
-              frameB.texelError.x, frameB.texelError.y);
+  std::printf("self-test: one-texel realigned differing pixels = %d (want 0)\n", panDiff);
+  std::printf("self-test: snap error moved = %s  (%.3f, %.3f) -> (%.3f, %.3f)\n", errorMoved ? "yes" : "no",
+              frameA.texelError.x, frameA.texelError.y, frameB.texelError.x, frameB.texelError.y);
   std::printf("self-test: %s\n", pass ? "PASS" : "FAIL");
   return pass ? 0 : 1;
 }
@@ -273,10 +278,10 @@ int main(int argc, char** argv) {
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
   glfwWindowHint(GLFW_SAMPLES, 0);
+  glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_FALSE);
   glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
-  const bool headless =
-      opt.selfTest || !opt.screenshot.empty() || !opt.shotsDir.empty() || !opt.demoFrames.empty();
-  if (headless && !opt.demo) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  const bool headless = opt.selfTest || !opt.capture.empty() || !opt.windowPng.empty();
+  if (headless) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
   GLFWwindow* window = glfwCreateWindow(opt.width, opt.height, "pxe", nullptr, nullptr);
   if (!window) {
@@ -285,188 +290,112 @@ int main(int argc, char** argv) {
     return 1;
   }
   glfwMakeContextCurrent(window);
-  glfwSwapInterval(opt.vsync ? 1 : 0);
-
-  double wheel = 0.0;
-  glfwSetWindowUserPointer(window, &wheel);
-  glfwSetScrollCallback(window, [](GLFWwindow* w, double, double y) {
-    *static_cast<double*>(glfwGetWindowUserPointer(w)) += y;
-  });
-
+  glfwSwapInterval(opt.vsync && !headless ? 1 : 0);
   pxe::loadGl(+[](const char* name) -> void* { return reinterpret_cast<void*>(glfwGetProcAddress(name)); });
 
   int exitCode = 0;
   {
-  pxe::Renderer renderer;
-  try {
-    renderer.init();
-  } catch (const std::exception& ex) {
-    std::fprintf(stderr, "renderer init failed: %s\n", ex.what());
-    exitCode = 1;
-  }
-  if (exitCode != 0) {
-    // Renderer must be destroyed while the GL context is still current.
-  } else {
-
-  pxe::Scene scene = game::buildMeadow();
-  renderer.uploadFoliage(scene.foliage);
-  std::fprintf(stderr, "pxe: foliage instances %zu\n", scene.foliage.size());
-
-  pxe::Camera camera;
-  camera.setTarget(opt.haveTarget ? opt.target : scene.focus);
-  camera.setYawRadians(opt.yawDeg * 3.14159265f / 180.f);
-  camera.setPixelsPerUnitIndex(opt.zoom);
-
-  bool outlines = true;
-  int debugView = 0;
-  int weather = std::clamp(opt.weather, 0, 2);
-  float timeSec = opt.time >= 0.f ? opt.time : 0.f;
-  const bool freezeTime = opt.time >= 0.f;
-
-  auto drawFrame = [&](int fbW, int fbH) {
-    pxe::FrameParams params;
-    params.framebufferW = fbW;
-    params.framebufferH = fbH;
-    params.outlines = outlines;
-    params.debugView = debugView;
-    params.weather = weather;
-    params.time = timeSec;
-    const pxe::CameraFrame frame =
-        camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH, pxe::RenderConfig::kViewH);
-    renderer.render(scene, frame, params);
-    return frame;
-  };
-
-  auto saveWindow = [&](const std::string& path) {
-    int fbW = 0, fbH = 0;
-    glfwGetFramebufferSize(window, &fbW, &fbH);
-    drawFrame(fbW, fbH);
-    const bool ok = writePng(path, fbW, fbH, renderer.readPresented(fbW, fbH));
-    std::fprintf(stderr, "pxe: %s %s\n", ok ? "wrote" : "failed to write", path.c_str());
-    return ok;
-  };
-
-  if (opt.selfTest) {
-    exitCode = selfTest(renderer, camera, scene);
-  } else if (!opt.shotsDir.empty()) {
-    struct Shot {
-      const char* name;
-      float yaw;
-      int zoom;
-      int weather;
-    };
-    const Shot shots[] = {
-        {"sunny_yaw45.png", 45.f, 3, 0}, {"haze_yaw45.png", 45.f, 3, 1},
-        {"haze_yaw90.png", 90.f, 3, 1},  {"haze_yaw0.png", 0.f, 3, 1},
-        {"rain_yaw45.png", 45.f, 3, 2},   {"haze_close.png", 45.f, 4, 1},
-    };
-    bool ok = true;
-    for (const Shot& shot : shots) {
-      camera.setTarget(scene.focus);
-      camera.setYawRadians(shot.yaw * 3.14159265f / 180.f);
-      camera.setPixelsPerUnitIndex(shot.zoom);
-      weather = shot.weather;
-      timeSec = 1.2f;
-      ok = saveWindow(opt.shotsDir + "/" + shot.name) && ok;
+    pxe::Renderer renderer;
+    try {
+      renderer.init();
+    } catch (const std::exception& ex) {
+      std::fprintf(stderr, "renderer init failed: %s\n", ex.what());
+      exitCode = 1;
     }
-    exitCode = ok ? 0 : 1;
-  } else if (!opt.screenshot.empty()) {
-    timeSec = opt.time >= 0.f ? opt.time : 1.2f;
-    exitCode = saveWindow(opt.screenshot) ? 0 : 1;
-  } else if (!opt.demoFrames.empty()) {
-    const float dt = 1.f / 20.f;
-    float demoT = 0.f;
-    bool demoRotated = false;
-    int index = 0;
-    std::filesystem::create_directories(opt.demoFrames);
-    while (demoT < 10.2f) {
-      glm::vec2 pan{0.f};
-      if (demoT > 1.0f && demoT < 4.0f) pan.x = 4.0f;
-      if (demoT > 4.3f && !demoRotated) {
-        camera.rotateSteps(1);
-        demoRotated = true;
-      }
-      if (demoT > 6.4f && demoT < 9.0f) pan.y = 3.4f;
-      camera.setPanVelocity(pan);
-      camera.update(dt);
-      timeSec += dt;
-      demoT += dt;
-      char name[64];
-      std::snprintf(name, sizeof(name), "frame_%04d.png", index++);
-      if (!saveWindow(opt.demoFrames + "/" + name)) {
-        exitCode = 1;
-        break;
-      }
-    }
-    std::fprintf(stderr, "pxe: wrote %d demo frames to %s\n", index, opt.demoFrames.c_str());
-  } else {
+    if (exitCode == 0) {
+      game::BuildOptions build;
+      build.minDist = opt.minDist;
+      build.accents = opt.accents && !opt.stamps;
+      build.stamps = opt.stamps;
+      pxe::Scene scene = game::buildTerrain(build);
+      renderer.upload(scene);
 
-  float demoT = 0.f;
-  bool demoRotated = false;
-  double previous = glfwGetTime();
-  while (!glfwWindowShouldClose(window)) {
-    const double now = glfwGetTime();
-    float dt = static_cast<float>(now - previous);
-    previous = now;
-    dt = std::clamp(dt, 0.f, 0.05f);
-    if (!freezeTime) timeSec += dt;
-
-    glfwPollEvents();
-    Input input = pollInput(window, wheel);
-    if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
-
-    if (opt.demo) {
-      demoT += dt;
-      glm::vec2 pan{0.f};
-      if (demoT > 1.0f && demoT < 4.0f) pan.x = 4.0f;
-      if (demoT > 4.3f && !demoRotated) {
-        camera.rotateSteps(1);
-        demoRotated = true;
+      pxe::Camera camera;
+      camera.setYawRadians(opt.yawDeg * 3.14159265f / 180.f);
+      if (opt.haveTarget) camera.setTarget(opt.target);
+      if (opt.slide != 0.f) {
+        const float yaw = camera.yawRadians();
+        const glm::vec3 flatForward{std::sin(yaw), 0.f, std::cos(yaw)};
+        camera.setTarget(camera.target() + flatForward * opt.slide);
       }
-      if (demoT > 6.4f && demoT < 9.0f) pan.y = 3.4f;
-      camera.setPanVelocity(pan);
-      if (demoT > 10.2f) glfwSetWindowShouldClose(window, GLFW_TRUE);
-    } else {
-      camera.setPanVelocity({input.panX, input.panY});
-      if (input.rotate) camera.rotateSteps(input.rotate);
-      if (input.zoom) camera.zoomSteps(input.zoom);
-      if (input.toggleOutline) outlines = !outlines;
-      if (input.cycleDebug) debugView = (debugView + 1) % 5;
-      if (input.cycleWeather) weather = (weather + 1) % 3;
-      if (input.shot) {
-        const std::string path = "pxe-shot.png";
+
+      auto draw = [&](const pxe::FrameParams& params) {
+        const pxe::CameraFrame frame = camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH);
+        renderer.render(scene, frame, params);
+        return frame;
+      };
+
+      if (opt.selfTest) {
+        exitCode = selfTest(renderer, camera, scene);
+      } else if (headless) {
         int fbW = 0, fbH = 0;
         glfwGetFramebufferSize(window, &fbW, &fbH);
-        // Drawn below; flag handled after the frame.
-        (void)path;
-        (void)fbW;
-        (void)fbH;
+        pxe::FrameParams params = makeParams(opt);
+        params.framebufferW = fbW;
+        params.framebufferH = fbH;
+        const pxe::CameraFrame frame = draw(params);
+        std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
+        bool ok = true;
+        if (!opt.capture.empty()) {
+          ok = writePng(opt.capture, pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH,
+                        renderer.readView()) &&
+               ok;
+          std::fprintf(stderr, "pxe: %s %s\n", ok ? "wrote" : "failed", opt.capture.c_str());
+        }
+        if (!opt.windowPng.empty()) {
+          int fbW = 0, fbH = 0;
+          glfwGetFramebufferSize(window, &fbW, &fbH);
+          const bool wrote = writePng(opt.windowPng, fbW, fbH, renderer.readPresented(fbW, fbH));
+          std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", wrote ? "wrote" : "failed", opt.windowPng.c_str(),
+                       fbW, fbH);
+          ok = wrote && ok;
+        }
+        exitCode = ok ? 0 : 1;
+      } else {
+        bool showGrass = !opt.hideGrass;
+        bool magenta = opt.magenta;
+        bool ndl = opt.ndl;
+        double previous = glfwGetTime();
+        while (!glfwWindowShouldClose(window)) {
+          const double now = glfwGetTime();
+          float dt = static_cast<float>(now - previous);
+          previous = now;
+          dt = std::clamp(dt, 0.f, 0.05f);
+          glfwPollEvents();
+          Input input = pollInput(window);
+          if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
+          if (input.toggleGrass) showGrass = !showGrass;
+          if (input.toggleMagenta) magenta = !magenta;
+          if (input.toggleNdl) ndl = !ndl;
+          camera.setPanVelocity({input.panX, input.panY});
+          if (input.rotate) camera.rotateSteps(input.rotate);
+          camera.update(dt);
+
+          int fbW = 0, fbH = 0;
+          glfwGetFramebufferSize(window, &fbW, &fbH);
+          pxe::FrameParams params = makeParams(opt);
+          params.framebufferW = fbW;
+          params.framebufferH = fbH;
+          params.showGrass = showGrass;
+          params.magentaGrass = magenta;
+          params.showNdl = ndl;
+          const pxe::CameraFrame frame = draw(params);
+          if (input.shot) {
+            const bool ok = writePng("shot.png", pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH,
+                                     renderer.readView());
+            std::fprintf(stderr, "pxe: %s shot.png\n", ok ? "wrote" : "failed");
+          }
+          char title[160];
+          std::snprintf(title, sizeof(title),
+                        "pxe  |  WASD pan   Q/E yaw   F1 N·L %s   F2 grass %s   F3 magenta %s   F4 capture",
+                        ndl ? "on" : "off", showGrass ? "on" : "off", magenta ? "on" : "off");
+          glfwSetWindowTitle(window, title);
+          (void)frame;
+          glfwSwapBuffers(window);
+        }
       }
     }
-
-    camera.update(dt);
-
-    int fbW = 0, fbH = 0;
-    glfwGetFramebufferSize(window, &fbW, &fbH);
-    const pxe::CameraFrame frame = drawFrame(fbW, fbH);
-
-    if (input.shot && !opt.demo) {
-      writePng("pxe-shot.png", fbW, fbH, renderer.readPresented(fbW, fbH));
-      std::fprintf(stderr, "pxe: wrote pxe-shot.png\n");
-    }
-
-    char title[192];
-    std::snprintf(title, sizeof(title),
-                  "pxe  |  WASD pan   Q/E rotate   wheel/+/- zoom   O outlines   F1 %s   V %s   |  %d px/unit",
-                  debugName(debugView), weatherName(weather), frame.pixelsPerUnit);
-    glfwSetWindowTitle(window, title);
-
-    glfwSwapBuffers(window);
   }
-  }
-
-  }  // init succeeded
-  }  // renderer, destroyed before the context
   glfwDestroyWindow(window);
   glfwTerminate();
   return exitCode;

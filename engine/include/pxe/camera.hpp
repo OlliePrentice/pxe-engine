@@ -6,9 +6,9 @@
 
 namespace pxe {
 
-// Outputs of one camera update. The renderer draws from `eye` (already
-// snapped onto the view-aligned texel grid) and the presenter shifts the
-// upscale by `texelError` so the picture still glides at display resolution.
+// One camera update. `eye` is already snapped onto the view-aligned texel
+// grid. `texelError` is how far the desired eye was from that snap, in
+// low-res texels, and the presenter shifts the upscale by it.
 struct CameraFrame {
   glm::mat4 view{1.f};
   glm::mat4 proj{1.f};
@@ -17,57 +17,53 @@ struct CameraFrame {
   glm::vec3 forward{0.f, 0.f, -1.f};
   glm::vec3 right{1.f, 0.f, 0.f};
   glm::vec3 up{0.f, 1.f, 0.f};
-  glm::vec2 texelError{0.f};  // desired minus snapped, in low-res texels, [-0.5, 0.5]
-  float texelWorld = 0.05f;
+  glm::vec2 texelError{0.f};
+  float texelWorld = 1.f / 16.f;
   float orthoHalfW = 1.f;
   float orthoHalfH = 1.f;
   float yawRadians = 0.f;
   float pitchRadians = 0.f;
-  int pixelsPerUnit = 22;
+  float nearPlane = 0.5f;
+  float farPlane = 220.f;
+  int pixelsPerUnit = 16;
 };
 
-// 30° pitched orthographic camera. Yaw rests on 45° steps and animates
-// between them. Translation is filtered with the second-order system from
-// t3ssel8r's procedural-animation notes, then snapped onto the view plane.
+// Orthographic camera pitched 30° down. Yaw rests on 45° steps. Translation
+// is smoothed, then snapped in the camera's right/up basis so a 45° yaw
+// still lands on pixel centres.
 class Camera {
  public:
+  Camera();
+
   void setTarget(glm::vec3 target);
-  // Shift the look-at point with no smoothing. Used by the pixel-snap test.
   void nudgeImmediate(glm::vec3 delta);
   void setYawRadians(float yaw);
-  void setPixelsPerUnitIndex(int index);
 
-  // World-space pan on the ground plane, in units per second along
-  // camera right (x) and camera forward flattened to XZ (y).
-  void setPanVelocity(glm::vec2 groundUnitsPerSec);
-  void rotateSteps(int steps);  // each step is 45 degrees
-  void zoomSteps(int steps);
+  // Pan on the ground plane, metres per second. x is camera right, y is
+  // camera forward flattened onto XZ.
+  void setPanVelocity(glm::vec2 groundMetresPerSec);
+  void rotateSteps(int steps);
 
   void update(float dt);
-
-  CameraFrame frame(int rtW, int rtH, int viewH) const;
+  CameraFrame frame(int rtW, int rtH) const;
 
   glm::vec3 target() const { return smoothPos_; }
   float yawRadians() const { return yaw_; }
-  int pixelsPerUnit() const;
-  int zoomIndex() const { return zoom_; }
 
  private:
-  void recomputeBasis(glm::vec3& forward, glm::vec3& right, glm::vec3& up) const;
+  void basis(float yaw, glm::vec3& forward, glm::vec3& right, glm::vec3& up) const;
 
-  glm::vec3 rawPos_{18.f, 0.f, 16.f};
+  glm::vec3 rawPos_{0.f};
   glm::vec3 rawVel_{0.f};
-  glm::vec3 smoothPos_{18.f, 0.f, 16.f};
+  glm::vec3 smoothPos_{0.f};
   glm::vec3 smoothVel_{0.f};
   glm::vec2 wishPan_{0.f};
 
-  float yaw_ = 0.78539816339f;  // 45 degrees
+  float yaw_ = 0.7853981633974483f;  // 45 degrees, the brief's view
   float yawFrom_ = yaw_;
   float yawTo_ = yaw_;
   float yawT_ = 1.f;
   bool yawAnimating_ = false;
-
-  int zoom_ = 2;  // index into the pixels-per-unit table
 };
 
 }  // namespace pxe
