@@ -21,6 +21,8 @@ uniform float uHorizonRelief;
 uniform float uCloudCover;   // 0 clear, 1 overcast
 uniform vec2 uCloudOffset;   // drift, in cloud-noise units
 uniform float uCloudStrength;  // 0..1, how dark a thick cloud's shadow gets
+uniform float uOvercast;       // 0..1, rain: everything pulled toward shadow
+uniform float uRain;           // 0 dry .. 1 downpour
 
 vec3 bandColour(int surface, int band) {
     return uBand[surface * 3 + band];
@@ -66,8 +68,12 @@ float sunVisible(vec3 wpos, vec3 n) { return sunVisibleSpread(wpos, n, 1.25, 1.0
 
 // Hard, pixel-crisp shadow: in or out. Thresholding the filtered fraction
 // rather than a single tap keeps the edge from crawling as the sun turns.
+// Under rain cloud there is no direct light to cast them, so cast shadows
+// fade as rain sets in: full in a drizzle, lighter as it gets heavier, and
+// gone in a downpour, leaving only each face's own side shading.
 float sunLit(vec3 wpos, vec3 n, float biasScale) {
-    return step(0.5, sunVisibleSpread(wpos, n, 1.25, biasScale));
+    float lit = step(0.5, sunVisibleSpread(wpos, n, 1.25, biasScale));
+    return mix(lit, 1.0, smoothstep(0.15, 0.95, uRain));
 }
 
 // Ridge height around the ring, 0..1, by angle: a few broad hills, with
@@ -97,7 +103,8 @@ float horizonLight(vec3 wpos) {
     vec2 q = p + dir * t;
     float ridge = uHorizon.w + uHorizonRelief * (ridgeProfile(atan(q.y, q.x)) - 0.5);
     float clears = ridge - t * (L.y / lh);  // height at which this point sees the sun
-    return step(clears, wpos.y);
+    // Fades under rain cloud like the cast shadows (see sunLit).
+    return mix(step(clears, wpos.y), 1.0, smoothstep(0.15, 0.95, uRain));
 }
 
 float cloudHash(vec2 p) {
@@ -119,20 +126,24 @@ float cloudNoise(vec2 p) {
 // thick cloud. The layer is fractal noise drifting with the wind, read
 // straight down so it never swings around with the sun. Density is cut into
 // three steps, so a cloud's shadow has a stepped edge that thickens toward
-// the middle instead of one hard, opaque blot.
+// the middle instead of one hard, opaque blot. Rain adds an even overcast.
 float cloudShade(vec3 wpos) {
-    if (uCloudCover <= 0.0 || uCloudStrength <= 0.0) return 0.0;
-    vec2 p = wpos.xz / 26.0 + uCloudOffset;
-    float n = 0.0, amp = 0.55;
-    for (int i = 0; i < 4; ++i) {
-        n += amp * cloudNoise(p);
-        p = p * 2.03 + vec2(17.1, 9.7);
-        amp *= 0.48;
+    float shade = 0.0;
+    if (uCloudCover > 0.0 && uCloudStrength > 0.0) {
+        vec2 p = wpos.xz / 26.0 + uCloudOffset;
+        float n = 0.0, amp = 0.55;
+        for (int i = 0; i < 4; ++i) {
+            n += amp * cloudNoise(p);
+            p = p * 2.03 + vec2(17.1, 9.7);
+            amp *= 0.48;
+        }
+        // The fractal sum mostly lands in 0.3..0.7, so cover maps onto that range.
+        float t = mix(0.70, 0.30, uCloudCover);
+        float step = (n > t + 0.08) ? 1.0 : (n > t + 0.04) ? 0.66 : (n > t) ? 0.33 : 0.0;
+        shade = step * uCloudStrength;
     }
-    // The fractal sum mostly lands in 0.3..0.7, so cover maps onto that range.
-    float t = mix(0.70, 0.30, uCloudCover);
-    float step = (n > t + 0.08) ? 1.0 : (n > t + 0.04) ? 0.66 : (n > t) ? 0.33 : 0.0;
-    return step * uCloudStrength;
+    // Rain clouds over everything: an even overcast on top of the shadows.
+    return 1.0 - (1.0 - shade) * (1.0 - uOvercast);
 }
 
 // A colour under cloud: pulled toward the surface's own shadow colour.

@@ -108,7 +108,20 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, float fps) {
       ImGui::SliderFloat("Cover", &clock.cloudCover, 0.f, 1.f, "%.2f");
       ImGui::SliderFloat("Shadow strength", &clock.cloudStrength, 0.f, 1.f, "%.2f");
       ImGui::SliderFloat("Wind direction", &clock.windDegrees, 0.f, 360.f, "%.0f deg");
-      ImGui::SliderFloat("Drift speed", &clock.cloudSpeed, 0.f, 6.f, "%.1fx");
+      ImGui::SliderFloat("Wind strength", &clock.cloudSpeed, 0.f, 6.f, "%.1fx");
+      ImGui::TextDisabled("Moves the clouds and leans the rain");
+
+      ImGui::SeparatorText("Rain");
+      ImGui::SliderFloat("Severity", &clock.rain, 0.f, 1.f, "%.2f");
+      const struct {
+        const char* label;
+        float rain;
+      } weather[] = {{"None", 0.f}, {"Drizzle", 0.2f}, {"Rain", 0.55f}, {"Downpour", 1.f}};
+      for (int i = 0; i < 4; ++i) {
+        if (i) ImGui::SameLine();
+        if (ImGui::Button(weather[i].label)) clock.rain = weather[i].rain;
+      }
+      ImGui::TextDisabled("R cycles none / drizzle / rain / downpour");
 
       ImGui::SeparatorText("Rendering");
       ImGui::Checkbox("Grass and leaves  (F2)", &view.grass);

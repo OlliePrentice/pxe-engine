@@ -12,9 +12,10 @@ struct WorldClock {
   float hoursPerMinute = 6.f;    // game hours per real minute: 6 -> a day every 4 minutes
   bool paused = false;
   float cloudCover = 0.35f;      // 0 clear, 1 overcast
-  float cloudSpeed = 1.f;        // drift multiplier
+  float cloudSpeed = 1.f;        // wind strength: cloud drift and rain lean
   float cloudStrength = 0.6f;    // 0 no shadow, 1 as dark as a cast shadow
   float windDegrees = 20.f;      // direction the wind blows toward, compass-style
+  float rain = 0.f;              // 0 dry, 0.2 drizzle, 0.55 rain, 1 downpour
   glm::vec2 cloudOffset{0.f};
 
   // Advance by `dt` real seconds.

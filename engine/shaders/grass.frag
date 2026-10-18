@@ -13,7 +13,7 @@ uniform int uMagenta;
 uniform sampler2D uGround;  // terrain colour, copied before grass draws
 
 layout(location = 0) out vec4 oColor;
-layout(location = 1) out vec4 oNormal;  // sprites take no edges
+layout(location = 1) out vec4 oNormal;  // sprites take no edges; a = 1 marks a leaf
 
 float hash(float i) {
     return fract(sin((vSeed * 113.0 + i) * 12.9898) * 43758.5453);
@@ -82,7 +82,9 @@ void main() {
     }
 
     if (hit == 0) discard;
-    oNormal = vec4(0.5, 1.0, 0.5, 0.0);
+    // Grass reads as "no surface" (0); leaves get their own marker (1, i.e.
+    // surface 7) so the rain can splash on tree crowns more than on the lawn.
+    oNormal = vec4(0.5, 1.0, 0.5, vKind > 1.5 ? 1.0 : 0.0);
     if (uMagenta == 1) {
         oColor = vec4(1.0, 0.0, 1.0, 1.0);
         return;

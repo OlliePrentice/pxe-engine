@@ -1,34 +1,52 @@
 #version 410 core
 
-// Pixel-art edge pass over the low-res target, after David Holland's write-up
-// of t3ssel8r's look. Only stone and bark take edges. A pixel on an upward
-// face whose neighbour turns away (a crease) or drops behind (a silhouette)
-// catches a light rim; any other silhouette pixel darkens into an outline.
+// Post pass over the low-res target.
+//
+// Edges, after David Holland's write-up of t3ssel8r's look: only stone and
+// bark take them. A pixel on an upward face whose neighbour turns away (a
+// crease) or drops behind (a silhouette) catches a light rim; any other
+// silhouette pixel darkens into an outline.
+//
+// Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
+// grade, all drawn here from hashes. Splashes are hashed on cells of the
+// surfaces themselves, rebuilt from depth, so they stay put on the world as
+// the camera pans or turns. Streaks sit on the pixel grid in two layers at
+// different depths, each moved across the screen as the camera turns as if
+// it hung that far behind or in front of the focus.
 
 uniform sampler2D uColor;
-uniform sampler2D uNormal;  // xyz normal * 0.5 + 0.5, a = (surface + 1) / 8, 0 for sprites
+uniform sampler2D uNormal;  // xyz normal * 0.5 + 0.5, a = (surface + 1) / 8; 0 grass sprites, 1 leaf sprites
 uniform sampler2D uDepth;
 uniform float uDepthMetres;  // far - near: the ortho depth buffer is linear
 uniform int uEnabled;
 
 const int kSurfStone = 2;
 const int kSurfBark = 3;
+const int kSurfLeaf = 4;
+const int kSurfWater = 5;
+const int kLeafSprite = 7;
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
 uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
 uniform vec3 uInk;
 
+uniform float uRain;        // 0 dry .. 1 downpour
+uniform float uTime;        // seconds
+uniform vec2 uCamTexel;     // camera position in whole low-res texels
+uniform float uRainSlant;   // pixels sideways per pixel of fall; positive leans right
+uniform vec3 uRainColour;   // streaks, splashes and haze, blended with the time of day
+uniform vec3 uEye;          // camera, for rebuilding world positions from depth
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec3 uFwd;
+uniform vec2 uOrthoHalf;    // half the view in metres
+uniform float uNear;
+uniform float uYawTexels;   // camera yaw in radians over the texel size in metres
+
 out vec4 oColor;
 
-void main() {
-    ivec2 p = ivec2(gl_FragCoord.xy);
-    vec3 col = texelFetch(uColor, p, 0).rgb;
-    vec4 np = texelFetch(uNormal, p, 0);
-    int surface = int(np.a * 8.0 + 0.5) - 1;
-    if (uEnabled == 0 || (surface != kSurfStone && surface != kSurfBark)) {
-        oColor = vec4(col, 1.0);
-        return;
-    }
+vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
+    if (uEnabled == 0 || (surface != kSurfStone && surface != kSurfBark)) return col;
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
     float d = texelFetch(uDepth, p, 0).r * uDepthMetres;
 
@@ -46,20 +64,151 @@ void main() {
         vec4 nq4 = texelFetch(uNormal, q, 0);
         vec3 nq = normalize(nq4.xyz * 2.0 - 1.0);
         bool behind = dq - d > kSilhouette;
-        bool crease = !behind && abs(dq - d) < kSilhouette && nq4.a > 0.0 && dot(n, nq) < 0.8;
+        bool meshNeighbour = nq4.a > 0.0 && nq4.a < 0.99;  // not a grass or leaf sprite
+        bool crease = !behind && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < 0.8;
         if (n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
         else if (behind && !diagonal) ink = true;
         // Bark is smooth-shaded except along a few seams marked sharp in
         // Blender; there the normal jumps a little, and one light stroke is
         // drawn on the side that faces the light more.
-        if (surface == kSurfBark && !behind && !diagonal && abs(dq - d) < kSilhouette && nq4.a > 0.0 &&
+        if (surface == kSurfBark && !behind && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour &&
             dot(n, nq) < 0.97 && dot(n, uLight) > dot(nq, uLight)) stroke = true;
     }
     // Bark is painted, not carved: no rims, a faint outline, and its few
     // seam strokes are soft.
     if (surface == kSurfBark) rim = false;
-    if (stroke) col = mix(col, uRim, 0.15);
-    else if (rim) col = mix(col, uRim, 0.4);
-    else if (ink) col = mix(col, uInk, surface == kSurfBark ? 0.15 : 0.35);
-    oColor = vec4(col, 1.0);
+    if (stroke) return mix(col, uRim, 0.15);
+    if (rim) return mix(col, uRim, 0.4);
+    if (ink) return mix(col, uInk, surface == kSurfBark ? 0.15 : 0.35);
+    return col;
+}
+
+vec3 hash3(vec2 c) {
+    vec3 p = fract(vec3(c.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.xxy + p.yzz) * p.zyx);
+}
+
+float valueNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash3(i).x, b = hash3(i + vec2(1, 0)).x, c = hash3(i + vec2(0, 1)).x, d = hash3(i + vec2(1, 1)).x;
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// One layer of streaks, as in the video: streaks do not slide down the
+// screen; each holds still for a moment and then the layer is redrawn
+// somewhere new, `rate` times a second, which gives the rain its stepped,
+// low-frame-rate flicker. The pixel grid is cut into cells, and a cell holds
+// a one-pixel streak, leaning with the wind, with probability `density`.
+// Returns 1 on a streak pixel.
+// The world position under pixel p, and the pixel a world position lands on.
+vec3 worldAt(ivec2 p) {
+    vec2 s = ((vec2(p) + 0.5) / vec2(textureSize(uDepth, 0)) * 2.0 - 1.0) * uOrthoHalf;
+    float d = uNear + texelFetch(uDepth, p, 0).r * uDepthMetres;
+    return uEye + uRight * s.x + uUp * s.y + uFwd * d;
+}
+
+vec2 pixelOf(vec3 wpos) {
+    vec2 s = vec2(dot(wpos - uEye, uRight), dot(wpos - uEye, uUp));
+    return floor((s / uOrthoHalf * 0.5 + 0.5) * vec2(textureSize(uDepth, 0)));
+}
+
+// Splashes on a surface, which is cut into cells a quarter metre square in
+// its own plane (ground-plane cells on tops and sprites, wall-plane cells on
+// sides). A cell holds a splash with probability `chance`, which plays out
+// on its own beat at a point fixed in the cell; the splash's shape is drawn
+// in screen pixels around where that point lands. `big` gives the
+// three-stage splash (a dot, a little crown, two droplets), otherwise a dot
+// then a small pop. Returns true on a splash pixel.
+bool splash(ivec2 p, vec3 wpos, vec3 n, bool top, float chance, float seed, bool big) {
+    const float kCell = 0.25;
+    vec3 a = top ? vec3(1.0, 0.0, 0.0) : normalize(vec3(-n.z, 0.0, n.x) + 1e-5);
+    vec3 b = top ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+    vec2 uv = vec2(dot(wpos, a), dot(wpos, b));
+    vec2 base = floor(uv / kCell);
+    bool hit = false;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x) {
+            vec2 id = base + vec2(x, y);
+            vec3 h = hash3(id + seed);
+            if (h.x >= chance) continue;
+            vec2 c = (id + 0.2 + 0.6 * h.yz) * kCell;
+            vec2 dd = vec2(p) - pixelOf(wpos + a * (c.x - uv.x) + b * (c.y - uv.y));
+            float phase = fract(uTime * (1.4 + h.y) + h.z * 7.0);
+            if (big) {
+                if (phase < 0.05) hit = hit || dd == vec2(0.0) || dd == vec2(0.0, 1.0);
+                else if (phase < 0.11) hit = hit || dd == vec2(0.0) || abs(dd) == vec2(1.0, 1.0) && dd.y > 0.0;
+                else if (phase < 0.17) hit = hit || abs(dd) == vec2(2.0, 2.0) && dd.y > 0.0;
+            } else {
+                if (phase < 0.06) hit = hit || dd == vec2(0.0);
+                else if (phase < 0.13) hit = hit || dd == vec2(0.0) || abs(dd) == vec2(1.0, 1.0) && dd.y > 0.0;
+            }
+        }
+    return hit;
+}
+
+float streaks(vec2 w, float density, float rate, vec2 cell, float len, float seed) {
+    float tick = floor(uTime * rate + seed * 0.37);
+    vec2 q = vec2(floor(w.x + uRainSlant * w.y), w.y);
+    vec2 id = floor(q / cell);
+    vec3 h = hash3(id + seed + tick * vec2(17.3, 41.7));
+    if (h.x > density) return 0.0;
+    vec2 local = q - id * cell;
+    float x0 = floor(h.y * (cell.x - 1.0));
+    float y0 = floor(h.z * (cell.y - len));
+    return (floor(local.x) == x0 && local.y >= y0 && local.y < y0 + len) ? 1.0 : 0.0;
+}
+
+vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
+    if (uRain <= 0.0) return col;
+    vec2 w = vec2(p) + uCamTexel;  // pixel grid anchored to the focus
+
+    // Murky grade: cooler, flatter, darker, with an even haze over it all.
+    float l = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(col, l * vec3(0.86, 0.93, 1.06), 0.45 * uRain) * (1.0 - 0.14 * uRain);
+    col = mix(col, uRainColour * 0.85, 0.1 * uRain);
+
+    // Wet stone and trunks pick up a soft light line along their upper
+    // outlines, a two-pixel haze where they meet what is behind them.
+    vec3 n = normalize(np.xyz * 2.0 - 1.0);
+    bool hard = surface == kSurfStone || surface == kSurfBark;
+    bool crown = surface == kSurfLeaf || surface == kLeafSprite;
+    if (hard) {
+        float d = texelFetch(uDepth, p, 0).r * uDepthMetres;
+        float d1 = texelFetch(uDepth, p + ivec2(0, 1), 0).r * uDepthMetres;
+        float d2 = texelFetch(uDepth, p + ivec2(0, 2), 0).r * uDepthMetres;
+        float haze = (d1 - d > kSilhouette) ? 0.45 : ((d2 - d > kSilhouette) ? 0.2 : 0.0);
+        col = mix(col, uRainColour, haze * uRain);
+    }
+
+    // Splashes: water gets ripples instead; stone and bark an occasional
+    // three-stage splash; crowns and the lawn a light scatter of small ones.
+    if (surface != kSurfWater) {
+        vec3 wpos = worldAt(p);
+        bool top = !hard || n.y > 0.6;
+        float chance = hard ? (top ? 0.35 : 0.12) : (crown ? 0.25 : 0.12);
+        if (splash(p, wpos, n, top, uRain * chance, hard ? 29.0 : 17.0, hard))
+            col = mix(col, uRainColour, hard ? 0.75 : 0.65);
+    }
+
+    // Streaks in two sparse layers, the nearer longer and brighter, each
+    // redrawn on its own beat so they never all jump at once. Kept thin so
+    // the splashes and ripples still read.
+    // The nearer layer hangs 6 m in front of the focus and the farther one
+    // 10 m behind it, so as the camera turns they drift opposite ways.
+    float s = streaks(w - vec2(6.0 * uYawTexels, 0.0), 0.14 * uRain, 11.0, vec2(11.0, 100.0), 30.0, 1.0);
+    s = max(s, 0.7 * streaks(w + vec2(10.0 * uYawTexels, 0.0), 0.1 * uRain, 9.0, vec2(9.0, 80.0), 22.0, 2.0));
+    col = mix(col, uRainColour, 0.55 * s);
+    return col;
+}
+
+void main() {
+    ivec2 p = ivec2(gl_FragCoord.xy);
+    vec3 col = texelFetch(uColor, p, 0).rgb;
+    vec4 np = texelFetch(uNormal, p, 0);
+    int surface = int(np.a * 8.0 + 0.5) - 1;
+    col = edges(p, col, np, surface);
+    oColor = vec4(rain(p, col, np, surface), 1.0);
 }
