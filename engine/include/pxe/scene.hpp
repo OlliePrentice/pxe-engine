@@ -9,14 +9,14 @@
 
 namespace pxe {
 
-// One grass sprite. The whole quad is lit from `root` and `normal`; the
-// fragment shader only tests the atlas alpha.
+// One grass sprite, drawn procedurally in the fragment shader. The whole quad
+// is lit from `root` and `normal`.
 struct GrassInstance {
   float px, py, pz;
   float nx, ny, nz;
-  float sprite;  // 0..2 tuft, 3 claw
-  float flip;    // 0 or 1
-  float accent;  // <0 regular, else starting accent index in [0, 5)
+  float kind;   // 0 clump in the ground colour, 1 tuft in the detail colour
+  float seed;   // [0, 1), picks blade heights and leans
+  float scale;  // blade height multiplier
   float pad;
 };
 
@@ -32,12 +32,6 @@ struct Scene {
   int normalSize = 0;
   float worldMin = -45.f;
   float worldSize = 90.f;
-
-  // R8 atlas, bottom row first (GL). Four sprites in 16px cells.
-  std::vector<std::uint8_t> atlas;
-  int atlasW = 64;
-  int atlasH = 16;
-  float spriteRects[4][4] = {};
 
   glm::vec3 sunDir{0.f, 1.f, 0.f};  // toward the light
   glm::vec3 boundsMin{0.f};

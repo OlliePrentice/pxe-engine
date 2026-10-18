@@ -16,8 +16,19 @@ float sunVisible(vec3 wpos, vec3 n) {
     return texture(uShadowMap, vec3(p.xy, p.z));
 }
 
-vec3 toonShade(vec3 wpos, vec3 n) {
+// 0 shadow, 1 mid, 2 lit.
+int toonBand(vec3 wpos, vec3 n) {
     float ndl = dot(normalize(n), uSunDir);
-    if (ndl <= uTMid || sunVisible(wpos, n) < 0.5) return uColShadow;
-    return (ndl > uTLit) ? uColLit : uColMid;
+    if (ndl <= uTMid || sunVisible(wpos, n) < 0.5) return 0;
+    return (ndl > uTLit) ? 2 : 1;
+}
+
+vec3 bandColour(int band) {
+    if (band == 2) return uColLit;
+    if (band == 1) return uColMid;
+    return uColShadow;
+}
+
+vec3 toonShade(vec3 wpos, vec3 n) {
+    return bandColour(toonBand(wpos, n));
 }

@@ -35,6 +35,7 @@
   M(PFNGLTEXPARAMETERIPROC, glTexParameteri)        \
   M(PFNGLTEXPARAMETERFVPROC, glTexParameterfv)      \
   M(PFNGLTEXIMAGE2DPROC, glTexImage2D)              \
+  M(PFNGLCOPYTEXSUBIMAGE2DPROC, glCopyTexSubImage2D) \
   M(PFNGLBINDTEXTUREPROC, glBindTexture)            \
   M(PFNGLGENTEXTURESPROC, glGenTextures)            \
   M(PFNGLDELETETEXTURESPROC, glDeleteTextures)      \
