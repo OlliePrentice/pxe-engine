@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Procedural meadow props in the style t3ssel8r models in Blender.
 
-Low-poly primitives, flat materials, no textures. Rocks and trunks are
-displaced, voxel-remeshed, and decimated so the facets stay chunky.
-Stairs are one tread with an Array modifier. Tree canopies are joined
+Low-poly primitives, flat materials, no textures. Rocks are displaced,
+voxel-remeshed, and decimated so the facets stay chunky. Stairs are one
+tread with an Array modifier. Pillars and walls are stacked courses with
+chipped corners, a moss cap on its own material, and rubble at the foot.
+Trunks are upright, tapered, with a root flare. Tree canopies are joined
 icospheres whose loop normals are transferred from a smooth enclosing
-sphere, so the whole crown lights as one blob.
+sphere; the engine draws leaf cards on those vertices and hides the mesh.
 
 Run from the repo root:
 
@@ -33,14 +35,16 @@ OUT = os.path.join(ROOT, "assets", "props")
 # Display colours (sRGB). Blender stores the Principled socket in linear,
 # and the glTF exporter writes that linear value as baseColorFactor. The
 # engine converts it back, so these are the colours the meadow draws.
-PILLAR = (0.67, 0.62, 0.54)
-STEP = (0.72, 0.63, 0.48)
-SLAB = (0.60, 0.56, 0.50)
-ROCK = (0.56, 0.53, 0.49)
-BARK = (0.50, 0.37, 0.28)
-LEAF = (0.50, 0.66, 0.27)
-LEAF_DEEP = (0.42, 0.56, 0.22)
-BUSH = (0.44, 0.60, 0.24)
+# Lavender-grey stone. The lighting pass pushes the shadow toward purple.
+PILLAR = (0.62, 0.60, 0.68)
+STEP = (0.62, 0.60, 0.68)
+SLAB = (0.58, 0.56, 0.64)
+ROCK = (0.54, 0.52, 0.60)
+BARK = (0.46, 0.34, 0.26)
+LEAF = (0.46, 0.62, 0.24)
+LEAF_DEEP = (0.38, 0.52, 0.20)
+BUSH = (0.42, 0.58, 0.22)
+MOSS = (0.40, 0.55, 0.28)
 
 # Stair flight in glTF/engine space: origin on the top tread, +Z downhill.
 # Blender is Z-up, so engine +Z is Blender -Y and engine +Y is Blender +Z.
@@ -261,27 +265,61 @@ def chip_corner(obj, drop):
     obj.data.update()
 
 
-def make_pillar(path, shaft, chip):
+def add_pebble(name, loc, radius, mat, squash=0.55):
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=radius, location=loc)
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.scale = (1.15, 0.9, squash)
+    apply_transform(obj)
+    obj.data.materials.append(mat)
+    shade_flat(obj)
+    return obj
+
+
+def make_pillar(path, courses, course, footprint, chip, broken):
+    """Stacked shaft courses, a chipped top, a moss cap, rubble at the foot."""
     fresh()
     stone = material("Stone", PILLAR)
+    moss = material("Moss", MOSS)
+    rock = material("Rock", ROCK)
+    parts = []
     base_h = 0.22
-    cap_h = 0.28
-    base = add_cube("Base", (0.0, 0.0, base_h * 0.5), (1.05, 1.05, base_h), stone)
-    shaft_obj = add_cube(
-        "Shaft",
-        (0.0, 0.0, base_h + shaft * 0.5),
-        (0.72, 0.72, shaft),
-        stone,
-    )
-    cap = add_cube(
-        "Capital",
-        (0.0, 0.0, base_h + shaft + cap_h * 0.5),
-        (0.96, 0.90, cap_h),
-        stone,
-    )
-    chip_corner(cap, chip)
-    obj = join([base, shaft_obj, cap], "Pillar", active_index=0)
+    parts.append(add_cube("Base", (0.0, 0.0, base_h * 0.5), (footprint + 0.30, footprint + 0.24, base_h), stone))
+    z = base_h
+    seam = 0.04
+    for i in range(courses):
+        h = course - seam
+        shift = 0.04 if i % 2 == 0 else -0.025
+        sway = 0.02 if i % 3 == 0 else 0.0
+        block = add_cube(
+            f"Course{i}",
+            (shift, sway, z + h * 0.5),
+            (footprint, footprint * 0.92, h),
+            stone,
+        )
+        top = broken and i >= courses - 2
+        if top or i == courses - 1:
+            chip_corner(block, chip * (1.7 if broken else 1.0))
+        parts.append(block)
+        z += course
+    if not broken:
+        cap_h = 0.24
+        cap = add_cube(
+            "Capital",
+            (0.0, 0.0, z + cap_h * 0.5),
+            (footprint + 0.20, footprint + 0.14, cap_h),
+            stone,
+        )
+        chip_corner(cap, chip * 0.7)
+        parts.append(cap)
+        z += cap_h
+    parts.append(add_cube("MossCap", (0.02, -0.02, z + 0.03), (footprint * 0.78, footprint * 0.72, 0.06), moss))
+    parts.append(add_pebble("RubbleA", (0.46, 0.22, 0.10), 0.16, rock))
+    parts.append(add_pebble("RubbleB", (-0.40, 0.18, 0.08), 0.12, rock, squash=0.48))
+    parts.append(add_pebble("RubbleC", (0.08, -0.48, 0.09), 0.14, rock))
+    obj = join(parts, "Pillar", active_index=0)
     shade_flat(obj)
+    shift_origin_to_base(obj)
     export_objects([obj], path)
 
 
@@ -302,6 +340,14 @@ def make_stairs(path):
     array.constant_offset_displace = (0.0, -STEP_DEPTH, -STEP_RISE)
     apply_modifiers(obj)
     shade_flat(obj)
+    # Knock one corner of the lowest tread. Bounds stay inside the meta box.
+    verts = obj.data.vertices
+    y_min = min(v.co.y for v in verts)
+    for v in verts:
+        if v.co.y < y_min + 0.08 and v.co.x > 0.35 and v.co.z > -0.2:
+            v.co.z -= 0.05
+            v.co.x -= 0.04
+    obj.data.update()
     export_objects([obj], path)
     meta = os.path.join(OUT, "stairs.meta")
     with open(meta, "w", encoding="utf-8") as fh:
@@ -316,12 +362,40 @@ def make_stairs(path):
 
 
 def make_wall(path, blocks):
-    """blocks: (x center, height, length) along Blender X. Thickness is 0.34."""
+    """blocks: (x center, height, length) along Blender X.
+
+    Tall runs are two courses with a seam, a chipped top, and a moss cap.
+    A short run reads as a broken stump. Rubble sits along the foot.
+    """
     fresh()
     stone = material("Stone", PILLAR)
+    moss = material("Moss", MOSS)
+    rock = material("Rock", ROCK)
     parts = []
     for i, (x, height, length) in enumerate(blocks):
-        parts.append(add_cube(f"Block{i}", (x, 0.0, height * 0.5), (length, 0.34, height), stone))
+        if height > 0.5:
+            h1 = height * 0.46
+            h2 = height - h1 - 0.045
+            parts.append(add_cube(f"Low{i}", (x, 0.0, h1 * 0.5), (length, 0.36, h1), stone))
+            shift = 0.045 if i % 2 == 0 else -0.03
+            upper = add_cube(
+                f"High{i}",
+                (x + shift, 0.015, h1 + 0.045 + h2 * 0.5),
+                (length * 0.90, 0.30, h2),
+                stone,
+            )
+            chip_corner(upper, 0.07 + 0.03 * (i % 3))
+            parts.append(upper)
+            parts.append(
+                add_cube(f"Moss{i}", (x, 0.0, height + 0.03), (length * 0.62, 0.22, 0.055), moss)
+            )
+        else:
+            block = add_cube(f"Block{i}", (x, 0.0, height * 0.5), (length, 0.32, height), stone)
+            chip_corner(block, 0.08)
+            parts.append(block)
+            parts.append(add_cube(f"Moss{i}", (x, 0.0, height + 0.025), (length * 0.55, 0.20, 0.04), moss))
+    for i, (rx, ry, rad) in enumerate(((-1.2, 0.30, 0.14), (-0.35, -0.34, 0.11), (0.65, 0.28, 0.13), (1.35, -0.22, 0.10))):
+        parts.append(add_pebble(f"Foot{i}", (rx, ry, rad * 0.4), rad, rock))
     obj = join(parts, "Wall", active_index=0)
     shade_flat(obj)
     shift_origin_to_base(obj)
@@ -449,24 +523,25 @@ def make_tree(path, trunk_h, trunk_r, lobes, lean, leaf_color, name, bush=False)
 
     objects = []
     if not bush:
-        bpy.ops.mesh.primitive_cylinder_add(
-            vertices=8, radius=trunk_r, depth=trunk_h, location=(0.0, 0.0, 0.0)
-        )
+        # Unit cylinder, then a taper and a root flare. No remesh: that eats the flare.
+        bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=1.0, depth=1.0, location=(0.0, 0.0, 0.5))
         trunk = bpy.context.active_object
         trunk.name = "Trunk"
         for v in trunk.data.vertices:
-            v.co.z += trunk_h * 0.5
+            z = max(0.0, min(1.0, v.co.z))
+            taper = 0.42 + 0.58 * (1.0 - z)
+            flare = 1.0
+            if z < 0.22:
+                flare = 1.0 + 1.15 * ((0.22 - z) / 0.22)
+            ang = math.atan2(v.co.y, v.co.x)
+            r = trunk_r * taper * flare * (1.0 + 0.05 * math.sin(ang * 3.0 + trunk_h))
+            horiz = math.hypot(v.co.x, v.co.y) or 1.0
+            v.co.x *= r / horiz
+            v.co.y *= r / horiz
+            v.co.z = z * trunk_h
+        trunk.data.update()
         trunk.data.materials.append(bark)
-        displace_remesh(
-            trunk,
-            strength=trunk_r * 0.55,
-            noise_scale=0.35,
-            voxel=max(0.10, trunk_r * 0.55),
-            ratio=0.55,
-            seed=int(trunk_h * 10),
-        )
-        # Remesh recenters; put the base back on Z = 0 and the origin at the base.
-        seat_on_ground(trunk)
+        shade_flat(trunk)
         shift_origin_to_base(trunk)
         objects.append(trunk)
 
@@ -493,49 +568,112 @@ def make_tree(path, trunk_h, trunk_r, lobes, lean, leaf_color, name, bush=False)
     export_objects(objects, path)
 
 
+def make_rubble(path):
+    fresh()
+    rock = material("Rock", ROCK)
+    moss = material("Moss", MOSS)
+    parts = [
+        add_pebble("A", (0.0, 0.0, 0.12), 0.22, rock, squash=0.5),
+        add_pebble("B", (0.30, 0.06, 0.08), 0.14, rock, squash=0.6),
+        add_pebble("C", (-0.18, 0.20, 0.07), 0.12, rock, squash=0.45),
+        add_pebble("D", (0.06, -0.24, 0.06), 0.10, rock, squash=0.5),
+        add_cube("MossBit", (0.02, 0.02, 0.22), (0.16, 0.12, 0.04), moss),
+    ]
+    obj = join(parts, "Rubble", active_index=0)
+    shade_flat(obj)
+    shift_origin_to_base(obj)
+    export_objects([obj], path)
+
+
+def make_stump(path):
+    fresh()
+    bark = material("Bark", BARK)
+    moss = material("Moss", MOSS)
+    bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=1.0, depth=1.0, location=(0.0, 0.0, 0.5))
+    trunk = bpy.context.active_object
+    trunk.name = "Stump"
+    for v in trunk.data.vertices:
+        z = max(0.0, min(1.0, v.co.z))
+        flare = 1.0 + (0.45 if z < 0.25 else 0.0) * (1.0 - z / 0.25)
+        r = 0.28 * (0.85 + 0.15 * (1.0 - z)) * flare
+        horiz = math.hypot(v.co.x, v.co.y) or 1.0
+        v.co.x *= r / horiz
+        v.co.y *= r / horiz
+        v.co.z = z * 0.46
+    trunk.data.update()
+    trunk.data.materials.append(bark)
+    cap = add_cube("MossCap", (0.0, 0.0, 0.48), (0.36, 0.32, 0.05), moss)
+    obj = join([trunk, cap], "Stump", active_index=0)
+    shade_flat(obj)
+    shift_origin_to_base(obj)
+    export_objects([obj], path)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
-    make_pillar(os.path.join(OUT, "pillar.glb"), shaft=2.35, chip=0.16)
-    make_pillar(os.path.join(OUT, "pillar_broken.glb"), shaft=1.15, chip=0.34)
+    make_pillar(os.path.join(OUT, "pillar.glb"), courses=4, course=0.58, footprint=0.72, chip=0.12, broken=False)
+    make_pillar(os.path.join(OUT, "pillar_broken.glb"), courses=3, course=0.42, footprint=0.68, chip=0.22, broken=True)
     make_stairs(os.path.join(OUT, "stairs.glb"))
+    # Uneven tops and a short stump so the run reads as broken.
     make_wall(
         os.path.join(OUT, "wall.glb"),
-        [(-1.15, 0.72, 0.95), (-0.15, 0.95, 0.90), (0.85, 0.55, 0.80), (1.70, 0.78, 0.70)],
+        [(-1.25, 0.95, 0.85), (-0.20, 0.62, 0.78), (0.85, 0.38, 0.70), (1.75, 0.72, 0.62)],
     )
     make_wall(
         os.path.join(OUT, "wall_low.glb"),
-        [(-0.85, 0.38, 0.80), (0.05, 0.28, 0.70), (0.85, 0.46, 0.75)],
+        [(-0.85, 0.42, 0.72), (0.05, 0.22, 0.58), (0.90, 0.48, 0.66)],
     )
     make_slab(os.path.join(OUT, "slab.glb"))
     make_rock(os.path.join(OUT, "rock_a.glb"), seed=3, radius=0.72, strength=0.28, voxel=0.16, ratio=0.22, squash=0.72)
     make_rock(os.path.join(OUT, "rock_b.glb"), seed=11, radius=0.48, strength=0.22, voxel=0.13, ratio=0.28, squash=0.85)
     make_rock(os.path.join(OUT, "rock_c.glb"), seed=19, radius=0.58, strength=0.30, voxel=0.15, ratio=0.20, squash=1.05)
+    make_rock(os.path.join(OUT, "boulder.glb"), seed=29, radius=0.34, strength=0.16, voxel=0.10, ratio=0.35, squash=0.7)
+    make_rock(os.path.join(OUT, "pebble.glb"), seed=41, radius=0.14, strength=0.06, voxel=0.06, ratio=0.5, squash=0.6)
+    make_rubble(os.path.join(OUT, "rubble.glb"))
+    make_stump(os.path.join(OUT, "stump.glb"))
 
-    # Canopy local positions are Blender Z-up, origin at the trunk base.
+    # Canopy local positions are Blender Z-up, origin at the trunk base. Leans are zero:
+    # the trunk stands on the ground. Cards on the vertices make the foliage.
     make_tree(
         os.path.join(OUT, "tree_a.glb"),
-        trunk_h=2.35,
-        trunk_r=0.22,
-        lobes=[((0.15, 0.05, 3.15), 1.45), ((0.85, -0.15, 3.05), 0.95), ((-0.55, 0.25, 2.85), 0.85)],
-        lean=(0.0, 14.0),
+        trunk_h=2.45,
+        trunk_r=0.30,
+        lobes=[
+            ((0.05, 0.0, 3.25), 1.25),
+            ((0.85, -0.2, 3.05), 0.85),
+            ((-0.7, 0.25, 2.95), 0.8),
+            ((0.15, 0.55, 3.45), 0.7),
+            ((-0.2, -0.45, 2.7), 0.62),
+        ],
+        lean=(0.0, 0.0),
         leaf_color=LEAF,
         name="TreeA",
     )
     make_tree(
         os.path.join(OUT, "tree_b.glb"),
-        trunk_h=2.15,
-        trunk_r=0.20,
-        lobes=[((0.0, 0.0, 2.95), 1.35), ((0.7, 0.15, 2.75), 0.8)],
-        lean=(6.0, 0.0),
+        trunk_h=2.2,
+        trunk_r=0.28,
+        lobes=[
+            ((0.0, 0.05, 2.95), 1.15),
+            ((0.7, 0.2, 2.75), 0.75),
+            ((-0.55, -0.15, 2.65), 0.68),
+            ((0.1, -0.4, 3.2), 0.55),
+        ],
+        lean=(0.0, 0.0),
         leaf_color=LEAF,
         name="TreeB",
     )
     make_tree(
         os.path.join(OUT, "tree_c.glb"),
-        trunk_h=1.85,
-        trunk_r=0.18,
-        lobes=[((-0.1, 0.05, 2.55), 1.15), ((0.55, -0.2, 2.45), 0.75), ((-0.45, 0.2, 2.35), 0.7)],
-        lean=(-4.0, 8.0),
+        trunk_h=1.9,
+        trunk_r=0.24,
+        lobes=[
+            ((-0.05, 0.05, 2.55), 1.0),
+            ((0.55, -0.2, 2.4), 0.65),
+            ((-0.5, 0.2, 2.35), 0.6),
+            ((0.1, 0.35, 2.85), 0.5),
+        ],
+        lean=(0.0, 0.0),
         leaf_color=LEAF_DEEP,
         name="TreeC",
     )
@@ -543,7 +681,12 @@ def main():
         os.path.join(OUT, "bush.glb"),
         trunk_h=0.0,
         trunk_r=0.0,
-        lobes=[((0.0, 0.0, 0.55), 0.62), ((0.38, 0.08, 0.48), 0.42)],
+        lobes=[
+            ((0.0, 0.0, 0.42), 0.48),
+            ((0.32, 0.06, 0.36), 0.32),
+            ((-0.26, 0.14, 0.34), 0.28),
+            ((0.04, -0.28, 0.30), 0.26),
+        ],
         lean=(0.0, 0.0),
         leaf_color=BUSH,
         name="Bush",

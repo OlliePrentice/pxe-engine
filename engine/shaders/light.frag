@@ -67,7 +67,7 @@ void main() {
     litMask = nrm.w;
   } else {
     float sunVis = shadowFactor(uShadow, uLightViewProj, world, n, uLightDir, uNormalBias, uDepthBias);
-    float band = (sunVis < 0.5 || ndl <= 0.02) ? 0.0 : cloud;
+    float band = groundBand(sunVis, ndl, cloud);
     col = shadeBand(albedo, n, uSunColor, uShadowTint, band);
     litMask = band;
   }

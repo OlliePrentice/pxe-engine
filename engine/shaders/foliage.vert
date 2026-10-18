@@ -44,6 +44,7 @@ out float vLinearDepth;
 
 void main() {
   float phase = iParams.x;
+  float sprScale = clamp(iParams.y, 0.55, 1.45);
   float kind = iParams.z;
   float variant = iParams.w;
   vec3 n = normalize(iNormal);
@@ -80,7 +81,10 @@ void main() {
   if (dot(uWindDir, vec2(uCamRight.x, uCamRight.z)) < 0.0) corner.x = 1.0 - corner.x;
 
   vec2 cells = leaf ? vec2(4.0, 6.0) : (flower ? vec2(4.0, 4.0) : vec2(4.0, 6.0));
-  float quadPx = leaf ? 10.0 : (flower ? 8.0 : 12.0);
+  // Grass is 12 native px so a blade can cross a shadow boundary.
+  // Leaves are a jagged cluster; scale jitters the card on the crown.
+  float quadPx = leaf ? 14.0 : (flower ? 8.0 : 12.0);
+  quadPx *= sprScale;
   vUv = (vec2(float(frame), float(row)) + corner) / cells;
 
   vec3 pos;
@@ -112,9 +116,9 @@ void main() {
   } else {
     float sunVis = shadowFactor(uShadow, uLightViewProj, base, n, uLightDir, uNormalBias, uDepthBias);
     float ndl = dot(n, -normalize(uLightDir));
-    float gate = (sunVis < 0.5 || ndl <= 0.02) ? 0.0 : cloud;
-    // A few lit tufts take the mid green, so open lawn is not one flat fill.
-    if (!flower && gate > 0.75 && fract(phase * 13.7) > 0.93) gate = 0.5;
+    // One colour for the whole tuft, taken at the root, on the same bands as
+    // the ground. Inside a band it matches and disappears.
+    float gate = groundBand(sunVis, ndl, cloud);
     vGate = gate;
     vMaterial = 0.5;
   }

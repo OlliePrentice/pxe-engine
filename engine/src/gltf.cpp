@@ -62,7 +62,7 @@ float surfaceForMaterial(const std::string& name) {
     return static_cast<float>(kSurfDirt);
   }
   if (name.find("grass") != std::string::npos || name.find("ground") != std::string::npos ||
-      name.find("terrain") != std::string::npos) {
+      name.find("terrain") != std::string::npos || name.find("moss") != std::string::npos) {
     return static_cast<float>(kSurfGround);
   }
   return static_cast<float>(kSurfStone);

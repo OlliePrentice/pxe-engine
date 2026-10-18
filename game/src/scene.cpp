@@ -32,7 +32,6 @@ constexpr float kTau = 6.28318530718f;
 const glm::vec3 kGrass{0.568f, 0.661f, 0.419f};
 const glm::vec3 kGrassDeep{0.568f, 0.661f, 0.419f};
 const glm::vec3 kGrassLight{0.568f, 0.661f, 0.419f};
-const glm::vec3 kDirt{0.64f, 0.50f, 0.32f};
 const glm::vec3 kBed{0.30f, 0.46f, 0.44f};
 
 // Ground axes of the default 45° camera, so the ruin sits in frame on launch.
@@ -156,11 +155,24 @@ Height makeHeight() {
       y += hill(wx, wz, 26.f, -20.f, 22.f, 2.35f);
       y += hill(wx, wz, -34.f, -28.f, 24.f, 1.55f);
       y += hill(wx, wz, 18.f, 24.f, 16.f, 1.35f);
+      // Extra roll in the default view so the terraces below have several lips.
+      y += hill(wx, wz, 1.5f, 7.5f, 13.f, 1.25f);
+      y += hill(wx, wz, -5.5f, -2.0f, 10.f, -0.85f);
 
       const float pdx = wx - kPond.x;
       const float pdz = wz - kPond.y;
       const float pd = std::sqrt(pdx * pdx + pdz * pdz);
       const float flat = smoothFalloff(pd, kPondR * 1.55f);
+      const float raw = y;
+      // Shelves with a short lip. Flat ground stays one colour; the lip is
+      // the slope that breaks into a light band the grass can fringe.
+      constexpr float kStep = 0.42f;
+      const float base = std::floor(y / kStep) * kStep;
+      const float frac = (y - base) / kStep;
+      const float lip = glm::smoothstep(0.68f, 1.f, frac);
+      y = base + lip * kStep;
+      y = glm::mix(y, raw, flat);
+
       y = glm::mix(y, 0.90f, flat * 0.95f);
       if (pd < kPondR) {
         const float u = pd / kPondR;
@@ -172,23 +184,10 @@ Height makeHeight() {
   return hm;
 }
 
-float distToSegment(glm::vec2 p, glm::vec2 a, glm::vec2 b) {
-  const glm::vec2 ab = b - a;
-  const float len2 = glm::dot(ab, ab);
-  if (len2 < 1e-6f) return glm::length(p - a);
-  float t = glm::dot(p - a, ab) / len2;
-  t = std::clamp(t, 0.f, 1.f);
-  return glm::length(p - (a + ab * t));
-}
-
 glm::vec3 terrainColor(float x, float z, float y) {
   const float pdx = x - kPond.x;
   const float pdz = z - kPond.y;
   if (pdx * pdx + pdz * pdz < kPondR * kPondR && y < kWaterY - 0.02f) return kBed;
-
-  const glm::vec2 pathA = glm::vec2{-1.6f, 2.4f};
-  const glm::vec2 pathB = pathA + glm::vec2{kFore.x, kFore.z} * 9.5f;
-  if (distToSegment({x, z}, pathA, pathB) < 0.72f && y > kWaterY) return kDirt;
 
   // Two or three greens over many units, not a per-cell checker.
   const float n = std::sin(x * 0.028f + 0.4f) + 0.75f * std::cos(z * 0.024f + 1.1f) +
@@ -388,6 +387,26 @@ void placeProp(MeshBuild& solid, MeshBuild& shadow, std::vector<pxe::FoliageInst
       const bool flip = glm::determinant(glm::mat3(m)) < 0.f;
       for (const pxe::GltfPrimitive& prim : node.primitives) {
         const auto base = static_cast<std::uint32_t>(dst.verts.size());
+        const bool canopy = !prim.vertices.empty() && prim.vertices[0].surface > 3.5f;
+        // The crown is leaf cards. The mesh still casts the shadow, but it is
+        // not drawn, so the silhouette is the sprites rather than a cel ball.
+        if (record && canopy) {
+          for (const pxe::Vertex& src : prim.vertices) {
+            const glm::vec3 p = glm::vec3(m * glm::vec4(src.px, src.py, src.pz, 1.f));
+            glm::vec3 n = nm * glm::vec3(src.nx, src.ny, src.nz);
+            const float nlen = glm::length(n);
+            if (nlen > 1e-8f) n /= nlen;
+            pxe::Vertex v = src;
+            v.px = p.x;
+            v.py = p.y;
+            v.pz = p.z;
+            v.nx = n.x;
+            v.ny = n.y;
+            v.nz = n.z;
+            leafVerts.push_back(v);
+          }
+          continue;
+        }
         for (const pxe::Vertex& src : prim.vertices) {
           const glm::vec3 p = glm::vec3(m * glm::vec4(src.px, src.py, src.pz, 1.f));
           glm::vec3 n = nm * glm::vec3(src.nx, src.ny, src.nz);
@@ -439,37 +458,51 @@ void placeProp(MeshBuild& solid, MeshBuild& shadow, std::vector<pxe::FoliageInst
 
   if (!scatterLeaves || leafVerts.empty()) return;
 
-  // One sprite per canopy vertex. Positions are quantised so a split normal
-  // (same point, two wedges) does not stack two cards.
+  // Several cards per canopy vertex, pushed out along the transferred normal
+  // so the crown's outline is leaves. Quantising drops the split-normal duplicate.
   std::unordered_map<std::uint64_t, int> seen;
   seen.reserve(leafVerts.size());
   auto keyOf = [](float x, float y, float z) {
     auto q = [](float v) { return static_cast<std::uint64_t>(static_cast<int>(std::lround(v / 0.02f)) & 0x1FFFFF); };
     return q(x) | (q(y) << 21) | (q(z) << 42);
   };
+  constexpr int kCards = 4;
   for (const pxe::Vertex& v : leafVerts) {
-    const glm::vec3 n{v.nx, v.ny, v.nz};
+    glm::vec3 n{v.nx, v.ny, v.nz};
     if (glm::dot(n, n) < 1e-6f) continue;
+    n = glm::normalize(n);
     const std::uint64_t key = keyOf(v.px, v.py, v.pz);
     if (!seen.insert({key, 1}).second) continue;
     const int qx = static_cast<int>(std::lround(v.px * 50.f));
     const int qy = static_cast<int>(std::lround(v.py * 50.f));
     const int qz = static_cast<int>(std::lround(v.pz * 50.f));
-    pxe::FoliageInstance leaf{};
-    leaf.px = v.px;
-    leaf.py = v.py;
-    leaf.pz = v.pz;
-    leaf.nx = n.x;
-    leaf.ny = n.y;
-    leaf.nz = n.z;
-    leaf.cr = v.cr;
-    leaf.cg = v.cg;
-    leaf.cb = v.cb;
-    leaf.phase = hash01(qx, qz, qy + 3);
-    leaf.scale = 1.f;
-    leaf.kind = 2.f;
-    leaf.pad = hash01(qx, qy, 9) > 0.5f ? 1.f : 0.f;
-    foliage.push_back(leaf);
+    const glm::vec3 axis = std::fabs(n.y) > 0.85f ? glm::vec3{1.f, 0.f, 0.f} : glm::vec3{0.f, 1.f, 0.f};
+    const glm::vec3 side = glm::normalize(glm::cross(n, axis));
+    const glm::vec3 bin = glm::cross(side, n);
+    for (int k = 0; k < kCards; ++k) {
+      const float h1 = hash01(qx + k * 19, qz, qy + 3);
+      const float h2 = hash01(qx, qz + k * 11, qy + 9);
+      const float h3 = hash01(qx + 5, qz + k, qy + 15);
+      glm::vec3 pos{v.px, v.py, v.pz};
+      pos += n * (0.04f + 0.42f * h1);
+      pos += side * (h2 - 0.5f) * 0.18f;
+      pos += bin * (h3 - 0.5f) * 0.14f;
+      pxe::FoliageInstance leaf{};
+      leaf.px = pos.x;
+      leaf.py = pos.y;
+      leaf.pz = pos.z;
+      leaf.nx = n.x;
+      leaf.ny = n.y;
+      leaf.nz = n.z;
+      leaf.cr = v.cr;
+      leaf.cg = v.cg;
+      leaf.cb = v.cb;
+      leaf.phase = hash01(qx + k, qz, qy + 3);
+      leaf.scale = 0.75f + 0.5f * h3;
+      leaf.kind = 2.f;
+      leaf.pad = h2 > 0.5f ? 1.f : 0.f;
+      foliage.push_back(leaf);
+    }
   }
 }
 
@@ -629,8 +662,8 @@ pxe::Scene buildMeadow() {
   // A stone breaking the water line. The pivot is the bottom of the rock.
   put(rockB, {kPond.x + 0.35f, kWaterY - 0.22f, kPond.y - 0.15f}, 0.6f, glm::vec3(0.85f), 0.f, false);
 
-  // tree_a is authored leaning; yaw turns that lean toward the pond.
-  putOn(treeA, 3.55f, -2.15f, 0.9f, 1.f, 0.7f, true);
+  // Trunks are upright. This one used to sit inside the pond rock.
+  putOn(treeA, 5.15f, -0.45f, 0.4f, 1.f, 0.85f, true);
   putOn(treeB, -8.2f, -2.4f, 0.4f, 1.05f, 0.65f, true);
   putOn(treeC, -3.4f, -8.2f, 1.2f, 1.f, 0.6f, true);
   putOn(treeB, 9.4f, 2.2f, -0.5f, 0.95f, 0.6f, true);
@@ -644,6 +677,28 @@ pxe::Scene buildMeadow() {
   putOn(bush, 3.6f, -5.4f, 0.5f, 0.9f, 0.45f, true);
   putOn(bush, -6.8f, 1.8f, 1.7f, 1.2f, 0.55f, true);
 
+  const pxe::GltfAsset rubble = loadProp("props/rubble.glb");
+  const pxe::GltfAsset pebble = loadProp("props/pebble.glb");
+  const pxe::GltfAsset stump = loadProp("props/stump.glb");
+  const pxe::GltfAsset boulder = loadProp("props/boulder.glb");
+
+  // Clutter sits off the trunks and the stair flight.
+  putOn(rubble, -0.15f, -2.45f, 0.4f, 1.f, 0.45f, false);
+  putOn(rubble, 2.15f, -1.85f, 1.2f, 0.85f, 0.4f, false);
+  putOn(rubble, -2.35f, -0.55f, 2.1f, 0.7f, 0.35f, false);
+  putOn(boulder, 3.15f, 1.85f, 0.5f, 1.f, 0.4f, false);
+  putOn(boulder, -4.6f, 1.15f, 1.3f, 0.9f, 0.38f, false);
+  putOn(boulder, 6.4f, 3.6f, 0.2f, 0.75f, 0.32f, false);
+  putOn(pebble, 0.85f, 0.95f, 0.3f, 1.f, 0.12f, false);
+  putOn(pebble, 1.85f, -0.15f, 1.1f, 0.8f, 0.1f, false);
+  putOn(pebble, -1.85f, -2.15f, 2.4f, 1.1f, 0.12f, false);
+  putOn(pebble, 2.65f, 2.55f, 0.6f, 0.9f, 0.1f, false);
+  putOn(pebble, -3.4f, 2.2f, 1.8f, 1.f, 0.1f, false);
+  putOn(pebble, 4.7f, 3.15f, 0.9f, 0.7f, 0.08f, false);
+  putOn(stump, -5.4f, 3.55f, 0.5f, 1.f, 0.35f, false);
+  putOn(stump, 8.2f, -4.6f, 1.4f, 0.9f, 0.32f, false);
+  putOn(stump, -6.2f, -5.4f, 2.2f, 1.05f, 0.34f, false);
+
   auto occupied = [&](float x, float z) {
     for (const Disk& d : blocked) {
       const float dx = x - d.x;
@@ -653,9 +708,9 @@ pxe::Scene buildMeadow() {
     return false;
   };
 
-  // Blue noise once. Spacing is about half a metre, so a band edge breaks into
-  // tufts and the interior of a band stays empty-looking.
-  const std::vector<glm::vec2> grassPts = poissonDisk(0.48f, -40.f, 40.f, -40.f, 40.f, 0x6A09E667u);
+  // Blue noise, tight enough that a 12px tuft overlaps its neighbours.
+  // A shadow edge then reads as a fringe of blades, not a few isolated stalks.
+  const std::vector<glm::vec2> grassPts = poissonDisk(0.115f, -26.f, 26.f, -26.f, 26.f, 0x6A09E667u);
   int grassN = 0;
   int flowerN = 0;
   for (std::size_t i = 0; i < grassPts.size(); ++i) {
@@ -664,13 +719,12 @@ pxe::Scene buildMeadow() {
     if (occupied(wx, wz)) continue;
     const Surf s = sampleSurf(hm, wx, wz);
     if (s.pos.y < kWaterY + 0.04f) continue;
-    if (s.n.y < 0.55f) continue;
+    if (s.n.y < 0.38f) continue;
     const glm::vec3 tag = terrainColor(wx, wz, s.pos.y);
-    if (tag == kDirt || tag == kBed) continue;
+    if (tag == kBed) continue;
 
     const int ix = static_cast<int>(std::lround(wx * 20.f));
     const int iz = static_cast<int>(std::lround(wz * 20.f));
-    const float roll = hash01(ix, iz, 14);
     pxe::FoliageInstance g{};
     g.px = s.pos.x;
     g.py = s.pos.y;
@@ -679,11 +733,16 @@ pxe::Scene buildMeadow() {
     g.ny = s.n.y;
     g.nz = s.n.z;
     g.phase = hash01(ix, iz, 15);
-    g.scale = 1.f;
+    g.scale = 0.88f + 0.22f * hash01(ix, iz, 19);
     g.pad = hash01(ix, iz, 17) > 0.5f ? 1.f : 0.f;
-    if (roll < 0.016f) {
+    // Flowers sit in patches a few metres across, purple X and yellow dots mixed.
+    const int cellX = static_cast<int>(std::floor(wx / 2.6f));
+    const int cellZ = static_cast<int>(std::floor(wz / 2.6f));
+    const bool cluster = hash01(cellX, cellZ, 21) < 0.48f;
+    const bool flower = cluster && hash01(ix, iz, 22) < 0.16f;
+    if (flower) {
       g.kind = 1.f;
-      if (roll < 0.009f) {
+      if (hash01(ix, iz, 23) < 0.55f) {
         // Purple X. Divided by the noon sun so the lit pixel is #ad7dd8.
         g.cr = 0.585f;
         g.cg = 0.438f;

@@ -64,19 +64,19 @@ def build(cell, shapes, shifts, path):
     save_mask(buf, path)
 
 
-# 12x12 cell, y up. Four blades from a shared base. Drawn inside x=1..8
-# so the strongest lean (about +2.5px at the tip) still fits.
+# 12x12 cell, y up. Blades reach 10–11px so a tuft crosses a shadow edge.
+# Drawn inside x=1..9 so the strongest lean still fits.
 GRASS_A = [
-    (4, 0), (3, 1), (3, 2), (2, 3), (2, 4), (2, 5),
-    (5, 0), (5, 1), (4, 2), (4, 3), (4, 4), (3, 5), (3, 6), (3, 7), (3, 8),
-    (6, 0), (6, 1), (6, 2), (7, 3), (7, 4), (7, 5), (7, 6), (8, 7),
-    (7, 0), (8, 1), (8, 2), (9, 3), (9, 4), (9, 5),
+    (4, 0), (3, 1), (3, 2), (2, 3), (2, 4), (2, 5), (1, 6), (1, 7),
+    (5, 0), (5, 1), (4, 2), (4, 3), (4, 4), (3, 5), (3, 6), (3, 7), (3, 8), (2, 9), (2, 10),
+    (6, 0), (6, 1), (6, 2), (7, 3), (7, 4), (7, 5), (7, 6), (8, 7), (8, 8), (8, 9),
+    (7, 0), (8, 1), (8, 2), (9, 3), (9, 4), (9, 5), (9, 6),
 ]
-# Three blades, wider and a little shorter.
+# Three blades, wider, still tall enough to straddle a band.
 GRASS_B = [
-    (4, 0), (3, 1), (3, 2), (2, 3), (2, 4), (1, 5), (1, 6), (1, 7),
-    (5, 0), (5, 1), (5, 2), (6, 3), (6, 4), (6, 5), (7, 6), (7, 7), (7, 8),
-    (6, 0), (7, 1), (7, 2), (8, 3), (8, 4), (9, 5),
+    (4, 0), (3, 1), (3, 2), (2, 3), (2, 4), (1, 5), (1, 6), (1, 7), (1, 8), (1, 9),
+    (5, 0), (5, 1), (5, 2), (6, 3), (6, 4), (6, 5), (7, 6), (7, 7), (7, 8), (7, 9), (6, 10),
+    (6, 0), (7, 1), (7, 2), (8, 3), (8, 4), (9, 5), (9, 6), (9, 7),
 ]
 
 # Frame 2 is the far lean. Frame 3 comes back, so the loop does not pop.
@@ -101,18 +101,34 @@ FLOWER_SHIFT = [
     [0.10, 0.70, 1.25, 0.55],
 ]
 
-# 10x10 cell. Small overlapping clusters, not a filled oval.
+# 14x14 cell. Two or three jagged lobes, not a filled oval. Empty pixels
+# stay empty so overlapping cards read as leaves.
 LEAF_A = [
-    (4, 3), (5, 3), (6, 3),
-    (4, 4), (5, 4),
-    (5, 5), (6, 5),
-    (5, 6),
+    (3, 4), (4, 4), (5, 4),
+    (3, 5), (4, 5), (5, 5), (6, 5),
+    (4, 6), (5, 6), (6, 6), (7, 6),
+    (5, 7), (6, 7), (7, 7),
+    (6, 8), (7, 8), (8, 8),
+    (7, 9), (8, 9),
+    (8, 10),
+    (8, 3), (9, 3), (10, 3),
+    (8, 4), (9, 4), (10, 4), (11, 4),
+    (9, 5), (10, 5), (11, 5),
+    (10, 6), (11, 6),
+    (10, 7),
 ]
 LEAF_B = [
-    (3, 3), (4, 3), (5, 3), (6, 3),
-    (4, 4), (5, 4), (6, 4),
-    (5, 5), (6, 5),
-    (6, 6),
+    (4, 5), (5, 5), (6, 5), (7, 5),
+    (4, 6), (5, 6), (6, 6), (7, 6), (8, 6),
+    (5, 7), (6, 7), (7, 7), (8, 7),
+    (6, 8), (7, 8), (8, 8), (9, 8),
+    (7, 9), (8, 9), (9, 9),
+    (8, 10), (9, 10),
+    (9, 11),
+    (2, 6), (3, 6),
+    (2, 7), (3, 7), (4, 7),
+    (3, 8), (4, 8),
+    (4, 9),
 ]
 LEAF_SHIFT = [
     [0.0, 0.30, 0.60, 0.25],
@@ -124,7 +140,7 @@ LEAF_SHIFT = [
 def main():
     build((12, 12), [GRASS_A, GRASS_B], GRASS_SHIFT, ROOT / "grass.png")
     build((8, 8), [FLOWER_A, FLOWER_B], FLOWER_SHIFT, ROOT / "flower.png")
-    build((10, 10), [LEAF_A, LEAF_B], LEAF_SHIFT, ROOT / "leaf.png")
+    build((14, 14), [LEAF_A, LEAF_B], LEAF_SHIFT, ROOT / "leaf.png")
 
 
 if __name__ == "__main__":

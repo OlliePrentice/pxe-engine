@@ -20,33 +20,27 @@ float valueNoise(vec2 p) {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-// Five octaves. The first sets blobs of roughly 80–220 px; the rest
-// break the edge so it is not one smooth oval.
-float fbm(vec2 p) {
-  float n = 0.0;
-  float a = 0.42;
-  float w = 0.0;
-  for (int i = 0; i < 5; ++i) {
-    n += a * valueNoise(p);
-    w += a;
-    p = p * 2.03 + vec2(1.7, 9.2);
-    a *= 0.62;
-  }
-  return n / w;
+// Two low octaves. The broad one sets islands tens of metres across;
+// the second only wrinkles that contour. No fine speckle.
+float cloudNoise(vec2 p) {
+  float n = valueNoise(p) * 0.72;
+  n += valueNoise(p * 1.9 + vec2(4.2, 2.6)) * 0.28;
+  return n;
 }
 
 // 0 shadow, 0.5 mid, 1 lit.
 // The sample is pushed along the sun, then mixed with a flat-relief
-// sample so a vertical face does not slice the shadow.
+// sample so a vertical face does not slice the shadow. Thresholds sit
+// in the low tail, so a frame holds one or two islands, not a camouflage field.
 float cloudBand(vec3 world, vec3 lightDir, vec2 scroll, float morph) {
   vec3 L = normalize(lightDir);
   vec2 slope = L.xz / max(abs(L.y), 0.22);
   vec2 flatP = world.xz + slope * 0.90;
   vec2 physP = world.xz + slope * world.y;
   vec2 p = mix(flatP, physP, 0.35);
-  float n = fbm(p * 0.26 + vec2(9.0, 0.4) + scroll + vec2(morph, -morph * 0.45));
-  if (n < 0.455) return 0.0;
-  if (n < 0.495) return 0.5;
+  float n = cloudNoise(p * 0.07 + vec2(2.1, 2.1) + scroll + vec2(morph, -morph * 0.45));
+  if (n < 0.303) return 0.0;
+  if (n < 0.321) return 0.5;
   return 1.0;
 }
 
@@ -55,10 +49,12 @@ float cloudBand(vec3 world, vec3 lightDir, vec2 scroll, float morph) {
 vec3 shadeBand(vec3 albedo, vec3 n, vec3 sunColor, vec3 shadowTint, float band) {
   float sat = max(albedo.r, max(albedo.g, albedo.b)) - min(albedo.r, min(albedo.g, albedo.b));
   bool green = albedo.g > albedo.r * 1.02 && albedo.g > albedo.b * 1.15;
-  bool stone = !green && sat < 0.20;
-  vec3 alb = stone ? albedo * vec3(1.08, 1.12, 1.18) : albedo;
-  vec3 tint = green ? shadowTint * vec3(1.056, 1.119, 1.507) : shadowTint;
-  vec3 midMul = green ? vec3(0.779, 0.873, 0.780) : vec3(0.78, 0.80, 0.86);
+  bool stone = !green && sat < 0.22;
+  // Lit stone is lavender-grey. Shadow stone is a darker purple. Grass
+  // keeps the noon hexes: the green branch below is unchanged.
+  vec3 alb = stone ? albedo * vec3(1.06, 1.04, 1.16) : albedo;
+  vec3 tint = green ? shadowTint * vec3(1.056, 1.119, 1.507) : shadowTint * vec3(0.62, 0.48, 0.92);
+  vec3 midMul = green ? vec3(0.779, 0.873, 0.780) : vec3(0.72, 0.66, 0.90);
   vec3 hi = alb * sunColor;
   vec3 mid = alb * sunColor * midMul;
   float amb = clamp(n.y * 0.10 + 0.92, 0.90, 1.0);
@@ -66,6 +62,17 @@ vec3 shadeBand(vec3 albedo, vec3 n, vec3 sunColor, vec3 shadowTint, float band) 
   if (band > 0.75) return hi;
   if (band > 0.25) return mid;
   return lo;
+}
+
+// Ground lighting shared by the terrain and by grass rooted in it.
+// A slope turned away from the sun drops a band even in open cloud.
+// `cloud` and the result are 0, 0.5, or 1.
+float groundBand(float sunVis, float ndl, float cloud) {
+  float slope = 1.0;
+  if (ndl < 0.28) slope = 0.0;
+  else if (ndl < 0.55) slope = 0.5;
+  if (sunVis < 0.5) return 0.0;
+  return min(slope, cloud);
 }
 
 // Manual compare so the vertex and fragment stages share one function.
@@ -92,7 +99,11 @@ vec4 shadeCanopy(vec3 albedo, vec3 n, float ndl, vec3 sunColor, vec3 shadowTint,
   else if (cloud < 0.75) band = 0.5;
   else {
     float w = clamp(ndl * 0.5 + 0.5, 0.0, 0.999);
-    band = w > 0.60 ? 1.0 : (w > 0.36 ? 0.5 : 0.0);
+    // Fourth step: leaves whose normal faces the sky, a step above the lit green.
+    if (w > 0.78 && n.y > 0.42) {
+      return vec4(albedo * sunColor * vec3(1.06, 1.10, 0.98), 1.0);
+    }
+    band = w > 0.56 ? 1.0 : (w > 0.32 ? 0.5 : 0.0);
   }
   float mask = band > 0.75 ? 1.0 : (band > 0.25 ? 0.55 : 0.0);
   return vec4(shadeBand(albedo, n, sunColor, shadowTint, band), mask);
