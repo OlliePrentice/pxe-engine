@@ -103,6 +103,9 @@ void main() {
     float shade = cloudShade(iRoot);
     vCol = clouded(vCol, surface, shade);
     vTip = clouded(vTip, surface, shade);
+    float sunlight = 0.5 * tone * (1.0 - shade);
+    vCol = fireLit(vCol, surface, iRoot, iNormal, sunlight);
+    vTip = fireLit(vTip, surface, iRoot, iNormal, sunlight);
     vFlutter = 0.0;
     if (leaf) {
         // Leaves ride the same gusts as the grass, bobbing a pixel or two,

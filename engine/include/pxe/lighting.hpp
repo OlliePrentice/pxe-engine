@@ -34,6 +34,12 @@ struct Lighting {
   // sun or moon by its strength.
   float flash = 0.f;
   glm::vec3 flashDir{0.f, 1.f, 0.f};
+  // Firelight from the scene's campfire: how strong (0 none; the renderer
+  // adds the flicker) and each surface's colour in full firelight.
+  float fireLight = 0.f;
+  float fireReach = 6.f;  // metres
+  float fireDim = 0.f;    // how far direct sun or moon light drowns it out
+  glm::vec3 fireBand[kSurfCount]{};
   // Horizontal wind direction (unit, world XZ) for the grass sway, and how
   // hard it blows (the drift-speed setting, 1 by default).
   glm::vec2 windDir{1.f, 0.f};

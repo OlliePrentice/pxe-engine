@@ -27,6 +27,12 @@ uniform float uFlash;          // lightning, 0 none .. 1 peak
 uniform vec3 uFlashDir;        // toward the flash
 uniform mat4 uFlashViewProj;
 uniform sampler2DShadow uFlashShadowMap;
+uniform vec3 uFirePos;          // the campfire's light
+uniform float uFireLight;       // 0 none; flickers with the flames
+uniform float uFireReach;       // metres the light carries
+uniform float uFireDim;         // how far direct sun or moon light drowns it out, 0..1
+uniform vec3 uFireBand[kSurfaces];  // each surface's colour in full firelight
+uniform samplerCube uFireShadow;    // distance from the fire to the nearest surface, per direction
 
 vec3 bandColour(int surface, int band) {
     return uBand[surface * 3 + band];
@@ -158,6 +164,34 @@ float cloudShade(vec3 wpos) {
     }
     // Rain clouds over everything: an even overcast on top of the shadows.
     return 1.0 - (1.0 - shade) * (1.0 - uOvercast);
+}
+
+// Whether the fire sees this point, from its cube of distances: a hard
+// shadow, so pillars, stones and logs throw crisp shadows away from it.
+float fireVisible(vec3 wpos, vec3 n) {
+    vec3 d = wpos + normalize(n) * 0.06 - uFirePos;
+    return length(d) - 0.08 < texture(uFireShadow, d).r ? 1.0 : 0.0;
+}
+
+// Firelight, after the glow round t3ssel8r's fire: faces turned to the fire
+// go a soft orange and faces turned away keep the night's colours, and the
+// light fades smoothly with distance, through pinks into the night, rather
+// than in rings. It casts shadows. A lit surface moves toward its own colour
+// in full firelight. `sunlight` (0 shade .. 1 full sun or moon) is how much
+// direct light the point already has: by day that drowns the fire out, so
+// the glow shows in the shadows round it - of a tree, a pillar, a cloud -
+// and not on the sunlit lawn.
+vec3 fireLit(vec3 col, int surface, vec3 wpos, vec3 n, float sunlight) {
+    if (uFireLight <= 0.0) return col;
+    vec3 d = uFirePos - wpos;
+    float dist = length(d);
+    if (dist > uFireReach) return col;
+    float fall = 1.0 - dist / uFireReach;
+    float ndl = clamp(dot(normalize(n), d / max(dist, 1e-3)) * 0.8 + 0.2, 0.0, 1.0);
+    float k = pow(fall, 1.4) * ndl * uFireLight * (1.0 - uFireDim * clamp(sunlight, 0.0, 1.0));
+    if (k <= 0.003) return col;
+    k *= fireVisible(wpos, n);
+    return mix(col, max(col, uFireBand[surface]), clamp(k, 0.0, 0.85));
 }
 
 // A colour under cloud: pulled toward the surface's own shadow colour.

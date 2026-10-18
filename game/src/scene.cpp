@@ -397,6 +397,119 @@ pxe::Scene buildHills(const BuildOptions& options) {
 }
 
 // ---------------------------------------------------------------------------
+// Campfire geometry, appended to the per-surface vertex lists.
+
+using VertexLists = std::vector<pxe::Vertex> (&)[pxe::kSurfCount];
+using IndexLists = std::vector<std::uint32_t> (&)[pxe::kSurfCount];
+
+// A flat quad a-b-c-d with normal n, wound to face along n so back-face
+// culling keeps it.
+void addQuad(VertexLists verts, IndexLists indices, int surface, glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d,
+             glm::vec3 n) {
+  auto& v = verts[surface];
+  auto& idx = indices[surface];
+  if (glm::dot(glm::cross(b - a, c - a), n) < 0.f) std::swap(b, d);
+  const auto base = static_cast<std::uint32_t>(v.size());
+  const float s = static_cast<float>(surface);
+  for (const glm::vec3& p : {a, b, c, d}) v.push_back({p.x, p.y, p.z, n.x, n.y, n.z, s});
+  idx.insert(idx.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+}
+
+// A box with flat faces: centre, half-extents along its own axes.
+void addBox(VertexLists verts, IndexLists indices, int surface, glm::vec3 centre, glm::vec3 half, const glm::vec3 (&axis)[3]) {
+  for (int a = 0; a < 3; ++a)
+    for (float sign : {-1.f, 1.f}) {
+      const glm::vec3 n = axis[a] * sign;
+      const glm::vec3 u = axis[(a + 1) % 3] * half[(a + 1) % 3];
+      const glm::vec3 w = axis[(a + 2) % 3] * half[(a + 2) % 3];
+      const glm::vec3 c = centre + n * half[a];
+      addQuad(verts, indices, surface, c - u - w, c + u - w, c + u + w, c - u + w, n);
+    }
+}
+
+// A log: a six-sided prism from p0 to p1, flat-faced like the trunks.
+void addLog(VertexLists verts, IndexLists indices, glm::vec3 p0, glm::vec3 p1, float radius, float twist) {
+  const glm::vec3 a = glm::normalize(p1 - p0);
+  const glm::vec3 helper = std::fabs(a.y) < 0.9f ? glm::vec3{0.f, 1.f, 0.f} : glm::vec3{1.f, 0.f, 0.f};
+  const glm::vec3 b1 = glm::normalize(glm::cross(a, helper));
+  const glm::vec3 b2 = glm::cross(a, b1);
+  auto dir = [&](float t) { return b1 * std::cos(t) + b2 * std::sin(t); };
+  const int sides = 6;
+  for (int i = 0; i < sides; ++i) {
+    const float t0 = twist + 2.f * kPi * static_cast<float>(i) / sides;
+    const float t1 = twist + 2.f * kPi * static_cast<float>(i + 1) / sides;
+    const glm::vec3 n = dir(0.5f * (t0 + t1));
+    addQuad(verts, indices, pxe::kSurfBark, p0 + dir(t0) * radius, p0 + dir(t1) * radius, p1 + dir(t1) * radius,
+            p1 + dir(t0) * radius, n);
+  }
+  // End caps, as fans of quads round the axis.
+  for (float end : {0.f, 1.f}) {
+    const glm::vec3 c = end > 0.5f ? p1 : p0;
+    const glm::vec3 n = end > 0.5f ? a : -a;
+    for (int i = 0; i < sides; i += 2) {
+      const float t0 = twist + 2.f * kPi * static_cast<float>(i) / sides;
+      const float t1 = twist + 2.f * kPi * static_cast<float>(i + 1) / sides;
+      const float t2 = twist + 2.f * kPi * static_cast<float>(i + 2) / sides;
+      addQuad(verts, indices, pxe::kSurfBark, c, c + dir(t0) * radius, c + dir(t1) * radius, c + dir(t2) * radius, n);
+    }
+  }
+}
+
+// A small campfire on the lawn at (x, z): a scorched dirt patch, a ring of
+// rough stones, and logs leant together in a teepee. Returns where the
+// flames rise from.
+glm::vec3 addCampfire(VertexLists verts, IndexLists indices, const GroundIndex& ground, float x, float z,
+                      std::mt19937& rng) {
+  std::uniform_real_distribution<float> unit(0.f, 1.f);
+  auto heightAt = [&](float px, float pz) {
+    const auto hit = ground.at(px, pz);
+    return hit ? hit->pos.y : 0.f;
+  };
+  const glm::vec3 centre{x, heightAt(x, z), z};
+
+  // Dirt patch: a ragged disc just above the lawn.
+  const int segments = 20;
+  const glm::vec3 up{0.f, 1.f, 0.f};
+  std::vector<glm::vec3> rim;
+  for (int i = 0; i < segments; ++i) {
+    const float t = 2.f * kPi * static_cast<float>(i) / segments;
+    const float r = 0.82f + 0.14f * unit(rng);
+    const float px = x + r * std::cos(t), pz = z + r * std::sin(t);
+    rim.push_back({px, heightAt(px, pz) + 0.02f, pz});
+  }
+  const glm::vec3 mid = centre + glm::vec3{0.f, 0.02f, 0.f};
+  for (int i = 0; i < segments; i += 2)
+    addQuad(verts, indices, pxe::kSurfDirt, mid, rim[static_cast<std::size_t>(i)],
+            rim[static_cast<std::size_t>((i + 1) % segments)], rim[static_cast<std::size_t>((i + 2) % segments)], up);
+
+  // Stones round the edge, each turned to face the middle and tipped a little.
+  const int stones = 9;
+  for (int i = 0; i < stones; ++i) {
+    const float t = 2.f * kPi * (static_cast<float>(i) + 0.3f * (unit(rng) - 0.5f)) / stones;
+    const float r = 0.62f + 0.05f * (unit(rng) - 0.5f);
+    const glm::vec3 half{0.12f + 0.04f * unit(rng), 0.08f + 0.04f * unit(rng), 0.1f + 0.04f * unit(rng)};
+    const float px = x + r * std::cos(t), pz = z + r * std::sin(t);
+    const glm::vec3 out{std::cos(t), 0.f, std::sin(t)};
+    glm::vec3 ax[3];
+    ax[2] = out;
+    ax[1] = glm::normalize(up + 0.25f * glm::vec3{unit(rng) - 0.5f, 0.f, unit(rng) - 0.5f});
+    ax[0] = glm::normalize(glm::cross(ax[1], ax[2]));
+    ax[2] = glm::cross(ax[0], ax[1]);
+    addBox(verts, indices, pxe::kSurfStone, {px, heightAt(px, pz) + half.y - 0.03f, pz}, half, ax);
+  }
+
+  // Logs leant into a teepee over the middle.
+  const int logs = 4;
+  for (int i = 0; i < logs; ++i) {
+    const float t = 2.f * kPi * static_cast<float>(i) / logs + 0.4f + 0.3f * (unit(rng) - 0.5f);
+    const glm::vec3 out{std::cos(t), 0.f, std::sin(t)};
+    const glm::vec3 foot = centre + out * (0.42f + 0.05f * unit(rng)) + glm::vec3{0.f, 0.05f, 0.f};
+    const glm::vec3 top = centre - out * 0.04f + glm::vec3{0.f, 0.48f + 0.06f * unit(rng), 0.f};
+    addLog(verts, indices, foot, top, 0.055f + 0.01f * unit(rng), unit(rng));
+  }
+  return centre + glm::vec3{0.f, 0.08f, 0.f};
+}
+
 // Ruins: the pond-and-pillars scene from tools/blender/build_ruins.py.
 
 pxe::Scene buildRuins(const BuildOptions& options) {
@@ -453,6 +566,12 @@ pxe::Scene buildRuins(const BuildOptions& options) {
       }
     }
   }
+  // The campfire sits on open lawn left of the pond.
+  const GroundIndex ground(std::move(lawn), 1.f);
+  std::mt19937 fireRng(11);
+  const glm::vec2 campfire{-5.f, -6.f};
+  scene.fires.push_back(addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng));
+
   for (int s = 0; s < pxe::kSurfCount; ++s) {
     if (indices[s].empty()) continue;
     auto& target = (s == pxe::kSurfWater) ? scene.water : scene.meshes;
@@ -471,7 +590,11 @@ pxe::Scene buildRuins(const BuildOptions& options) {
 
   std::mt19937 rng(7);
   std::uniform_real_distribution<float> unit(0.f, 1.f);
-  scatterGrass(scene, GroundIndex(std::move(lawn), 1.f), options, patchiness, rng);
+  scatterGrass(scene, ground, options, patchiness, rng);
+  // No grass in the fire pit.
+  std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
+    return glm::length(glm::vec2{g.px, g.pz} - campfire) < 1.05f;
+  });
 
   // Leaves grow in clumps, as in the video: clump centres are scattered over
   // every crown, and leaves gather around them with gaps between where the

@@ -49,6 +49,9 @@ struct Scene {
   glm::vec3 waterMin{0.f};
   glm::vec3 waterMax{0.f};
   std::vector<GrassInstance> grass;
+  // Campfires: where each fire's flames rise from. The first one also
+  // lights its surroundings.
+  std::vector<glm::vec3> fires;
   Palette palette[kPhaseCount][kSurfCount];
   // Edge-pass colours per phase: light rim on stone tops, dark outline.
   glm::vec3 rim[kPhaseCount]{};

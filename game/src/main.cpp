@@ -50,6 +50,7 @@ struct Options {
   bool stamps = false;
   bool tufts = true;
   bool edges = true;
+  bool fire = true;
   float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
   float clouds = 0.35f;
   float rain = 0.f;
@@ -84,6 +85,7 @@ void printUsage() {
                "  --hour H                 time of day, 0-24 (captures default to 15)\n"
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
+               "  --no-fire                campfire unlit\n"
                "  --no-lightning           no lightning flashes in rain and downpour\n"
                "  --mute                   start with sound off\n"
                "  --audio-wav path.wav     render 20 s of weather sound (--rain, --wind-strength) with two thunderclaps, exit\n"
@@ -172,6 +174,8 @@ Options parseArgs(int argc, char** argv) {
       opt.windStrength = std::atof(need("--wind-strength"));
     } else if (a == "--rain") {
       opt.rain = std::atof(need("--rain"));
+    } else if (a == "--no-fire") {
+      opt.fire = false;
     } else if (a == "--no-lightning") {
       opt.lightning = false;
     } else if (a == "--mute") {
@@ -320,6 +324,20 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
   lighting.overcast = 0.7f * clock.rain;
   lighting.cloudStrength *= std::clamp(1.f - 2.f * clock.rain, 0.f, 1.f);
 
+  // Firelight: a warm pool round the campfire. By day direct sun drowns it
+  // out, so it shows only in the shade round the fire; once the sun is down
+  // it lights everything near and carries farther. Each surface's colour in
+  // full firelight is its midday lit colour pulled toward a golden orange.
+  {
+    const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
+    lighting.fireLight = 1.5f;
+    lighting.fireDim = 0.9f * (1.f - dark);
+    lighting.fireReach = 6.f + 3.5f * dark;
+    const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
+    for (int s = 0; s < pxe::kSurfCount; ++s)
+      lighting.fireBand[s] = glm::mix(noon.palette[s].band[2] * 1.05f, glm::vec3{1.f, 0.52f, 0.34f}, 0.55f);
+  }
+
   // A lightning flash: a second light from the flash's direction with hard
   // shadows, blended over the sun or moon by its strength, and the overcast
   // drops away while it lasts. Lit faces take the midday colours washed out
@@ -360,6 +378,7 @@ pxe::FrameParams makeParams(const Options& opt) {
   params.grassDepthTest = !opt.noDepth;
   params.time = opt.time;
   params.edges = opt.edges;
+  params.fire = opt.fire;
   params.present = true;
   return params;
 }
@@ -608,6 +627,7 @@ int main(int argc, char** argv) {
         game::ViewToggles view;
         view.grass = !opt.hideGrass;
         view.edges = opt.edges;
+        view.fire = opt.fire;
         bool magenta = opt.magenta;
         bool ndl = opt.ndl;
         game::WorldClock clock;
@@ -670,6 +690,7 @@ int main(int argc, char** argv) {
           params.framebufferH = fbH;
           params.showGrass = view.grass;
           params.edges = view.edges;
+          params.fire = view.fire;
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);

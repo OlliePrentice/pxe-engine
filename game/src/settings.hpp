@@ -46,6 +46,7 @@ struct WorldClock {
 struct ViewToggles {
   bool grass = true;
   bool edges = true;
+  bool fire = true;
 };
 
 // Dear ImGui panel toggled with Tab. Drawn at window resolution on top of

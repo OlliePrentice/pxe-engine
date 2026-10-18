@@ -43,6 +43,8 @@ uniform vec3 uFwd;
 uniform vec2 uOrthoHalf;    // half the view in metres
 uniform float uNear;
 uniform float uYawTexels;   // camera yaw in radians over the texel size in metres
+uniform sampler2D uHeat;    // fire: flame heat (r), ember glow (g), smoke (b)
+uniform int uFire;
 
 out vec4 oColor;
 
@@ -207,11 +209,28 @@ vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
     return col;
 }
 
+// Fire, after t3ssel8r's: the summed heat of the particles cut into three
+// flat colours - a pale yellow core inside orange inside a crimson rim -
+// and embers as single red pixels. It glows, so it goes on last, over the
+// rain's grade. Smoke goes under it: a very faint haze in two steps that
+// greys and lightens whatever is behind it.
+vec3 fire(ivec2 p, vec3 col) {
+    vec3 h = texelFetch(uHeat, p, 0).rgb;
+    float smoke = h.b > 0.45 ? 0.2 : (h.b > 0.15 ? 0.11 : 0.0);
+    float l = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(col, vec3(l * 1.2 + 0.05), smoke);
+    if (h.g > 0.0) col = h.g > 0.5 ? vec3(0.94, 0.42, 0.24) : vec3(0.72, 0.18, 0.2);
+    if (h.r > 0.22) col = h.r > 1.45 ? vec3(0.98, 0.89, 0.55) : (h.r > 0.5 ? vec3(0.95, 0.55, 0.3) : vec3(0.78, 0.2, 0.22));
+    return col;
+}
+
 void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec3 col = texelFetch(uColor, p, 0).rgb;
     vec4 np = texelFetch(uNormal, p, 0);
     int surface = int(np.a * 8.0 + 0.5) - 1;
     col = edges(p, col, np, surface);
-    oColor = vec4(rain(p, col, np, surface), 1.0);
+    col = rain(p, col, np, surface);
+    if (uFire == 1) col = fire(p, col);
+    oColor = vec4(col, 1.0);
 }
