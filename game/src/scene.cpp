@@ -1,76 +1,211 @@
 #include "scene.hpp"
 
+#include "pxe/gltf.hpp"
+
 #include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
+#include <optional>
 #include <random>
+#include <stdexcept>
 #include <vector>
 
 namespace game {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kYaw = 0.7853981633974483f;  // 45°, fixed with the sun and the hill
-constexpr float kHalf = 45.f;
-constexpr float kWorld = 90.f;
-constexpr float kGrid = 0.25f;
-constexpr int kNormalRes = 720;  // 0.125 m texels
-constexpr float kNormalEps = 0.05f;
 
-constexpr float kHillH = 6.f;
-constexpr float kHillW = 8.f;
-constexpr float kRipA = 0.6f;
-constexpr float kRipL = 14.f;
-constexpr float kWarpA = 1.2f;
-constexpr float kCross = 0.25f;
-constexpr float kDet = 0.018f;
-
-float height(float x, float z) {
-  const float hill =
-      kHillH / (1.f + std::exp(-(std::sin(kYaw) * x + std::cos(kYaw) * z) / kHillW));
-  const float warp = kWarpA * std::sin(2.f * kPi * (x - 0.5f * z) / 23.f) +
-                     0.5f * kWarpA * std::sin(2.f * kPi * (0.4f * x + z) / 31.f);
-  const float kx = std::sin(kYaw + 0.25f);
-  const float kz = std::cos(kYaw + 0.25f);
-  float rip = kRipA * std::sin(2.f * kPi * (kx * x + kz * z) / kRipL + warp);
-  rip += kCross * kRipA *
-         std::sin(2.f * kPi * (std::sin(kYaw - 0.5f) * x + std::cos(kYaw - 0.5f) * z) /
-                      (kRipL * 0.73f) +
-                  1.3f);
-  const float det = kDet * std::sin(2.f * kPi * (0.9f * x - 0.4f * z) / 2.3f + std::sin(1.7f * z)) *
-                    std::sin(2.f * kPi * (0.3f * x + z) / 1.9f + std::cos(1.3f * x));
-  return hill + rip + det;
+glm::vec3 hex(std::uint32_t rgb) {
+  return glm::vec3{static_cast<float>((rgb >> 16) & 0xff), static_cast<float>((rgb >> 8) & 0xff),
+                   static_cast<float>(rgb & 0xff)} /
+         255.f;
 }
 
-glm::vec3 normalAt(float x, float z) {
-  const float hx = (height(x + kNormalEps, z) - height(x - kNormalEps, z)) / (2.f * kNormalEps);
-  const float hz = (height(x, z + kNormalEps) - height(x, z - kNormalEps)) / (2.f * kNormalEps);
-  return glm::normalize(glm::vec3{-hx, 1.f, -hz});
+// shadow, mid, lit
+void setRamp(glm::vec3 (&out)[3], std::uint32_t shadow, std::uint32_t mid, std::uint32_t lit) {
+  out[0] = hex(shadow);
+  out[1] = hex(mid);
+  out[2] = hex(lit);
 }
 
-// Bilinear sample of the baked normal, then renormalise. Matches the terrain
-// fragment shader's texture() + normalize() at this xz.
-glm::vec3 sampleNormal(const std::vector<float>& tex, float x, float z) {
-  const float fx = (x - (-kHalf)) / kWorld * static_cast<float>(kNormalRes) - 0.5f;
-  const float fz = (z - (-kHalf)) / kWorld * static_cast<float>(kNormalRes) - 0.5f;
-  const int x0 = static_cast<int>(std::floor(fx));
-  const int z0 = static_cast<int>(std::floor(fz));
-  const float tx = fx - static_cast<float>(x0);
-  const float tz = fz - static_cast<float>(z0);
-  auto at = [&](int i, int j) {
-    i = std::clamp(i, 0, kNormalRes - 1);
-    j = std::clamp(j, 0, kNormalRes - 1);
-    const int k = (j * kNormalRes + i) * 4;
-    return glm::vec3{tex[static_cast<std::size_t>(k)], tex[static_cast<std::size_t>(k + 1)],
-                     tex[static_cast<std::size_t>(k + 2)]};
+struct Triangle {
+  glm::vec3 p[3];
+  glm::vec3 n[3];
+};
+
+// XZ bucket grid over upward-facing triangles, so a point on the lawn can
+// find the triangle under it and read back its height and smooth normal.
+class GroundIndex {
+ public:
+  GroundIndex(std::vector<Triangle> tris, float cell) : tris_(std::move(tris)), cell_(cell) {
+    for (const Triangle& t : tris_) {
+      for (const glm::vec3& p : t.p) {
+        min_ = glm::min(min_, glm::vec2(p.x, p.z));
+        max_ = glm::max(max_, glm::vec2(p.x, p.z));
+      }
+    }
+    w_ = std::max(1, static_cast<int>(std::ceil((max_.x - min_.x) / cell_)));
+    h_ = std::max(1, static_cast<int>(std::ceil((max_.y - min_.y) / cell_)));
+    buckets_.resize(static_cast<std::size_t>(w_ * h_));
+    for (std::size_t i = 0; i < tris_.size(); ++i) {
+      const Triangle& t = tris_[i];
+      glm::vec2 lo{1e9f}, hi{-1e9f};
+      for (const glm::vec3& p : t.p) {
+        lo = glm::min(lo, glm::vec2(p.x, p.z));
+        hi = glm::max(hi, glm::vec2(p.x, p.z));
+      }
+      const auto [x0, z0] = cellOf(lo);
+      const auto [x1, z1] = cellOf(hi);
+      for (int z = z0; z <= z1; ++z)
+        for (int x = x0; x <= x1; ++x) buckets_[static_cast<std::size_t>(z * w_ + x)].push_back(i);
+    }
+  }
+
+  bool empty() const { return tris_.empty(); }
+  glm::vec2 min() const { return min_; }
+  glm::vec2 max() const { return max_; }
+
+  struct Hit {
+    glm::vec3 pos;
+    glm::vec3 normal;
   };
-  const glm::vec3 n = glm::mix(glm::mix(at(x0, z0), at(x0 + 1, z0), tx),
-                               glm::mix(at(x0, z0 + 1), at(x0 + 1, z0 + 1), tx), tz);
-  return glm::normalize(n);
+
+  std::optional<Hit> at(float x, float z) const {
+    if (x < min_.x || z < min_.y || x > max_.x || z > max_.y) return std::nullopt;
+    const auto [cx, cz] = cellOf({x, z});
+    for (std::size_t i : buckets_[static_cast<std::size_t>(cz * w_ + cx)]) {
+      const Triangle& t = tris_[i];
+      const glm::vec2 a{t.p[0].x, t.p[0].z}, b{t.p[1].x, t.p[1].z}, c{t.p[2].x, t.p[2].z};
+      const float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+      if (std::fabs(d) < 1e-9f) continue;
+      const float u = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (z - c.y)) / d;
+      const float v = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (z - c.y)) / d;
+      const float w = 1.f - u - v;
+      if (u < -1e-5f || v < -1e-5f || w < -1e-5f) continue;
+      return Hit{t.p[0] * u + t.p[1] * v + t.p[2] * w, glm::normalize(t.n[0] * u + t.n[1] * v + t.n[2] * w)};
+    }
+    return std::nullopt;
+  }
+
+ private:
+  std::pair<int, int> cellOf(glm::vec2 p) const {
+    return {std::clamp(static_cast<int>((p.x - min_.x) / cell_), 0, w_ - 1),
+            std::clamp(static_cast<int>((p.y - min_.y) / cell_), 0, h_ - 1)};
+  }
+
+  std::vector<Triangle> tris_;
+  std::vector<std::vector<std::size_t>> buckets_;
+  float cell_;
+  glm::vec2 min_{1e9f}, max_{-1e9f};
+  int w_ = 1, h_ = 1;
+};
+
+// Bridson Poisson disk in horizontal metres over a rectangle, keeping only
+// points `accept` likes. Every grid cell is tried as a fresh seed, so lawns
+// split by paving or water still fill. Separation is horizontal rather than
+// along the slope so a steep bank does not pack extra tufts into one pixel.
+std::vector<glm::vec2> poisson(glm::vec2 lo, glm::vec2 hi, float minDist, std::mt19937& rng,
+                               const std::function<bool(float, float)>& accept) {
+  const float cellSize = minDist / std::sqrt(2.f);
+  const int gw = static_cast<int>(std::ceil((hi.x - lo.x) / cellSize));
+  const int gh = static_cast<int>(std::ceil((hi.y - lo.y) / cellSize));
+  std::vector<int> grid(static_cast<std::size_t>(gw * gh), -1);
+  std::vector<glm::vec2> points;
+  std::vector<int> active;
+  std::uniform_real_distribution<float> unit(0.f, 1.f);
+
+  auto cellIndex = [&](float x, float z) {
+    const int ix = std::clamp(static_cast<int>((x - lo.x) / cellSize), 0, gw - 1);
+    const int iz = std::clamp(static_cast<int>((z - lo.y) / cellSize), 0, gh - 1);
+    return iz * gw + ix;
+  };
+  auto farEnough = [&](float x, float z) {
+    if (x <= lo.x || x >= hi.x || z <= lo.y || z >= hi.y) return false;
+    const int ix = static_cast<int>((x - lo.x) / cellSize);
+    const int iz = static_cast<int>((z - lo.y) / cellSize);
+    for (int dz = -2; dz <= 2; ++dz) {
+      for (int dx = -2; dx <= 2; ++dx) {
+        const int jx = ix + dx, jz = iz + dz;
+        if (jx < 0 || jz < 0 || jx >= gw || jz >= gh) continue;
+        const int id = grid[static_cast<std::size_t>(jz * gw + jx)];
+        if (id < 0) continue;
+        const glm::vec2 d = points[static_cast<std::size_t>(id)] - glm::vec2(x, z);
+        if (glm::dot(d, d) < minDist * minDist) return false;
+      }
+    }
+    return true;
+  };
+  auto add = [&](float x, float z) {
+    grid[static_cast<std::size_t>(cellIndex(x, z))] = static_cast<int>(points.size());
+    active.push_back(static_cast<int>(points.size()));
+    points.emplace_back(x, z);
+  };
+  auto grow = [&]() {
+    while (!active.empty()) {
+      std::uniform_int_distribution<int> pick(0, static_cast<int>(active.size()) - 1);
+      const int ai = pick(rng);
+      const glm::vec2 from = points[static_cast<std::size_t>(active[static_cast<std::size_t>(ai)])];
+      bool found = false;
+      for (int k = 0; k < 30; ++k) {
+        const float ang = unit(rng) * 2.f * kPi;
+        const float rad = minDist * (1.f + unit(rng));
+        const float x = from.x + std::cos(ang) * rad;
+        const float z = from.y + std::sin(ang) * rad;
+        if (!farEnough(x, z) || !accept(x, z)) continue;
+        add(x, z);
+        found = true;
+        break;
+      }
+      if (!found) {
+        active[static_cast<std::size_t>(ai)] = active.back();
+        active.pop_back();
+      }
+    }
+  };
+
+  std::vector<int> order(static_cast<std::size_t>(gw * gh));
+  for (std::size_t i = 0; i < order.size(); ++i) order[i] = static_cast<int>(i);
+  std::shuffle(order.begin(), order.end(), rng);
+  for (int c : order) {
+    if (grid[static_cast<std::size_t>(c)] >= 0) continue;
+    const float x = lo.x + (static_cast<float>(c % gw) + unit(rng)) * cellSize;
+    const float z = lo.y + (static_cast<float>(c / gw) + unit(rng)) * cellSize;
+    if (!farEnough(x, z) || !accept(x, z)) continue;
+    add(x, z);
+    grow();
+  }
+  return points;
+}
+
+// Blade clumps carpet the lawn at blade spacing so every band edge gets a
+// continuous saw-tooth; tufts are a sparse second layer on top. Clump height
+// follows `patch` so the grass grows in taller and shorter patches.
+void scatterGrass(pxe::Scene& scene, const GroundIndex& ground, const BuildOptions& options,
+                  const std::function<float(float, float)>& patch, std::mt19937& rng) {
+  if (ground.empty()) return;
+  std::uniform_real_distribution<float> unit(0.f, 1.f);
+  auto onGround = [&](float x, float z) { return ground.at(x, z).has_value(); };
+  auto emit = [&](glm::vec2 p, float kind, float scale) {
+    const auto hit = ground.at(p.x, p.y);
+    if (!hit) return;
+    scene.grass.push_back({hit->pos.x, hit->pos.y, hit->pos.z, hit->normal.x, hit->normal.y, hit->normal.z, kind,
+                           unit(rng), scale, static_cast<float>(pxe::kSurfGrass)});
+  };
+  const auto clumps = poisson(ground.min(), ground.max(), options.minDist, rng, onGround);
+  for (const glm::vec2& p : clumps) emit(p, 0.f, 0.55f + 0.75f * patch(p.x, p.y) + 0.25f * unit(rng));
+  std::size_t tufts = 0;
+  if (options.tufts) {
+    const auto points = poisson(ground.min(), ground.max(), options.tuftDist, rng, onGround);
+    for (const glm::vec2& p : points) emit(p, 1.f, 0.85f + 0.3f * unit(rng));
+    tufts = points.size();
+  }
+  std::fprintf(stderr, "pxe: clumps %zu, tufts %zu\n", clumps.size(), tufts);
 }
 
 // Slow 0..1 field so grass grows in taller and shorter patches; a uniform
@@ -81,249 +216,229 @@ float patchiness(float x, float z) {
   return std::clamp(0.5f + 0.5f * a * b + 0.15f * std::sin(0.9f * x + 0.7f * z), 0.f, 1.f);
 }
 
-pxe::GrassInstance makeInstance(float x, float z, const std::vector<float>& normals, float kind, float seed,
-                                float scale) {
-  pxe::GrassInstance g{};
-  const glm::vec3 n = sampleNormal(normals, x, z);
-  g.px = x;
-  g.py = height(x, z);
-  g.pz = z;
-  g.nx = n.x;
-  g.ny = n.y;
-  g.nz = n.z;
-  g.kind = kind;
-  g.seed = seed;
-  g.scale = scale;
-  g.pad = 0.f;
-  return g;
+void computeBounds(pxe::Scene& scene, const std::vector<pxe::Vertex>& verts) {
+  for (const pxe::Vertex& v : verts) {
+    scene.boundsMin = glm::min(scene.boundsMin, glm::vec3(v.px, v.py, v.pz));
+    scene.boundsMax = glm::max(scene.boundsMax, glm::vec3(v.px, v.py, v.pz));
+  }
 }
 
-// Bridson Poisson disk in horizontal metres (default radius 0.62 m, about
-// 1.6 tufts/m²). The seed is an area-weighted
-// point on the mesh; every later point keeps at least `minDist` metres of
-// XZ separation, which is the density the brief counts in tufts/m². That is
-// blue noise, not a jittered grid. Separation is horizontal rather than
-// along the slope so a steep face does not pack extra tufts into one screen
-// pixel.
-std::vector<std::pair<float, float>> poisson(const std::vector<pxe::TerrainVertex>& verts, int n,
-                                             float minDist, std::mt19937& rng) {
-  const int cells = n - 1;
-  std::vector<float> cdf;
-  cdf.reserve(static_cast<std::size_t>(cells * cells * 2));
-  float total = 0.f;
-  auto at = [&](int i, int j) {
-    const pxe::TerrainVertex& v = verts[static_cast<std::size_t>(j * n + i)];
-    return glm::vec3{v.x, v.y, v.z};
-  };
-  for (int j = 0; j < cells; ++j) {
-    for (int i = 0; i < cells; ++i) {
-      const glm::vec3 v00 = at(i, j);
-      const glm::vec3 v10 = at(i + 1, j);
-      const glm::vec3 v01 = at(i, j + 1);
-      const glm::vec3 v11 = at(i + 1, j + 1);
-      total += 0.5f * glm::length(glm::cross(v10 - v00, v11 - v00));
-      cdf.push_back(total);
-      total += 0.5f * glm::length(glm::cross(v11 - v00, v01 - v00));
-      cdf.push_back(total);
-    }
-  }
+// ---------------------------------------------------------------------------
+// Hills: the rolling heightfield the grass shaders were first tuned on.
 
-  std::uniform_real_distribution<float> unit(0.f, 1.f);
-  auto sampleTriangle = [&]() {
-    const float pick = unit(rng) * total;
-    auto it = std::lower_bound(cdf.begin(), cdf.end(), pick);
-    int idx = static_cast<int>(it - cdf.begin());
-    if (idx >= static_cast<int>(cdf.size())) idx = static_cast<int>(cdf.size()) - 1;
-    const int which = idx & 1;
-    const int cell = idx >> 1;
-    const int i = cell % cells;
-    const int j = cell / cells;
-    const glm::vec3 v00 = at(i, j);
-    const glm::vec3 v10 = at(i + 1, j);
-    const glm::vec3 v01 = at(i, j + 1);
-    const glm::vec3 v11 = at(i + 1, j + 1);
-    const glm::vec3 a = v00;
-    const glm::vec3 b = which ? v11 : v10;
-    const glm::vec3 c = which ? v01 : v11;
-    float u = unit(rng);
-    float v = unit(rng);
-    if (u + v > 1.f) {
-      u = 1.f - u;
-      v = 1.f - v;
-    }
-    const glm::vec3 p = a * (1.f - u - v) + b * u + c * v;
-    return std::pair<float, float>{p.x, p.z};
-  };
+constexpr float kHillsYaw = 0.7853981633974483f;  // 45°, fixed with the sun and the hill
+constexpr float kHalf = 45.f;
+constexpr float kGrid = 0.25f;
+constexpr float kNormalEps = 0.05f;
 
-  const float cellSize = minDist / std::sqrt(2.f);
-  const int gw = static_cast<int>(std::ceil(kWorld / cellSize));
-  std::vector<int> grid(static_cast<std::size_t>(gw * gw), -1);
-  std::vector<std::pair<float, float>> points;
-  std::vector<int> active;
-  points.reserve(20000);
-  active.reserve(1024);
-
-  auto cellIndex = [&](float x, float z) {
-    const int ix = std::clamp(static_cast<int>((x + kHalf) / cellSize), 0, gw - 1);
-    const int iz = std::clamp(static_cast<int>((z + kHalf) / cellSize), 0, gw - 1);
-    return iz * gw + ix;
-  };
-  auto farEnough = [&](float x, float z) {
-    if (x <= -kHalf || x >= kHalf || z <= -kHalf || z >= kHalf) return false;
-    const int ix = static_cast<int>((x + kHalf) / cellSize);
-    const int iz = static_cast<int>((z + kHalf) / cellSize);
-    for (int dz = -2; dz <= 2; ++dz) {
-      for (int dx = -2; dx <= 2; ++dx) {
-        const int jx = ix + dx;
-        const int jz = iz + dz;
-        if (jx < 0 || jz < 0 || jx >= gw || jz >= gw) continue;
-        const int id = grid[static_cast<std::size_t>(jz * gw + jx)];
-        if (id < 0) continue;
-        const float ddx = points[static_cast<std::size_t>(id)].first - x;
-        const float ddz = points[static_cast<std::size_t>(id)].second - z;
-        if (ddx * ddx + ddz * ddz < minDist * minDist) return false;
-      }
-    }
-    return true;
-  };
-  auto add = [&](float x, float z) {
-    const int id = static_cast<int>(points.size());
-    points.emplace_back(x, z);
-    active.push_back(id);
-    grid[static_cast<std::size_t>(cellIndex(x, z))] = id;
-  };
-
-  auto seed = sampleTriangle();
-  seed.first = std::clamp(seed.first, -kHalf + 0.05f, kHalf - 0.05f);
-  seed.second = std::clamp(seed.second, -kHalf + 0.05f, kHalf - 0.05f);
-  add(seed.first, seed.second);
-  while (!active.empty()) {
-    std::uniform_int_distribution<int> pick(0, static_cast<int>(active.size()) - 1);
-    const int ai = pick(rng);
-    const int id = active[static_cast<std::size_t>(ai)];
-    bool found = false;
-    for (int k = 0; k < 30; ++k) {
-      const float ang = unit(rng) * 2.f * kPi;
-      const float rad = minDist * (1.f + unit(rng));
-      const float x = points[static_cast<std::size_t>(id)].first + std::cos(ang) * rad;
-      const float z = points[static_cast<std::size_t>(id)].second + std::sin(ang) * rad;
-      if (!farEnough(x, z)) continue;
-      add(x, z);
-      found = true;
-      break;
-    }
-    if (!found) {
-      active[static_cast<std::size_t>(ai)] = active.back();
-      active.pop_back();
-    }
-  }
-  return points;
+float hillHeight(float x, float z) {
+  constexpr float kHillH = 6.f, kHillW = 8.f, kRipA = 0.6f, kRipL = 14.f, kWarpA = 1.2f, kCross = 0.25f,
+                  kDet = 0.018f;
+  const float hill =
+      kHillH / (1.f + std::exp(-(std::sin(kHillsYaw) * x + std::cos(kHillsYaw) * z) / kHillW));
+  const float warp = kWarpA * std::sin(2.f * kPi * (x - 0.5f * z) / 23.f) +
+                     0.5f * kWarpA * std::sin(2.f * kPi * (0.4f * x + z) / 31.f);
+  const float kx = std::sin(kHillsYaw + 0.25f);
+  const float kz = std::cos(kHillsYaw + 0.25f);
+  float rip = kRipA * std::sin(2.f * kPi * (kx * x + kz * z) / kRipL + warp);
+  rip += kCross * kRipA *
+         std::sin(2.f * kPi * (std::sin(kHillsYaw - 0.5f) * x + std::cos(kHillsYaw - 0.5f) * z) /
+                      (kRipL * 0.73f) +
+                  1.3f);
+  const float det = kDet * std::sin(2.f * kPi * (0.9f * x - 0.4f * z) / 2.3f + std::sin(1.7f * z)) *
+                    std::sin(2.f * kPi * (0.3f * x + z) / 1.9f + std::cos(1.3f * x));
+  return hill + rip + det;
 }
 
-}  // namespace
-
-pxe::Scene buildTerrain(const BuildOptions& options) {
+pxe::Scene buildHills(const BuildOptions& options) {
   pxe::Scene scene;
-  scene.worldMin = -kHalf;
-  scene.worldSize = kWorld;
+  setRamp(scene.palette[pxe::kSurfGrass].band, 0x46766e, 0x83ab5c, 0xc7e487);
+  setRamp(scene.palette[pxe::kSurfGrass].detail, 0x5b8a6e, 0x6b944e, 0x9cc266);
+  setRamp(scene.palette[pxe::kSurfGrass].tip, 0x46766e, 0xa2c66c, 0xe2f3a8);
+  scene.tLit = 0.75f;
+  scene.tMid = 0.585f;
+  scene.yawDegrees = 45.f;
 
-  const int n = static_cast<int>(std::lround(kWorld / kGrid)) + 1;
-  std::vector<pxe::TerrainVertex> verts(static_cast<std::size_t>(n * n));
-  float minY = 1e9f;
-  float maxY = -1e9f;
+  const int n = static_cast<int>(std::lround(2.f * kHalf / kGrid)) + 1;
+  std::vector<pxe::Vertex> verts(static_cast<std::size_t>(n * n));
+  auto hash = [](int a, int b) {
+    std::uint32_t h = static_cast<std::uint32_t>(a) * 374761393u ^ static_cast<std::uint32_t>(b) * 668265263u;
+    h = (h ^ (h >> 13)) * 1274126177u;
+    return (static_cast<int>(h & 0xffff) - 32768) / 32768.f;
+  };
   for (int j = 0; j < n; ++j) {
     for (int i = 0; i < n; ++i) {
       const float x = -kHalf + static_cast<float>(i) * kGrid;
       const float z = -kHalf + static_cast<float>(j) * kGrid;
-      const float y = height(x, z);
-      verts[static_cast<std::size_t>(j * n + i)] = {x, y, z};
-      minY = std::min(minY, y);
-      maxY = std::max(maxY, y);
+      const float hx = (hillHeight(x + kNormalEps, z) - hillHeight(x - kNormalEps, z)) / (2.f * kNormalEps);
+      const float hz = (hillHeight(x, z + kNormalEps) - hillHeight(x, z - kNormalEps)) / (2.f * kNormalEps);
+      // A few degrees of stable noise so shallow N·L edges wobble instead of
+      // sitting on a straight pixel run.
+      glm::vec3 nrm = glm::normalize(glm::vec3{-hx + hash(i, j) * 0.028f, 1.f, -hz + hash(j + 19, i * 3 + 1) * 0.028f});
+      verts[static_cast<std::size_t>(j * n + i)] = {x, hillHeight(x, z), z, nrm.x, nrm.y, nrm.z,
+                                                    static_cast<float>(pxe::kSurfGrass)};
     }
   }
   std::vector<std::uint32_t> indices;
+  std::vector<Triangle> tris;
   indices.reserve(static_cast<std::size_t>(n - 1) * (n - 1) * 6);
+  auto tri = [&](std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+    indices.insert(indices.end(), {a, b, c});
+    Triangle t;
+    for (int k = 0; k < 3; ++k) {
+      const pxe::Vertex& v = verts[(k == 0) ? a : (k == 1) ? b : c];
+      t.p[k] = {v.px, v.py, v.pz};
+      t.n[k] = {v.nx, v.ny, v.nz};
+    }
+    tris.push_back(t);
+  };
   for (int j = 0; j < n - 1; ++j) {
     for (int i = 0; i < n - 1; ++i) {
       const auto i00 = static_cast<std::uint32_t>(j * n + i);
       const auto i10 = i00 + 1;
       const auto i01 = i00 + static_cast<std::uint32_t>(n);
       const auto i11 = i01 + 1;
-      indices.push_back(i00);
-      indices.push_back(i10);
-      indices.push_back(i11);
-      indices.push_back(i00);
-      indices.push_back(i11);
-      indices.push_back(i01);
+      tri(i00, i11, i10);
+      tri(i00, i01, i11);
     }
   }
-  scene.terrain.upload(verts, indices);
-  scene.boundsMin = {-kHalf, minY, -kHalf};
-  scene.boundsMax = {kHalf, maxY, kHalf};
+  computeBounds(scene, verts);
+  scene.meshes.emplace_back();
+  scene.meshes.back().upload(verts, indices);
 
-  scene.normalSize = kNormalRes;
-  scene.normals.resize(static_cast<std::size_t>(kNormalRes * kNormalRes * 4));
-  for (int j = 0; j < kNormalRes; ++j) {
-    for (int i = 0; i < kNormalRes; ++i) {
-      const float x = -kHalf + (static_cast<float>(i) + 0.5f) / static_cast<float>(kNormalRes) * kWorld;
-      const float z = -kHalf + (static_cast<float>(j) + 0.5f) / static_cast<float>(kNormalRes) * kWorld;
-      glm::vec3 normal = normalAt(x, z);
-      // A few degrees of stable noise so shallow N·L edges wobble instead of
-      // sitting on a straight pixel run. Grass reads this same texture.
-      auto hash = [](int a, int b) {
-        std::uint32_t h = static_cast<std::uint32_t>(a) * 374761393u ^
-                          static_cast<std::uint32_t>(b) * 668265263u;
-        h = (h ^ (h >> 13)) * 1274126177u;
-        return (static_cast<int>(h & 0xffff) - 32768) / 32768.f;
-      };
-      normal.x += hash(i, j) * 0.028f;
-      normal.z += hash(j + 19, i * 3 + 1) * 0.028f;
-      normal = glm::normalize(normal);
-      const std::size_t k = static_cast<std::size_t>(j * kNormalRes + i) * 4;
-      scene.normals[k] = normal.x;
-      scene.normals[k + 1] = normal.y;
-      scene.normals[k + 2] = normal.z;
-      scene.normals[k + 3] = 1.f;
-    }
-  }
-
-  const glm::vec3 flatForward{std::sin(kYaw), 0.f, std::cos(kYaw)};
-  const glm::vec3 right{std::cos(kYaw), 0.f, -std::sin(kYaw)};
+  const glm::vec3 flatForward{std::sin(kHillsYaw), 0.f, std::cos(kHillsYaw)};
+  const glm::vec3 right{-std::cos(kHillsYaw), 0.f, std::sin(kHillsYaw)};
   scene.sunDir = glm::normalize(0.62f * flatForward - 0.30f * right + glm::vec3{0.f, 0.72f, 0.f});
+  scene.focus = glm::vec3{0.f, 2.f, 0.f};
 
   std::mt19937 rng(7);
   std::uniform_real_distribution<float> unit(0.f, 1.f);
+  GroundIndex ground(std::move(tris), 1.f);
   if (options.stamps) {
     const float step = 2.6f;
-    int s = 0;
     for (int row = 0; row < 2; ++row) {
-      for (int col = 0; col < 4; ++col, ++s) {
-        const float x = right.x * (static_cast<float>(col) - 1.5f) * step +
-                        flatForward.x * (static_cast<float>(row) - 0.5f) * step;
-        const float z = right.z * (static_cast<float>(col) - 1.5f) * step +
-                        flatForward.z * (static_cast<float>(row) - 0.5f) * step;
-        const float kind = static_cast<float>(row);
-        scene.grass.push_back(makeInstance(x, z, scene.normals, kind, static_cast<float>(col) * 0.25f, 1.f));
+      for (int col = 0; col < 4; ++col) {
+        const glm::vec3 p = right * (static_cast<float>(col) - 1.5f) * step +
+                            flatForward * (static_cast<float>(row) - 0.5f) * step;
+        if (const auto hit = ground.at(p.x, p.z)) {
+          scene.grass.push_back({hit->pos.x, hit->pos.y, hit->pos.z, hit->normal.x, hit->normal.y,
+                                 hit->normal.z, static_cast<float>(row), static_cast<float>(col) * 0.25f, 1.f,
+                                 static_cast<float>(pxe::kSurfGrass)});
+        }
       }
     }
   } else {
-    // Clumps carpet the ground at blade spacing so every band edge gets a
-    // continuous saw-tooth; tufts are a sparse second layer on top.
-    const auto clumps = poisson(verts, n, options.minDist, rng);
-    const auto tufts = options.tufts ? poisson(verts, n, options.tuftDist, rng)
-                                     : std::vector<std::pair<float, float>>{};
-    scene.grass.reserve(clumps.size() + tufts.size());
-    for (const auto& p : clumps)
-      scene.grass.push_back(makeInstance(p.first, p.second, scene.normals, 0.f, unit(rng),
-                                         0.55f + 0.75f * patchiness(p.first, p.second) + 0.25f * unit(rng)));
-    for (const auto& p : tufts)
-      scene.grass.push_back(makeInstance(p.first, p.second, scene.normals, 1.f, unit(rng), 0.85f + 0.3f * unit(rng)));
-    std::fprintf(stderr, "pxe: clumps %zu, tufts %zu\n", clumps.size(), tufts.size());
+    scatterGrass(scene, ground, options, patchiness, rng);
+  }
+  return scene;
+}
+
+// ---------------------------------------------------------------------------
+// Ruins: the pond-and-pillars scene from tools/blender/build_ruins.py.
+
+pxe::Scene buildRuins(const BuildOptions& options) {
+  pxe::Scene scene;
+  // Sampled from the finished frame of t3ssel8r's scene video.
+  pxe::Palette* pal = scene.palette;
+  setRamp(pal[pxe::kSurfGrass].band, 0x648474, 0x94b064, 0xacbc6c);
+  setRamp(pal[pxe::kSurfGrass].detail, 0x74947c, 0x7c9c54, 0x8ca454);
+  setRamp(pal[pxe::kSurfGrass].tip, 0x648474, 0xacbc6c, 0xc8d690);
+  setRamp(pal[pxe::kSurfDirt].band, 0x5c6468, 0x7c7874, 0x948c80);
+  setRamp(pal[pxe::kSurfStone].band, 0x747480, 0xa49c8c, 0xbcac94);
+  setRamp(pal[pxe::kSurfBark].band, 0x6c7078, 0x8c8a84, 0xaca494);
+  setRamp(pal[pxe::kSurfLeaf].band, 0x4c705c, 0x6c945c, 0x8cac54);
+  setRamp(pal[pxe::kSurfLeaf].detail, 0x5c8064, 0x80a85c, 0xa8c46c);
+  setRamp(pal[pxe::kSurfWater].band, 0x74949c, 0x8cb4cc, 0x8cb4cc);
+  setRamp(pal[pxe::kSurfWater].detail, 0x84a4ac, 0xa4c8d8, 0xa4c8d8);
+  setRamp(pal[pxe::kSurfFoam].band, 0xc4d4d8, 0xdce8ec, 0xe8f2f2);
+  scene.tLit = 0.6f;
+  scene.tMid = 0.18f;
+
+  // The Blender layout is built facing Blender +Y, which is glTF -Z.
+  scene.yawDegrees = 180.f;
+  const glm::vec3 forward{0.f, 0.f, -1.f};
+  const glm::vec3 right{1.f, 0.f, 0.f};
+  // Sun from the left and a little behind, as in the video: the pillars'
+  // left faces lit, right faces in shadow, shadows falling to the right.
+  scene.sunDir = glm::normalize(-0.75f * right + 0.3f * forward + glm::vec3{0.f, 0.95f, 0.f});
+  scene.focus = glm::vec3{2.f, 1.f, -6.f};
+
+  const auto prims = pxe::loadGltf(std::string(PXE_ASSET_DIR) + "/scenes/ruins.glb");
+
+  // One mesh per surface keeps draw calls low.
+  std::vector<pxe::Vertex> verts[pxe::kSurfCount];
+  std::vector<std::uint32_t> indices[pxe::kSurfCount];
+  std::vector<Triangle> lawn;
+  std::vector<Triangle> leaves;
+  std::vector<float> leafArea;
+  for (const auto& prim : prims) {
+    auto& v = verts[prim.surface];
+    auto& idx = indices[prim.surface];
+    const auto base = static_cast<std::uint32_t>(v.size());
+    v.insert(v.end(), prim.vertices.begin(), prim.vertices.end());
+    for (std::uint32_t i : prim.indices) idx.push_back(base + i);
+    computeBounds(scene, prim.vertices);
+
+    if (prim.surface != pxe::kSurfGrass && prim.surface != pxe::kSurfLeaf) continue;
+    for (std::size_t i = 0; i + 2 < prim.indices.size(); i += 3) {
+      Triangle t;
+      for (int k = 0; k < 3; ++k) {
+        const pxe::Vertex& pv = prim.vertices[prim.indices[i + static_cast<std::size_t>(k)]];
+        t.p[k] = {pv.px, pv.py, pv.pz};
+        t.n[k] = {pv.nx, pv.ny, pv.nz};
+      }
+      if (prim.surface == pxe::kSurfGrass) {
+        lawn.push_back(t);
+      } else {
+        leaves.push_back(t);
+        leafArea.push_back(0.5f * glm::length(glm::cross(t.p[1] - t.p[0], t.p[2] - t.p[0])));
+      }
+    }
+  }
+  for (int s = 0; s < pxe::kSurfCount; ++s) {
+    if (indices[s].empty()) continue;
+    scene.meshes.emplace_back();
+    scene.meshes.back().upload(verts[s], indices[s]);
   }
 
-  const float density = static_cast<float>(scene.grass.size()) / (kWorld * kWorld);
-  std::fprintf(stderr, "pxe: grid %d, grass %zu (%.3f /m^2), sun %.3f %.3f %.3f\n", n, scene.grass.size(),
-               density, scene.sunDir.x, scene.sunDir.y, scene.sunDir.z);
+  std::mt19937 rng(7);
+  std::uniform_real_distribution<float> unit(0.f, 1.f);
+  scatterGrass(scene, GroundIndex(std::move(lawn), 1.f), options, patchiness, rng);
+
+  // Leaf clusters cover every crown at about one per 0.3 m², lit at their
+  // root like grass, so the crown's band edges and silhouette go leafy.
+  float total = 0.f;
+  std::vector<float> cdf;
+  for (float a : leafArea) cdf.push_back(total += a);
+  const int leafCount = static_cast<int>(total * options.leafDensity);
+  for (int i = 0; i < leafCount && !cdf.empty(); ++i) {
+    const auto it = std::lower_bound(cdf.begin(), cdf.end(), unit(rng) * total);
+    const Triangle& t = leaves[static_cast<std::size_t>(std::min<std::ptrdiff_t>(it - cdf.begin(), static_cast<std::ptrdiff_t>(cdf.size()) - 1))];
+    float u = unit(rng), v = unit(rng);
+    if (u + v > 1.f) {
+      u = 1.f - u;
+      v = 1.f - v;
+    }
+    const float w = 1.f - u - v;
+    const glm::vec3 p = t.p[0] * w + t.p[1] * u + t.p[2] * v;
+    // Each cluster tilts its own way, so where the crown's light turns the
+    // clusters on either side mix into a dappled edge instead of a clean one.
+    const glm::vec3 jitter{unit(rng) - 0.5f, unit(rng) - 0.5f, unit(rng) - 0.5f};
+    const glm::vec3 n = glm::normalize(glm::normalize(t.n[0] * w + t.n[1] * u + t.n[2] * v) + 0.9f * jitter);
+    const float kind = unit(rng) < 0.12f ? 3.f : 2.f;
+    scene.grass.push_back({p.x, p.y, p.z, n.x, n.y, n.z, kind, unit(rng), 0.85f + 0.3f * unit(rng),
+                           static_cast<float>(pxe::kSurfLeaf)});
+  }
+  std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters\n", prims.size(), leafCount);
+  return scene;
+}
+
+}  // namespace
+
+pxe::Scene buildScene(const BuildOptions& options) {
+  pxe::Scene scene = (options.scene == "hills") ? buildHills(options) : buildRuins(options);
+  std::fprintf(stderr, "pxe: scene %s, %zu sprites, sun %.3f %.3f %.3f\n", options.scene.c_str(), scene.grass.size(),
+               scene.sunDir.x, scene.sunDir.y, scene.sunDir.z);
   return scene;
 }
 

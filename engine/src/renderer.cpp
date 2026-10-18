@@ -16,26 +16,8 @@
 namespace pxe {
 namespace {
 
-constexpr float kTLit = 0.75f;
-constexpr float kTMid = 0.585f;
 constexpr float kGrassBiasMetres = 0.6f;
-
-constexpr float kLit[3] = {0xc7 / 255.f, 0xe4 / 255.f, 0x87 / 255.f};
-constexpr float kMid[3] = {0x83 / 255.f, 0xab / 255.f, 0x5c / 255.f};
-constexpr float kShadow[3] = {0x46 / 255.f, 0x76 / 255.f, 0x6e / 255.f};
-// Tuft colour per band (shadow, mid, lit): one step darker than lit and mid
-// ground, one step lighter and greener than shadow, so tufts read on both.
-constexpr float kDetail[9] = {
-    0x5b / 255.f, 0x8a / 255.f, 0x6e / 255.f, 0x6b / 255.f, 0x94 / 255.f, 0x4e / 255.f,
-    0x9c / 255.f, 0xc2 / 255.f, 0x66 / 255.f,
-};
-// Blade tip over darker ground. Shadow never overhangs anything darker.
-constexpr float kTip[9] = {
-    0x46 / 255.f, 0x76 / 255.f, 0x6e / 255.f, 0xa2 / 255.f, 0xc6 / 255.f, 0x6c / 255.f,
-    0xe2 / 255.f, 0xf3 / 255.f, 0xa8 / 255.f,
-};
 constexpr float kWindPx = 1.6f;
-constexpr float kTest[9] = {1.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 1.f};
 
 int uloc(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
 
@@ -105,18 +87,27 @@ LightFit fitLight(const Scene& scene) {
   return fit;
 }
 
-void bindToon(unsigned prog, const glm::mat4& lightVP, float normalBias, bool testColours) {
-  u1f(prog, "uTLit", kTLit);
-  u1f(prog, "uTMid", kTMid);
-  if (testColours) {
-    u3f(prog, "uColLit", kTest[0], kTest[1], kTest[2]);
-    u3f(prog, "uColMid", kTest[3], kTest[4], kTest[5]);
-    u3f(prog, "uColShadow", kTest[6], kTest[7], kTest[8]);
-  } else {
-    u3f(prog, "uColLit", kLit[0], kLit[1], kLit[2]);
-    u3f(prog, "uColMid", kMid[0], kMid[1], kMid[2]);
-    u3f(prog, "uColShadow", kShadow[0], kShadow[1], kShadow[2]);
+// Flatten one Palette field across all surfaces into shadow/mid/lit
+// triples, or pure red/green/blue per band for --test-colours.
+std::vector<float> ramp(const Scene& scene, glm::vec3 (Palette::*field)[3], bool testColours) {
+  std::vector<float> out;
+  out.reserve(kSurfCount * 9);
+  for (int s = 0; s < kSurfCount; ++s) {
+    for (int b = 0; b < 3; ++b) {
+      const glm::vec3 c = testColours ? glm::vec3(b == 2, b == 1, b == 0) : (scene.palette[s].*field)[b];
+      out.insert(out.end(), {c.x, c.y, c.z});
+    }
   }
+  return out;
+}
+
+void bindToon(unsigned prog, const Scene& scene, const glm::mat4& lightVP, float normalBias, bool testColours) {
+  u1f(prog, "uTLit", scene.tLit);
+  u1f(prog, "uTMid", scene.tMid);
+  const glm::vec3 sun = glm::normalize(scene.sunDir);
+  u3f(prog, "uSunDir", sun.x, sun.y, sun.z);
+  u3fv(prog, "uBand", kSurfCount * 3, ramp(scene, &Palette::band, testColours).data());
+  u3fv(prog, "uDetail", kSurfCount * 3, ramp(scene, &Palette::detail, testColours).data());
   umat(prog, "uLightViewProj", lightVP);
   u1i(prog, "uShadowMap", 1);
   u1f(prog, "uNormalBias", normalBias);
@@ -130,18 +121,21 @@ Renderer::~Renderer() {
   if (grassInst_) glDeleteBuffers(1, &grassInst_);
   if (presentVao_) glDeleteVertexArrays(1, &presentVao_);
   if (presentVbo_) glDeleteBuffers(1, &presentVbo_);
-  if (progTerrain_) glDeleteProgram(progTerrain_);
+  if (progMesh_) glDeleteProgram(progMesh_);
   if (progGrass_) glDeleteProgram(progGrass_);
   if (progShadow_) glDeleteProgram(progShadow_);
   if (progPresent_) glDeleteProgram(progPresent_);
+  if (progEdge_) glDeleteProgram(progEdge_);
   destroyTargets();
 }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {color_, ground_, depth_, shadow_, normal_};
-  glDeleteTextures(5, textures);
-  color_ = ground_ = depth_ = shadow_ = normal_ = 0;
+  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_};
+  glDeleteTextures(6, textures);
+  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = 0;
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
+  if (fboFinal_) glDeleteFramebuffers(1, &fboFinal_);
+  fboFinal_ = 0;
   if (fboShadow_) glDeleteFramebuffers(1, &fboShadow_);
   fbo_ = fboShadow_ = 0;
 }
@@ -181,6 +175,8 @@ unsigned Renderer::makeDepth(int w, int h, bool shadowCompare) {
 
 void Renderer::createTargets() {
   color_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
+  normals_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
+  final_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
   ground_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
   depth_ = makeDepth(RenderConfig::kRtW, RenderConfig::kRtH, false);
   shadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
@@ -188,10 +184,19 @@ void Renderer::createTargets() {
   glGenFramebuffers(1, &fbo_);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_, 0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, normals_, 0);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_, 0);
-  const unsigned draw = GL_COLOR_ATTACHMENT0;
-  glDrawBuffers(1, &draw);
+  const unsigned draws[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+  glDrawBuffers(2, draws);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
   requireFbo("colour");
+
+  glGenFramebuffers(1, &fboFinal_);
+  glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, final_, 0);
+  const unsigned finalDraw = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &finalDraw);
+  requireFbo("final");
 
   glGenFramebuffers(1, &fboShadow_);
   glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
@@ -243,10 +248,11 @@ void Renderer::createQuads() {
 
 void Renderer::init() {
   const std::string dir = shaderDir();
-  progTerrain_ = linkProgram(dir + "/terrain.vert", dir + "/terrain.frag", dir + "/common.glsl");
+  progMesh_ = linkProgram(dir + "/mesh.vert", dir + "/mesh.frag", dir + "/common.glsl");
   progGrass_ = linkProgram(dir + "/grass.vert", dir + "/grass.frag", dir + "/common.glsl");
   progShadow_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag");
   progPresent_ = linkProgram(dir + "/present.vert", dir + "/present.frag");
+  progEdge_ = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
   createTargets();
   createQuads();
 
@@ -266,19 +272,6 @@ void Renderer::init() {
 }
 
 void Renderer::upload(const Scene& scene) {
-  worldMin_ = scene.worldMin;
-  worldSize_ = scene.worldSize;
-  if (!normal_) glGenTextures(1, &normal_);
-  glBindTexture(GL_TEXTURE_2D, normal_);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, scene.normalSize, scene.normalSize, 0, GL_RGBA, GL_FLOAT,
-               scene.normals.empty() ? nullptr : scene.normals.data());
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-  glBindTexture(GL_TEXTURE_2D, 0);
-
   grassCount_ = static_cast<int>(scene.grass.size());
   glBindBuffer(GL_ARRAY_BUFFER, grassInst_);
   glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(scene.grass.size() * sizeof(GrassInstance)),
@@ -327,7 +320,7 @@ void Renderer::drawPresent(const CameraFrame& camera, const FrameParams& params)
   glClear(GL_COLOR_BUFFER_BIT);
   glUseProgram(progPresent_);
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, color_);
+  glBindTexture(GL_TEXTURE_2D, final_);
   u1i(progPresent_, "uTex", 0);
   glBindVertexArray(presentVao_);
   glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -338,7 +331,6 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   const LightFit light = fitLight(scene);
   const float normalBias = 1.5f * light.texel;
   const glm::mat4 viewProj = camera.proj * camera.view;
-  const glm::vec3 sun = glm::normalize(scene.sunDir);
   const float biasNdc = kGrassBiasMetres * 2.f / (camera.farPlane - camera.nearPlane);
 
   glDisable(GL_BLEND);
@@ -347,14 +339,14 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glDepthFunc(GL_LESS);
   glDepthMask(GL_TRUE);
   glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
+  // Both faces: water, foam and the ground are open sheets.
+  glDisable(GL_CULL_FACE);
   glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
   glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
   glClear(GL_DEPTH_BUFFER_BIT);
   glUseProgram(progShadow_);
   umat(progShadow_, "uLightViewProj", light.viewProj);
-  scene.terrain.draw();
+  for (const Mesh& m : scene.meshes) m.draw();
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
@@ -362,20 +354,17 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glClearColor(0.f, 0.f, 0.f, 1.f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, normal_);
   glActiveTexture(GL_TEXTURE1);
   glBindTexture(GL_TEXTURE_2D, shadow_);
 
-  glUseProgram(progTerrain_);
-  umat(progTerrain_, "uViewProj", viewProj);
-  u1i(progTerrain_, "uNormalTex", 0);
-  u1f(progTerrain_, "uWorldMin", worldMin_);
-  u1f(progTerrain_, "uWorldSize", worldSize_);
-  u1i(progTerrain_, "uShowNdl", params.showNdl ? 1 : 0);
-  bindToon(progTerrain_, light.viewProj, normalBias, params.testColours);
-  u3f(progTerrain_, "uSunDir", sun.x, sun.y, sun.z);
-  scene.terrain.draw();
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
+  glUseProgram(progMesh_);
+  umat(progMesh_, "uViewProj", viewProj);
+  u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
+  u1f(progMesh_, "uTime", params.time);
+  bindToon(progMesh_, scene, light.viewProj, normalBias, params.testColours);
+  for (const Mesh& m : scene.meshes) m.draw();
 
   if (params.showGrass && grassCount_ > 0) {
     glUseProgram(progGrass_);
@@ -383,14 +372,12 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     u2f(progGrass_, "uTarget", static_cast<float>(RenderConfig::kRtW),
         static_cast<float>(RenderConfig::kRtH));
     u1f(progGrass_, "uDepthBiasNdc", biasNdc);
-    bindToon(progGrass_, light.viewProj, normalBias, params.testColours);
-    u3fv(progGrass_, "uDetail", 3, params.testColours ? kTest : kDetail);
-    u3fv(progGrass_, "uTip", 3, params.testColours ? kTest : kTip);
+    bindToon(progGrass_, scene, light.viewProj, normalBias, params.testColours);
+    u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(scene, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, ground_);
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, RenderConfig::kRtW, RenderConfig::kRtH);
-    u3f(progGrass_, "uSunDir", sun.x, sun.y, sun.z);
     u1f(progGrass_, "uTime", params.time);
     u1f(progGrass_, "uWindPx", kWindPx);
     u1i(progGrass_, "uMagenta", params.magentaGrass ? 1 : 0);
@@ -406,6 +393,27 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);
   }
+
+  // Edge pass into final_, which is what gets presented and captured.
+  glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+  glUseProgram(progEdge_);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, color_);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, normals_);
+  glActiveTexture(GL_TEXTURE2);
+  glBindTexture(GL_TEXTURE_2D, depth_);
+  u1i(progEdge_, "uColor", 0);
+  u1i(progEdge_, "uNormal", 1);
+  u1i(progEdge_, "uDepth", 2);
+  u1f(progEdge_, "uDepthMetres", camera.farPlane - camera.nearPlane);
+  u1i(progEdge_, "uEnabled", params.edges ? 1 : 0);
+  glBindVertexArray(presentVao_);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  glBindVertexArray(0);
+  glEnable(GL_DEPTH_TEST);
 
   if (params.present) drawPresent(camera, params);
   pxeGlCheck("render");
@@ -425,7 +433,7 @@ std::vector<std::uint8_t> Renderer::readView() {
   const int w = RenderConfig::kViewW;
   const int h = RenderConfig::kViewH;
   std::vector<std::uint8_t> pixels(static_cast<std::size_t>(w * h * 4));
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+  glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   glFinish();

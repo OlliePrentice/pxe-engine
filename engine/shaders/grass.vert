@@ -5,20 +5,21 @@
 uniform mat4 uViewProj;
 uniform vec2 uTarget;
 uniform float uDepthBiasNdc;
-uniform vec3 uDetail[3];  // tuft colour per band: shadow, mid, lit
-uniform vec3 uTip[3];     // blade tip colour where it overhangs darker ground
+uniform vec3 uDetail[kSurfaces * 3];  // tuft / leaf speckle colour per surface and band
+uniform vec3 uTip[kSurfaces * 3];     // blade tip colour where it overhangs darker ground
 uniform float uTime;
 uniform float uWindPx;    // peak tip sway in target pixels
 
 layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec3 iRoot;
 layout(location = 2) in vec3 iNormal;
-layout(location = 3) in vec4 iParams;  // kind, seed, height scale, unused
+layout(location = 3) in vec4 iParams;  // kind, seed, height scale, surface
 
 // Sprite boxes in target pixels, root at (kBox.x/2, 0). Big enough for the
 // widest lean plus sway so nothing clips.
 const vec2 kClumpBox = vec2(13.0, 12.0);
 const vec2 kTuftBox = vec2(17.0, 10.0);
+const vec2 kLeafBox = vec2(9.0, 9.0);  // centred on the root, not grown up from it
 
 out vec2 vLocal;          // pixel offset from the root pixel's corner
 flat out vec3 vCol;
@@ -42,9 +43,11 @@ void main() {
     vec2 px = floor((ndc * 0.5 + 0.5) * uTarget);
 
     vKind = iParams.x;
-    vec2 box = (vKind < 0.5) ? kClumpBox : kTuftBox;
+    bool leaf = vKind > 1.5;
+    vec2 box = leaf ? kLeafBox : ((vKind < 0.5) ? kClumpBox : kTuftBox);
     float halfW = floor(box.x * 0.5);
-    vLocal = vec2(aCorner.x * box.x - halfW, aCorner.y * box.y);
+    float halfH = leaf ? floor(box.y * 0.5) : 0.0;
+    vLocal = vec2(aCorner.x * box.x - halfW, aCorner.y * box.y - halfH);
     vec2 p = px + vLocal;
     gl_Position = vec4(p / uTarget * 2.0 - 1.0, c.z / c.w - uDepthBiasNdc, 1.0);
 
@@ -56,7 +59,10 @@ void main() {
 
     // Lit once at the root, exactly like the ground under it, so a tuft is
     // invisible inside a band and only shows where it overhangs the next one.
+    int surface = int(iParams.w + 0.5);
     int band = toonBand(iRoot, iNormal);
-    vCol = (vKind < 0.5) ? bandColour(band) : uDetail[band];
-    vTip = uTip[band];
+    bool detail = (vKind > 0.5 && vKind < 1.5) || vKind > 2.5;
+    vCol = detail ? uDetail[surface * 3 + band] : bandColour(surface, band);
+    vTip = uTip[surface * 3 + band];
+    if (leaf) vSway *= 0.5;
 }

@@ -1,11 +1,13 @@
-// Shared toon ramp. Spliced into the terrain fragment shader and the grass
+// Shared toon ramp. Spliced into the mesh fragment shader and the grass
 // vertex shader so both run the same function on the same kind of inputs.
+const int kSurfaces = 7;
+const int kSurfWater = 5;
+const int kSurfFoam = 6;
+
 uniform vec3 uSunDir;
 uniform float uTLit;
 uniform float uTMid;
-uniform vec3 uColLit;
-uniform vec3 uColMid;
-uniform vec3 uColShadow;
+uniform vec3 uBand[kSurfaces * 3];  // per surface: shadow, mid, lit
 uniform mat4 uLightViewProj;
 uniform sampler2DShadow uShadowMap;
 uniform float uNormalBias;
@@ -23,12 +25,6 @@ int toonBand(vec3 wpos, vec3 n) {
     return (ndl > uTLit) ? 2 : 1;
 }
 
-vec3 bandColour(int band) {
-    if (band == 2) return uColLit;
-    if (band == 1) return uColMid;
-    return uColShadow;
-}
-
-vec3 toonShade(vec3 wpos, vec3 n) {
-    return bandColour(toonBand(wpos, n));
+vec3 bandColour(int surface, int band) {
+    return uBand[surface * 3 + band];
 }

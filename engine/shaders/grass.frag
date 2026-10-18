@@ -11,7 +11,8 @@ flat in float vSway;
 uniform int uMagenta;
 uniform sampler2D uGround;  // terrain colour, copied before grass draws
 
-out vec4 oColor;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oNormal;  // sprites take no edges
 
 float hash(float i) {
     return fract(sin((vSeed * 113.0 + i) * 12.9898) * 43758.5453);
@@ -30,11 +31,32 @@ int blade(vec2 p, float baseX, float h, float lean, float rootW) {
     return (p.y + 1.0 > h) ? 2 : 1;
 }
 
+// A leaf: a small ellipse of `len` by `wid` pixels, centred at c, pointing
+// along angle a.
+bool leafShape(vec2 p, vec2 c, float a, float len, float wid) {
+    vec2 d = p - c;
+    vec2 u = vec2(cos(a), sin(a));
+    float x = dot(d, u) / (len * 0.5);
+    float y = dot(d, vec2(-u.y, u.x)) / (wid * 0.5);
+    return x * x + y * y <= 1.0;
+}
+
 void main() {
     vec2 p = floor(vLocal) + 0.5;
     int hit = 0;
 
-    if (vKind < 0.5) {
+    if (vKind > 1.5) {
+        // Leaf cluster: two or three leaves fanned around the root, the
+        // whole cluster nudged by the wind.
+        int n = hash(1.0) < 0.5 ? 2 : 3;
+        float base = hash(2.0) * 6.2831;
+        for (int i = 0; i < 3; ++i) {
+            if (i >= n) break;
+            float a = base + float(i) * 6.2831 / float(n) + (hash(float(i) + 3.0) - 0.5);
+            vec2 c = vec2(cos(a), sin(a)) * 1.6 + vec2(0.5 + vSway * 0.5, 0.5);
+            if (leafShape(p, c, a, mix(3.2, 4.6, hash(float(i) + 7.0)) * vScale, 2.2)) hit = 1;
+        }
+    } else if (vKind < 0.5) {
         // Clump: three short, near-vertical blades, the middle one tallest.
         for (int i = 0; i < 3; ++i) {
             float fi = float(i);
@@ -58,6 +80,7 @@ void main() {
     }
 
     if (hit == 0) discard;
+    oNormal = vec4(0.5, 1.0, 0.5, 0.0);
     if (uMagenta == 1) {
         oColor = vec4(1.0, 0.0, 1.0, 1.0);
         return;

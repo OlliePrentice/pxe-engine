@@ -21,6 +21,8 @@ struct FrameParams {
   bool grassDepthTest = true;
   // Seconds, drives the grass wind. Hold it fixed for repeatable captures.
   float time = 0.f;
+  // Light rims and dark outlines on stone and bark.
+  bool edges = true;
 };
 
 class Renderer {
@@ -51,15 +53,18 @@ class Renderer {
   unsigned fbo_ = 0;
   unsigned fboShadow_ = 0;
   unsigned color_ = 0;
+  unsigned normals_ = 0;  // normal + surface, for the edge pass
+  unsigned final_ = 0;    // colour after the edge pass
+  unsigned fboFinal_ = 0;
   unsigned ground_ = 0;  // copy of color_ after terrain, read by grass
   unsigned depth_ = 0;
   unsigned shadow_ = 0;
-  unsigned normal_ = 0;
 
-  unsigned progTerrain_ = 0;
+  unsigned progMesh_ = 0;
   unsigned progGrass_ = 0;
   unsigned progShadow_ = 0;
   unsigned progPresent_ = 0;
+  unsigned progEdge_ = 0;
 
   unsigned grassVao_ = 0;
   unsigned grassCorner_ = 0;
@@ -69,8 +74,6 @@ class Renderer {
   unsigned presentVao_ = 0;
   unsigned presentVbo_ = 0;
 
-  float worldMin_ = -45.f;
-  float worldSize_ = 90.f;
 
   bool ready_ = false;
 };

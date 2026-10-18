@@ -46,7 +46,10 @@ struct Options {
   bool noDepth = false;
   bool stamps = false;
   bool tufts = true;
+  bool edges = true;
   float time = 0.f;
+  std::string scene = "ruins";
+  bool haveYaw = false;
   float yawDeg = 45.f;
   float slide = 0.f;
   float minDist = 0.34f;
@@ -60,12 +63,13 @@ void printUsage() {
                "  --width N --height N\n"
                "  --capture path.png       640x360 low-res framebuffer, then exit\n"
                "  --window-png path.png    integer-upscaled window, then exit\n"
-               "  --yaw degrees            default 45\n"
+               "  --scene ruins|hills      default ruins\n"
+               "  --yaw degrees            default from the scene\n"
                "  --slide metres           move the focus along horizontal forward\n"
                "  --target x,y,z\n"
                "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
                "  --time seconds           wind time for captures (default 0)\n"
-               "  --hide-grass --magenta --ndl --test-colours --no-tufts\n"
+               "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
                "  --stamps --no-depth\n"
                "  --self-test              snap stability of the low-res image\n"
                "  --no-vsync\n");
@@ -102,6 +106,9 @@ Options parseArgs(int argc, char** argv) {
       opt.windowPng = need("--window-png");
     } else if (a == "--yaw") {
       opt.yawDeg = std::atof(need("--yaw"));
+      opt.haveYaw = true;
+    } else if (a == "--scene") {
+      opt.scene = need("--scene");
     } else if (a == "--slide") {
       opt.slide = std::atof(need("--slide"));
     } else if (a == "--min-dist") {
@@ -120,6 +127,8 @@ Options parseArgs(int argc, char** argv) {
       opt.ndl = true;
     } else if (a == "--test-colours" || a == "--test-colors") {
       opt.testColours = true;
+    } else if (a == "--no-edges") {
+      opt.edges = false;
     } else if (a == "--no-tufts") {
       opt.tufts = false;
     } else if (a == "--time") {
@@ -230,6 +239,7 @@ pxe::FrameParams makeParams(const Options& opt) {
   params.testColours = opt.testColours;
   params.grassDepthTest = !opt.noDepth;
   params.time = opt.time;
+  params.edges = opt.edges;
   params.present = true;
   return params;
 }
@@ -312,12 +322,21 @@ int main(int argc, char** argv) {
       build.minDist = opt.minDist;
       build.tufts = opt.tufts && !opt.stamps;
       build.stamps = opt.stamps;
-      pxe::Scene scene = game::buildTerrain(build);
+      build.scene = opt.scene;
+      pxe::Scene scene;
+      try {
+        scene = game::buildScene(build);
+      } catch (const std::exception& ex) {
+        std::fprintf(stderr, "scene build failed: %s\n", ex.what());
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+      }
       renderer.upload(scene);
 
       pxe::Camera camera;
-      camera.setYawRadians(opt.yawDeg * 3.14159265f / 180.f);
-      if (opt.haveTarget) camera.setTarget(opt.target);
+      camera.setYawRadians((opt.haveYaw ? opt.yawDeg : scene.yawDegrees) * 3.14159265f / 180.f);
+      camera.setTarget(opt.haveTarget ? opt.target : scene.focus);
       if (opt.slide != 0.f) {
         const float yaw = camera.yawRadians();
         const glm::vec3 flatForward{std::sin(yaw), 0.f, std::cos(yaw)};
