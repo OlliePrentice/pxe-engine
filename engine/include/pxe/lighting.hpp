@@ -36,6 +36,10 @@ struct Lighting {
   glm::vec3 flashDir{0.f, 1.f, 0.f};
   // Firelight from the scene's campfire: how strong (0 none; the renderer
   // adds the flicker) and each surface's colour in full firelight.
+  // God rays: how strong the sunbeams are (0 none; the renderer adds the
+  // camera angle) and their colour.
+  float rays = 0.f;
+  glm::vec3 rayColour{1.f};
   float fireLight = 0.f;
   float fireReach = 6.f;  // metres
   float fireDim = 0.f;    // how far direct sun or moon light drowns it out

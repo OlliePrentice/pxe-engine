@@ -4,7 +4,9 @@
 
 uniform mat4 uViewProj;
 uniform vec2 uTarget;
-uniform float uDepthBiasNdc;
+uniform float uDepthBiasNdc;      // leaves: pulled toward the camera through their own crown
+uniform float uGrassBiasNdc;      // grass: just enough to clear the ground it stands on
+uniform float uUprightNdcPerPx;   // how much nearer each pixel up an upright blade is
 uniform vec3 uTip[kSurfaces * 3];     // blade tip colour where it overhangs darker ground
 uniform float uTime;
 uniform float uWindPx;    // peak tip sway in target pixels
@@ -74,7 +76,12 @@ void main() {
     }
     vLocal = vec2(aCorner.x * box.x - halfW, aCorner.y * box.y - halfH);
     vec2 p = px + vec2(vLocal.x, vLocal.y * uSpriteFlip);
-    gl_Position = vec4(p / uTarget * 2.0 - 1.0, c.z / c.w - uDepthBiasNdc, 1.0);
+    // Grass stands upright, so each pixel up the sprite is a little nearer
+    // the camera than its root, as a real blade would be; a stone face just
+    // in front then hides the blades behind it instead of being drawn over.
+    // Leaves face the camera and keep their root's depth.
+    float z = c.z / c.w - (leaf ? uDepthBiasNdc : uGrassBiasNdc + max(vLocal.y, 0.0) * uUprightNdcPerPx);
+    gl_Position = vec4(p / uTarget * 2.0 - 1.0, z, 1.0);
 
     vSeed = iParams.y;
     vScale = iParams.z;
@@ -109,12 +116,17 @@ void main() {
     vFlutter = 0.0;
     if (leaf) {
         // Leaves ride the same gusts as the grass, bobbing a pixel or two,
-        // and each cluster flutters on its own beat as the gusts pass.
+        // and each cluster flutters on its own beat as the gusts pass. A
+        // turning leaf re-rasterises every frame and shimmers against the
+        // leaves round it, so the turn snaps between a few poses and every
+        // leaf moves together on one 12 fps beat, like hand animation.
+        float t = floor(uTime * 12.0) / 12.0;
         float gust = wind(iRoot.xz);
-        vSway = uWindPx * (uWindLean * (0.4 + 0.8 * gust) + 0.7 * sin(uTime * 2.3 + vSeed * 6.2831 + iRoot.y));
-        vFlutter = (0.25 + 0.2 * gust) * sin(uTime * 3.4 + vSeed * 31.0);
+        vSway = floor(uWindPx * (uWindLean * (0.4 + 0.8 * gust) + 0.6 * sin(t * 2.3 + vSeed * 6.2831 + iRoot.y)) + 0.5);
+        float turn = (0.14 + 0.1 * gust) * sin(t * 3.4 + vSeed * 31.0);
         // In rain the upward-facing leaves bob as drops hit them.
         if (uRain > 0.0 && iNormal.y > 0.3)
-            vFlutter += uRain * 0.45 * sin(uTime * 9.0 + vSeed * 57.0) * step(0.5, fract(vSeed * 13.0 + uTime * 0.7));
+            turn += uRain * 0.3 * sin(t * 9.0 + vSeed * 57.0) * step(0.5, fract(vSeed * 13.0 + t * 0.7));
+        vFlutter = floor(turn / 0.12 + 0.5) * 0.12;
     }
 }

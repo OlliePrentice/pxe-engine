@@ -43,6 +43,15 @@ uniform vec3 uFwd;
 uniform vec2 uOrthoHalf;    // half the view in metres
 uniform float uNear;
 uniform float uYawTexels;   // camera yaw in radians over the texel size in metres
+uniform sampler2DShadow uShadowMap;  // the sun's, for god rays
+uniform mat4 uLightViewProj;
+uniform float uRays;        // 0 none .. about 1 strong
+uniform vec3 uRayColour;
+uniform vec2 uRaySpan;      // heights of the lowest and highest slices of air, metres
+uniform sampler2D uCanopy;  // tiling noise for the gaps light falls through
+uniform float uCloudCover;  // cloud shadows, as in the toon shading: they block the rays
+uniform vec2 uCloudOffset;
+uniform float uCloudStrength;
 uniform sampler2D uHeat;    // fire: flame heat (r), ember glow (g), smoke (b)
 uniform int uFire;
 
@@ -164,6 +173,82 @@ float streaks(vec2 w, float density, float rate, vec2 cell, float len, float see
     return (floor(local.x) == x0 && local.y >= y0 && local.y < y0 + len) ? 1.0 : 0.0;
 }
 
+// God rays, after t3ssel8r's: the air in front of each pixel is cut into
+// level slices from the ground to the treetops, and each slice is looked up
+// in the sun's shadow map - no ray marching through a volume, just one
+// texture tap per slice. Light reaches a slice only through gaps in a
+// canopy above the frame, a pattern fixed in the light's own space, so it
+// falls in separate shafts along the sun; the scene's own shadows - crowns,
+// trunks, pillars - cut the shafts further. The share of lit air, cut into
+// a few hard steps, lays a warm haze over the pixel. Hard edges keep it
+// crisp, like the rest of the pixel art.
+float canopyGap(vec2 lightUv) {
+    vec2 q = lightUv * 0.8 + vec2(uTime * 0.0005, 0.0);
+    return texture(uCanopy, q).r > 0.6 ? 1.0 : 0.0;
+}
+
+// The cloud shadow over a point, as the toon shading draws it: 0 clear, up
+// to the shadow strength under a thick cloud.
+float cloudHash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+float cloudNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = cloudHash(i), b = cloudHash(i + vec2(1, 0));
+    float c = cloudHash(i + vec2(0, 1)), d = cloudHash(i + vec2(1, 1));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float cloudShadow(vec3 wpos) {
+    if (uCloudCover <= 0.0 || uCloudStrength <= 0.0) return 0.0;
+    vec2 q = wpos.xz / 26.0 + uCloudOffset;
+    float n = 0.0, amp = 0.55;
+    for (int i = 0; i < 4; ++i) {
+        n += amp * cloudNoise(q);
+        q = q * 2.03 + vec2(17.1, 9.7);
+        amp *= 0.48;
+    }
+    float t = mix(0.70, 0.30, uCloudCover);
+    return ((n > t + 0.08) ? 1.0 : (n > t + 0.04) ? 0.66 : (n > t) ? 0.33 : 0.0) * uCloudStrength;
+}
+
+vec3 godRays(ivec2 p, vec3 col) {
+    if (uRays <= 0.0) return col;
+    if (texelFetch(uDepth, p, 0).r >= 0.9999) return col;
+    vec3 s = worldAt(p);
+    // Each pixel's slices sit a little higher or lower, by an interleaved
+    // pattern on the world-anchored pixel grid, so the steps between slices
+    // do not line up across the screen into streaks.
+    vec2 w = vec2(p) + uCamTexel;
+    float jitter = fract(52.9829189 * fract(dot(w, vec2(0.06711056, 0.00583715))));
+    // A cloud over the column, at its foot or its top, blocks the beam.
+    vec3 topOfColumn = s - uFwd * ((uRaySpan.y - s.y) / -uFwd.y);
+    float cloud = max(cloudShadow(s), cloudShadow(topOfColumn));
+    float strength = uRays * (1.0 - cloud * 1.4);
+    // Skip the slices where even all the air lit would not reach the
+    // faintest step: a high sun, under cloud, or the top of a pillar.
+    float air = clamp((uRaySpan.y - s.y) / (uRaySpan.y - uRaySpan.x), 0.0, 1.0);
+    if (air * strength <= 0.08) return col;
+    const int kSlices = 32;
+    float lit = 0.0;
+    for (int i = 0; i < kSlices; ++i) {
+        float h = mix(uRaySpan.x, uRaySpan.y, (float(i) + jitter) / float(kSlices));
+        if (h <= s.y) continue;
+        vec3 q = s - uFwd * ((h - s.y) / -uFwd.y);
+        vec4 ls = uLightViewProj * vec4(q, 1.0);
+        vec3 l = ls.xyz / ls.w * 0.5 + 0.5;
+        if (canopyGap(l.xy) > 0.0) lit += texture(uShadowMap, vec3(l.xy, l.z - 0.002));
+    }
+    float v = lit / float(kSlices) * strength;
+    float a = v > 0.45 ? 0.27 : (v > 0.3 ? 0.2 : (v > 0.18 ? 0.13 : (v > 0.08 ? 0.07 : 0.0)));
+    return mix(col, uRayColour, a);
+}
+
 vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
     if (uRain <= 0.0) return col;
     vec2 w = vec2(p) + uCamTexel;  // pixel grid anchored to the focus
@@ -230,6 +315,7 @@ void main() {
     vec4 np = texelFetch(uNormal, p, 0);
     int surface = int(np.a * 8.0 + 0.5) - 1;
     col = edges(p, col, np, surface);
+    col = godRays(p, col);
     col = rain(p, col, np, surface);
     if (uFire == 1) col = fire(p, col);
     oColor = vec4(col, 1.0);

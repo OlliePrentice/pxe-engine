@@ -17,7 +17,8 @@
 namespace pxe {
 namespace {
 
-constexpr float kGrassBiasMetres = 0.6f;
+constexpr float kGrassBiasMetres = 0.6f;   // leaves, through their own crown
+constexpr float kBladeBiasMetres = 0.12f;  // grass, just clear of the ground
 constexpr float kWindPx = 1.6f;
 // Fire is drawn this far toward the camera, so the logs in front of it hide
 // only the bottom of the flames.
@@ -155,9 +156,9 @@ Renderer::~Renderer() {
 }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, flashShadow_, heat_, refl_, reflDepth_, bed_, bedDepth_};
+  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, flashShadow_, heat_, canopy_, refl_, reflDepth_, bed_, bedDepth_};
   glDeleteTextures(static_cast<GLsizei>(std::size(textures)), textures);
-  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = flashShadow_ = heat_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
+  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = flashShadow_ = heat_ = canopy_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
   if (fboHeat_) glDeleteFramebuffers(1, &fboHeat_);
   fboHeat_ = 0;
   if (fireCube_) glDeleteTextures(1, &fireCube_);
@@ -248,6 +249,44 @@ void Renderer::createTargets() {
   const unsigned reflDraw = GL_COLOR_ATTACHMENT0;
   glDrawBuffers(1, &reflDraw);
   requireFbo("reflection");
+
+  // The god rays' canopy: two octaves of smooth value noise, tiling, baked
+  // once so each slice of air costs one lookup.
+  {
+    constexpr int kSize = 128;
+    auto lattice = [](int x, int y, int period) {
+      x = ((x % period) + period) % period;
+      y = ((y % period) + period) % period;
+      std::uint32_t h = static_cast<std::uint32_t>(x) * 374761393u + static_cast<std::uint32_t>(y) * 668265263u;
+      h = (h ^ (h >> 13)) * 1274126177u;
+      return static_cast<float>((h ^ (h >> 16)) & 0xffff) / 65535.f;
+    };
+    auto noise = [&](float u, float v, int period) {
+      const int x = static_cast<int>(std::floor(u)), y = static_cast<int>(std::floor(v));
+      float fx = u - static_cast<float>(x), fy = v - static_cast<float>(y);
+      fx = fx * fx * (3.f - 2.f * fx);
+      fy = fy * fy * (3.f - 2.f * fy);
+      const float a = lattice(x, y, period), b = lattice(x + 1, y, period);
+      const float c = lattice(x, y + 1, period), d = lattice(x + 1, y + 1, period);
+      return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+    };
+    std::vector<std::uint8_t> px(static_cast<std::size_t>(kSize * kSize));
+    for (int y = 0; y < kSize; ++y)
+      for (int x = 0; x < kSize; ++x) {
+        const float u = static_cast<float>(x) / kSize, v = static_cast<float>(y) / kSize;
+        const float n = 0.65f * noise(u * 16.f, v * 16.f, 16) + 0.35f * noise(u * 32.f, v * 32.f, 32);
+        px[static_cast<std::size_t>(y * kSize + x)] = static_cast<std::uint8_t>(std::clamp(n, 0.f, 1.f) * 255.f);
+      }
+    glGenTextures(1, &canopy_);
+    glBindTexture(GL_TEXTURE_2D, canopy_);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, kSize, kSize, 0, GL_RED, GL_UNSIGNED_BYTE, px.data());
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  }
 
   glGenTextures(1, &fireCube_);
   glBindTexture(GL_TEXTURE_CUBE_MAP, fireCube_);
@@ -582,6 +621,13 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glUseProgram(progGrass_);
     u2f(progGrass_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
     u1f(progGrass_, "uDepthBiasNdc", biasNdc);
+    {
+      const float metresToNdc = 2.f / (camera.farPlane - camera.nearPlane);
+      u1f(progGrass_, "uGrassBiasNdc", kBladeBiasMetres * metresToNdc);
+      // An upright point h metres up shows h cos(pitch) metres higher on
+      // screen and sits h sin(pitch) nearer: tan(pitch) metres per metre.
+      u1f(progGrass_, "uUprightNdcPerPx", std::tan(camera.pitchRadians) * camera.texelWorld * metresToNdc);
+    }
     bindToon(progGrass_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
     u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
@@ -730,6 +776,30 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindTexture(GL_TEXTURE_2D, heat_);
   u1i(progEdge_, "uHeat", 3);
   u1i(progEdge_, "uFire", fireCount > 0 ? 1 : 0);
+  // God rays sample the sun's shadow map through the air above each pixel.
+  // They are strongest looking toward the sun, where the light scatters
+  // forward into the view.
+  {
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, shadow_);
+    u1i(progEdge_, "uShadowMap", 4);
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D, canopy_);
+    u1i(progEdge_, "uCanopy", 5);
+    umat(progEdge_, "uLightViewProj", light.viewProj);
+    const glm::vec2 towardSun{lighting.lightDir.x, lighting.lightDir.z};
+    const glm::vec2 looking{camera.forward.x, camera.forward.z};
+    const float facing = (glm::length(towardSun) > 1e-4f && glm::length(looking) > 1e-4f)
+                             ? glm::dot(glm::normalize(towardSun), glm::normalize(looking))
+                             : 0.f;
+    const float rays = params.rays ? lighting.rays * (0.75f + 0.45f * facing) : 0.f;
+    u1f(progEdge_, "uRays", std::max(rays, 0.f));
+    u3f(progEdge_, "uRayColour", lighting.rayColour.x, lighting.rayColour.y, lighting.rayColour.z);
+    u2f(progEdge_, "uRaySpan", scene.boundsMin.y, std::min(scene.boundsMax.y, scene.boundsMin.y + 14.f));
+    u1f(progEdge_, "uCloudCover", lighting.cloudCover);
+    u2f(progEdge_, "uCloudOffset", lighting.cloudOffset.x, lighting.cloudOffset.y);
+    u1f(progEdge_, "uCloudStrength", lighting.cloudStrength);
+  }
   u1f(progEdge_, "uDepthMetres", camera.farPlane - camera.nearPlane);
   u1i(progEdge_, "uEnabled", params.edges ? 1 : 0);
   u3f(progEdge_, "uRim", lighting.rim.x, lighting.rim.y, lighting.rim.z);

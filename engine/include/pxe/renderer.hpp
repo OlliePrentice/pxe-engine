@@ -28,6 +28,8 @@ struct FrameParams {
   bool edges = true;
   // Campfire flames and their light.
   bool fire = true;
+  // Sunbeams through the trees.
+  bool rays = true;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
 };
@@ -93,6 +95,7 @@ class Renderer {
   unsigned flashShadow_ = 0;  // lightning's shadow map, redrawn per strike
   unsigned heat_ = 0;         // fire heat (r), embers (g) and smoke (b), quantised by the edge pass
   unsigned fboHeat_ = 0;
+  unsigned canopy_ = 0;  // tiling noise for the god rays' canopy gaps
   // The fire's shadow map: distance to the nearest surface on each face of a
   // cube round the fire. The scene does not move, so it is drawn once.
   unsigned fireCube_ = 0;

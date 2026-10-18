@@ -51,6 +51,7 @@ struct Options {
   bool tufts = true;
   bool edges = true;
   bool fire = true;
+  bool rays = true;
   float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
   float clouds = 0.35f;
   float rain = 0.f;
@@ -86,6 +87,7 @@ void printUsage() {
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
                "  --no-fire                campfire unlit\n"
+               "  --no-rays                no god rays\n"
                "  --no-lightning           no lightning flashes in rain and downpour\n"
                "  --mute                   start with sound off\n"
                "  --audio-wav path.wav     render 20 s of weather sound (--rain, --wind-strength) with two thunderclaps, exit\n"
@@ -176,6 +178,8 @@ Options parseArgs(int argc, char** argv) {
       opt.rain = std::atof(need("--rain"));
     } else if (a == "--no-fire") {
       opt.fire = false;
+    } else if (a == "--no-rays") {
+      opt.rays = false;
     } else if (a == "--no-lightning") {
       opt.lightning = false;
     } else if (a == "--mute") {
@@ -324,6 +328,24 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
   lighting.overcast = 0.7f * clock.rain;
   lighting.cloudStrength *= std::clamp(1.f - 2.f * clock.rain, 0.f, 1.f);
 
+  // God rays: only from the sun. Strong in the morning and at dusk while it
+  // is low, barely there with it high. A drizzle catches the light and
+  // brings them out more; from moderate rain up the sun is gone and so are
+  // they. Cloud shadows block them where they fall (in the edge pass).
+  {
+    const float elev = lighting.sunElevationDegrees;
+    const bool sunLights = pxe::sunDirection(scene, clock.hour).y >= pxe::moonDirection(scene, clock.hour).y;
+    auto ramp = [](float x, float a, float b) {
+      const float t = std::clamp((x - a) / (b - a), 0.f, 1.f);
+      return t * t * (3.f - 2.f * t);
+    };
+    const float low = 1.f - ramp(elev, 8.f, 35.f);
+    const float r = clock.rain;
+    const float rainLight = r <= 0.3f ? 1.f + 2.5f * r : std::max(0.f, 1.75f * (1.f - (r - 0.3f) / 0.15f));
+    lighting.rays = sunLights ? ramp(elev, 0.f, 3.f) * (0.1f + low) * rainLight : 0.f;
+    lighting.rayColour = glm::mix(glm::vec3{1.f, 0.97f, 0.86f}, glm::vec3{1.f, 0.8f, 0.56f}, 1.f - ramp(elev, 6.f, 24.f));
+  }
+
   // Firelight: a warm pool round the campfire. By day direct sun drowns it
   // out, so it shows only in the shade round the fire; once the sun is down
   // it lights everything near and carries farther. Each surface's colour in
@@ -379,6 +401,7 @@ pxe::FrameParams makeParams(const Options& opt) {
   params.time = opt.time;
   params.edges = opt.edges;
   params.fire = opt.fire;
+  params.rays = opt.rays;
   params.present = true;
   return params;
 }
@@ -628,6 +651,7 @@ int main(int argc, char** argv) {
         view.grass = !opt.hideGrass;
         view.edges = opt.edges;
         view.fire = opt.fire;
+        view.rays = opt.rays;
         bool magenta = opt.magenta;
         bool ndl = opt.ndl;
         game::WorldClock clock;
@@ -691,6 +715,7 @@ int main(int argc, char** argv) {
           params.showGrass = view.grass;
           params.edges = view.edges;
           params.fire = view.fire;
+          params.rays = view.rays;
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
