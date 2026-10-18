@@ -14,8 +14,8 @@ uniform int uEnabled;
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
-const vec3 kRim = vec3(0.96, 0.94, 0.86);
-const vec3 kInk = vec3(0.30, 0.30, 0.40);
+uniform vec3 uRim;  // blended with the time of day
+uniform vec3 uInk;
 
 out vec4 oColor;
 
@@ -33,8 +33,12 @@ void main() {
 
     bool rim = false;
     bool ink = false;
-    const ivec2 kOffsets[4] = ivec2[4](ivec2(0, 1), ivec2(0, -1), ivec2(1, 0), ivec2(-1, 0));
-    for (int i = 0; i < 4; ++i) {
+    // Diagonal neighbours count for rims, so a seam that rasterises as a
+    // 2:1 staircase joins into one line instead of a row of dots.
+    const ivec2 kOffsets[8] = ivec2[8](ivec2(0, 1), ivec2(0, -1), ivec2(1, 0), ivec2(-1, 0),
+                                      ivec2(1, 1), ivec2(-1, 1), ivec2(1, -1), ivec2(-1, -1));
+    for (int i = 0; i < 8; ++i) {
+        bool diagonal = i >= 4;
         ivec2 q = p + kOffsets[i];
         float dq = texelFetch(uDepth, q, 0).r * uDepthMetres;
         vec4 nq4 = texelFetch(uNormal, q, 0);
@@ -42,9 +46,9 @@ void main() {
         bool behind = dq - d > kSilhouette;
         bool crease = !behind && abs(dq - d) < kSilhouette && nq4.a > 0.0 && dot(n, nq) < 0.8;
         if (n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
-        else if (behind) ink = true;
+        else if (behind && !diagonal) ink = true;
     }
-    if (rim) col = mix(col, kRim, 0.4);
-    else if (ink) col = mix(col, kInk, 0.35);
+    if (rim) col = mix(col, uRim, 0.4);
+    else if (ink) col = mix(col, uInk, 0.35);
     oColor = vec4(col, 1.0);
 }

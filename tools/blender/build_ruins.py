@@ -122,7 +122,29 @@ def noise_texture(name, kind="CLOUDS", scale=0.6, depth=2):
     return tex
 
 
-def chipped(obj, strength=0.07, ratio=0.18, levels=3, tex_scale=0.35):
+def box_normals(obj, size):
+    """Give every face the normal of the box side it came from.
+
+    The chipped silhouette stays, but each side of a block shades as one
+    flat face, the way t3ssel8r transfers normals from the undisplaced
+    shape. Without this, every small decimated facet flips between toon bands
+    on its own as the sun moves and the blocks sparkle with triangles.
+    """
+    mesh = obj.data
+    half = Vector(size) * 0.5
+    normals = []
+    for poly in mesh.polygons:
+        c = poly.center
+        r = Vector((c.x / half.x, c.y / half.y, c.z / half.z))
+        axis = max(range(3), key=lambda i: abs(r[i]))
+        n = Vector((0.0, 0.0, 0.0))
+        n[axis] = 1.0 if r[axis] >= 0 else -1.0
+        normals.extend([n] * poly.loop_total)
+    set_smooth(mesh, True)
+    mesh.normals_split_custom_set(normals)
+
+
+def chipped(obj, strength=0.07, ratio=0.18, levels=3, tex_scale=0.35, size=None):
     """t3ssel8r's stone stack: subdivide, displace with noise, decimate."""
     sub = obj.modifiers.new("Subdivide", "SUBSURF")
     sub.subdivision_type = "SIMPLE"
@@ -137,7 +159,10 @@ def chipped(obj, strength=0.07, ratio=0.18, levels=3, tex_scale=0.35):
     dec.decimate_type = "COLLAPSE"
     dec.ratio = ratio
     bake_modifiers(obj)
-    set_smooth(obj.data, False)
+    if size is not None:
+        box_normals(obj, size)
+    else:
+        set_smooth(obj.data, False)
 
 
 def stone_block(name, size, centre, rot_z=0.0, tilt=(0.0, 0.0), strength=0.07, ratio=0.2):
@@ -146,7 +171,7 @@ def stone_block(name, size, centre, rot_z=0.0, tilt=(0.0, 0.0), strength=0.07, r
     link(obj, "Stone")
     obj.matrix_local = Matrix.Translation(Vector(centre)) @ Matrix.Rotation(rot_z, 4, "Z") \
         @ Matrix.Rotation(tilt[0], 4, "X") @ Matrix.Rotation(tilt[1], 4, "Y")
-    chipped(obj, strength=strength, ratio=ratio)
+    chipped(obj, strength=strength, ratio=ratio, size=size)
     return obj
 
 
@@ -382,6 +407,8 @@ def build_stairs():
 
 
 def build_pillar(name, a, b, drums, broken=False):
+    """Stacked, uneven drums with blocks jutting out, so the capital and the
+    ledges cast their own shadows down the shaft as the sun moves."""
     footprints.append((a - 1.1, a + 1.1, b - 1.1, b + 1.1))
     z = 0.0
     stone_block(name + "Plinth", (2.0, 2.0, 0.5), (a, b, z + 0.25), strength=0.06)
@@ -389,18 +416,32 @@ def build_pillar(name, a, b, drums, broken=False):
     stone_block(name + "Base", (1.6, 1.6, 0.35), (a, b, z + 0.175), strength=0.05)
     z += 0.35
     for k in range(drums):
-        h = rng.uniform(0.9, 1.15)
-        off = (rng.uniform(-0.05, 0.05), rng.uniform(-0.05, 0.05))
-        stone_block(name + "Drum", (1.25, 1.25, h - 0.03), (a + off[0], b + off[1], z + h / 2),
-                    rot_z=rng.uniform(-0.05, 0.05), strength=0.08, ratio=0.2)
+        h = rng.uniform(0.85, 1.15)
+        w = rng.uniform(1.12, 1.38)
+        off = (rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1))
+        # Drums share one orientation so a whole face of the pillar turns to
+        # the sun at once; the chipping and offsets still break it up.
+        stone_block(name + "Drum", (w, w * rng.uniform(0.92, 1.08), h - 0.04), (a + off[0], b + off[1], z + h / 2),
+                    strength=0.08, ratio=0.2)
+        # Now and then a block juts out of the drum: a ledge that throws a
+        # short shadow down the face below it.
+        if rng.random() < 0.55:
+            side = rng.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])
+            jut = rng.uniform(0.12, 0.22)
+            bw = rng.uniform(0.45, 0.8)
+            bh = rng.uniform(0.25, 0.45)
+            cx = a + off[0] + side[0] * (w / 2 + jut / 2 - 0.08) + (0 if side[0] else rng.uniform(-0.2, 0.2))
+            cy = b + off[1] + side[1] * (w / 2 + jut / 2 - 0.08) + (0 if side[1] else rng.uniform(-0.2, 0.2))
+            size = (jut + 0.16, bw, bh) if side[0] else (bw, jut + 0.16, bh)
+            stone_block(name + "Jut", size, (cx, cy, z + rng.uniform(0.2, h - 0.2)), strength=0.06, ratio=0.25)
         z += h
     if broken:
         stone_block(name + "Broken", (1.2, 1.2, 0.5), (a + 0.1, b, z + 0.2),
                     rot_z=0.2, tilt=(0.18, 0.1), strength=0.12, ratio=0.15)
         return
-    stone_block(name + "Capital", (1.75, 1.75, 0.45), (a, b, z + 0.225), strength=0.06)
+    stone_block(name + "Capital", (1.85, 1.85, 0.45), (a, b, z + 0.225), strength=0.06)
     z += 0.45
-    stone_block(name + "Abacus", (1.45, 1.45, 0.35), (a, b, z + 0.175), rot_z=0.04, strength=0.06)
+    stone_block(name + "Abacus", (1.5, 1.5, 0.35), (a, b, z + 0.175), rot_z=0.04, strength=0.06)
 
 
 def build_planter(name, a, b, size, height_m=0.6):

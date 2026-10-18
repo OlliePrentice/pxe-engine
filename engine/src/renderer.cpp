@@ -54,63 +54,58 @@ struct LightFit {
   float texel = 0.05f;
 };
 
-LightFit fitLight(const Scene& scene) {
+// A fixed-size square around the scene's bounding sphere. Fitting the box
+// corners instead changes the texel size every time the sun moves, which
+// makes shadow edges crawl. No texel snapping: that steadies a map that
+// slides with the camera, but under a turning sun the snap offset jumps by
+// half a texel back and forth, and shadow edges wobble instead of moving
+// steadily one way.
+LightFit fitLight(const Scene& scene, glm::vec3 lightDir) {
   LightFit fit;
-  const glm::vec3 L = glm::normalize(scene.sunDir);
+  const glm::vec3 L = glm::normalize(lightDir);
   const glm::vec3 center = (scene.boundsMin + scene.boundsMax) * 0.5f;
+  const float radius = 0.5f * glm::length(scene.boundsMax - scene.boundsMin) + 1.f;
   const glm::vec3 up = std::fabs(L.y) > 0.95f ? glm::vec3{0.f, 0.f, 1.f} : glm::vec3{0.f, 1.f, 0.f};
-  const glm::vec3 eye = center + L * 140.f;
-  const glm::mat4 view = glm::lookAt(eye, center, up);
+  const glm::mat4 view = glm::lookAt(center + L * (radius + 10.f), center, up);
 
-  glm::vec3 mn{1e9f};
-  glm::vec3 mx{-1e9f};
-  for (int i = 0; i < 8; ++i) {
-    const glm::vec3 p{(i & 1) ? scene.boundsMax.x : scene.boundsMin.x,
-                      (i & 2) ? scene.boundsMax.y : scene.boundsMin.y,
-                      (i & 4) ? scene.boundsMax.z : scene.boundsMin.z};
-    const glm::vec3 v = glm::vec3(view * glm::vec4(p, 1.f));
-    mn = glm::min(mn, v);
-    mx = glm::max(mx, v);
-  }
-  const float margin = 3.f;
-  mn.x -= margin;
-  mn.y -= margin;
-  mx.x += margin;
-  mx.y += margin;
-  float nearP = -mx.z - 8.f;
-  float farP = -mn.z + 8.f;
-  if (nearP < 0.2f) nearP = 0.2f;
-  if (farP < nearP + 2.f) farP = nearP + 2.f;
-
-  fit.texel = std::max(mx.x - mn.x, mx.y - mn.y) / static_cast<float>(RenderConfig::kShadow);
-  fit.viewProj = glm::ortho(mn.x, mx.x, mn.y, mx.y, nearP, farP) * view;
+  fit.texel = 2.f * radius / static_cast<float>(RenderConfig::kShadow);
+  fit.viewProj = glm::ortho(-radius, radius, -radius, radius, 1.f, 2.f * radius + 20.f) * view;
   return fit;
 }
 
 // Flatten one Palette field across all surfaces into shadow/mid/lit
 // triples, or pure red/green/blue per band for --test-colours.
-std::vector<float> ramp(const Scene& scene, glm::vec3 (Palette::*field)[3], bool testColours) {
+// Flatten one Palette field across all surfaces into shadow/mid/lit
+// triples, or pure red/green/blue per band for --test-colours.
+std::vector<float> ramp(const Lighting& lighting, glm::vec3 (Palette::*field)[3], bool testColours) {
   std::vector<float> out;
   out.reserve(kSurfCount * 9);
   for (int s = 0; s < kSurfCount; ++s) {
     for (int b = 0; b < 3; ++b) {
-      const glm::vec3 c = testColours ? glm::vec3(b == 2, b == 1, b == 0) : (scene.palette[s].*field)[b];
+      const glm::vec3 c = testColours ? glm::vec3(b == 2, b == 1, b == 0) : (lighting.palette[s].*field)[b];
       out.insert(out.end(), {c.x, c.y, c.z});
     }
   }
   return out;
 }
 
-void bindToon(unsigned prog, const Scene& scene, const glm::mat4& lightVP, float normalBias, bool testColours) {
-  u1f(prog, "uTLit", scene.tLit);
-  u1f(prog, "uTMid", scene.tMid);
-  const glm::vec3 sun = glm::normalize(scene.sunDir);
-  u3f(prog, "uSunDir", sun.x, sun.y, sun.z);
-  u3fv(prog, "uBand", kSurfCount * 3, ramp(scene, &Palette::band, testColours).data());
-  u3fv(prog, "uDetail", kSurfCount * 3, ramp(scene, &Palette::detail, testColours).data());
+void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP, float normalBias,
+              bool testColours) {
+  u1f(prog, "uTLit", lighting.tLit);
+  u1f(prog, "uTMid", lighting.tMid);
+  const glm::vec3 light = glm::normalize(lighting.lightDir);
+  u3f(prog, "uSunDir", light.x, light.y, light.z);
+  u3fv(prog, "uBand", kSurfCount * 3, ramp(lighting, &Palette::band, testColours).data());
+  u3fv(prog, "uDetail", kSurfCount * 3, ramp(lighting, &Palette::detail, testColours).data());
   umat(prog, "uLightViewProj", lightVP);
   u1i(prog, "uShadowMap", 1);
   u1f(prog, "uNormalBias", normalBias);
+  u1f(prog, "uShadowTexel", 1.f / static_cast<float>(RenderConfig::kShadow));
+  u1f(prog, "uCloudCover", lighting.cloudCover);
+  u2f(prog, "uCloudOffset", lighting.cloudOffset.x, lighting.cloudOffset.y);
+  u1f(prog, "uCloudStrength", lighting.cloudStrength);
+  glUniform4f(uloc(prog, "uHorizon"), lighting.horizon.x, lighting.horizon.y, lighting.horizon.z, lighting.horizon.w);
+  u1f(prog, "uHorizonRelief", lighting.horizonRelief);
 }
 
 }  // namespace
@@ -165,6 +160,10 @@ unsigned Renderer::makeDepth(int w, int h, bool shadowCompare) {
   const float border[4] = {1.f, 1.f, 1.f, 1.f};
   glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
   if (shadowCompare) {
+    // Linear filtering on a compare sampler returns the fraction of the four
+    // nearest texels that pass, a free 2x2 PCF.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
   } else {
@@ -174,11 +173,11 @@ unsigned Renderer::makeDepth(int w, int h, bool shadowCompare) {
 }
 
 void Renderer::createTargets() {
-  color_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
-  normals_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
-  final_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
-  ground_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
-  depth_ = makeDepth(RenderConfig::kRtW, RenderConfig::kRtH, false);
+  color_ = makeColor(rtW(), rtH());
+  normals_ = makeColor(rtW(), rtH());
+  final_ = makeColor(rtW(), rtH());
+  ground_ = makeColor(rtW(), rtH());
+  depth_ = makeDepth(rtW(), rtH(), false);
   shadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
 
   glGenFramebuffers(1, &fbo_);
@@ -266,9 +265,8 @@ void Renderer::init() {
   const unsigned char* version = glGetString(GL_VERSION);
   std::fprintf(stderr, "pxe: %s — %s\n", vendor ? reinterpret_cast<const char*>(vendor) : "?",
                version ? reinterpret_cast<const char*>(version) : "?");
-  std::fprintf(stderr, "pxe: target %dx%d (view %dx%d + %dpx pad), shadow %d\n", RenderConfig::kRtW,
-               RenderConfig::kRtH, RenderConfig::kViewW, RenderConfig::kViewH, RenderConfig::kPad,
-               RenderConfig::kShadow);
+  std::fprintf(stderr, "pxe: target %dx%d (view %dx%d + %dpx pad), shadow %d\n", rtW(), rtH(), viewW(), viewH(),
+               RenderConfig::kPad, RenderConfig::kShadow);
 }
 
 void Renderer::upload(const Scene& scene) {
@@ -282,10 +280,10 @@ void Renderer::upload(const Scene& scene) {
 void Renderer::drawPresent(const CameraFrame& camera, const FrameParams& params) {
   const int fbW = std::max(params.framebufferW, 1);
   const int fbH = std::max(params.framebufferH, 1);
-  int scale = std::min(fbW / RenderConfig::kViewW, fbH / RenderConfig::kViewH);
+  int scale = std::min(fbW / viewW(), fbH / viewH());
   if (scale < 1) scale = 1;
-  const int dw = RenderConfig::kViewW * scale;
-  const int dh = RenderConfig::kViewH * scale;
+  const int dw = viewW() * scale;
+  const int dh = viewH() * scale;
   const int x0 = (fbW - dw) / 2;
   const int y0 = (fbH - dh) / 2;
   const int x1 = x0 + dw;
@@ -294,11 +292,11 @@ void Renderer::drawPresent(const CameraFrame& camera, const FrameParams& params)
   auto nx = [&](int x) { return (static_cast<float>(x) / static_cast<float>(fbW)) * 2.f - 1.f; };
   auto ny = [&](int y) { return (static_cast<float>(y) / static_cast<float>(fbH)) * 2.f - 1.f; };
 
-  const float rtW = static_cast<float>(RenderConfig::kRtW);
-  const float rtH = static_cast<float>(RenderConfig::kRtH);
+  const float rtW = static_cast<float>(this->rtW());
+  const float rtH = static_cast<float>(this->rtH());
   const float pad = static_cast<float>(RenderConfig::kPad);
-  const float viewW = static_cast<float>(RenderConfig::kViewW);
-  const float viewH = static_cast<float>(RenderConfig::kViewH);
+  const float viewW = static_cast<float>(this->viewW());
+  const float viewH = static_cast<float>(this->viewH());
   const float u0 = (pad + camera.texelError.x) / rtW;
   const float v0 = (pad + camera.texelError.y) / rtH;
   const float u1 = (pad + viewW + camera.texelError.x) / rtW;
@@ -328,8 +326,9 @@ void Renderer::drawPresent(const CameraFrame& camera, const FrameParams& params)
 }
 
 void Renderer::render(const Scene& scene, const CameraFrame& camera, const FrameParams& params) {
-  const LightFit light = fitLight(scene);
-  const float normalBias = 1.5f * light.texel;
+  const Lighting& lighting = params.lighting;
+  const LightFit light = fitLight(scene, lighting.lightDir);
+  const float normalBias = 3.f * light.texel;
   const glm::mat4 viewProj = camera.proj * camera.view;
   const float biasNdc = kGrassBiasMetres * 2.f / (camera.farPlane - camera.nearPlane);
 
@@ -339,18 +338,23 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glDepthFunc(GL_LESS);
   glDepthMask(GL_TRUE);
   glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-  // Both faces: water, foam and the ground are open sheets.
+  // Both faces: water, foam and the ground are open sheets. A slope-scaled
+  // offset keeps faces that turn away from the light from shadowing
+  // themselves in speckles.
   glDisable(GL_CULL_FACE);
+  glEnable(GL_POLYGON_OFFSET_FILL);
+  glPolygonOffset(2.f, 4.f);
   glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
   glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
   glClear(GL_DEPTH_BUFFER_BIT);
   glUseProgram(progShadow_);
   umat(progShadow_, "uLightViewProj", light.viewProj);
   for (const Mesh& m : scene.meshes) m.draw();
+  glDisable(GL_POLYGON_OFFSET_FILL);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-  glViewport(0, 0, RenderConfig::kRtW, RenderConfig::kRtH);
+  glViewport(0, 0, rtW(), rtH());
   glClearColor(0.f, 0.f, 0.f, 1.f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -363,23 +367,28 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   umat(progMesh_, "uViewProj", viewProj);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
   u1f(progMesh_, "uTime", params.time);
-  bindToon(progMesh_, scene, light.viewProj, normalBias, params.testColours);
+  bindToon(progMesh_, lighting, light.viewProj, normalBias, params.testColours);
   for (const Mesh& m : scene.meshes) m.draw();
 
   if (params.showGrass && grassCount_ > 0) {
     glUseProgram(progGrass_);
     umat(progGrass_, "uViewProj", viewProj);
-    u2f(progGrass_, "uTarget", static_cast<float>(RenderConfig::kRtW),
-        static_cast<float>(RenderConfig::kRtH));
+    u2f(progGrass_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
     u1f(progGrass_, "uDepthBiasNdc", biasNdc);
-    bindToon(progGrass_, scene, light.viewProj, normalBias, params.testColours);
-    u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(scene, &Palette::tip, params.testColours).data());
+    bindToon(progGrass_, lighting, light.viewProj, normalBias, params.testColours);
+    u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, ground_);
-    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, RenderConfig::kRtW, RenderConfig::kRtH);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, rtW(), rtH());
     u1f(progGrass_, "uTime", params.time);
     u1f(progGrass_, "uWindPx", kWindPx);
+    const glm::vec2 wd = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{1.f, 0.f};
+    u2f(progGrass_, "uWindDir", wd.x, wd.y);
+    // Wind blowing straight at or away from the camera barely leans the
+    // sprites; keep a floor so the grass still breathes.
+    const float lean = glm::dot(glm::vec3{wd.x, 0.f, wd.y}, camera.right);
+    u1f(progGrass_, "uWindLean", std::copysign(std::max(std::fabs(lean), 0.35f), lean));
     u1i(progGrass_, "uMagenta", params.magentaGrass ? 1 : 0);
     if (params.grassDepthTest) {
       glEnable(GL_DEPTH_TEST);
@@ -410,6 +419,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u1i(progEdge_, "uDepth", 2);
   u1f(progEdge_, "uDepthMetres", camera.farPlane - camera.nearPlane);
   u1i(progEdge_, "uEnabled", params.edges ? 1 : 0);
+  u3f(progEdge_, "uRim", lighting.rim.x, lighting.rim.y, lighting.rim.z);
+  u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
   glBindVertexArray(presentVao_);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);
@@ -430,8 +441,8 @@ std::vector<std::uint8_t> Renderer::readPresented(int width, int height) {
 }
 
 std::vector<std::uint8_t> Renderer::readView() {
-  const int w = RenderConfig::kViewW;
-  const int h = RenderConfig::kViewH;
+  const int w = viewW();
+  const int h = viewH();
   std::vector<std::uint8_t> pixels(static_cast<std::size_t>(w * h * 4));
   glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
   glReadBuffer(GL_COLOR_ATTACHMENT0);

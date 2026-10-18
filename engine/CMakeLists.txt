@@ -5,6 +5,7 @@ add_library(pxe_engine
   src/camera.cpp
   src/renderer.cpp
   src/gltf.cpp
+  src/lighting.cpp
 )
 
 target_include_directories(pxe_engine

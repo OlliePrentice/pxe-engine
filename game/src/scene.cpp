@@ -34,6 +34,65 @@ void setRamp(glm::vec3 (&out)[3], std::uint32_t shadow, std::uint32_t mid, std::
   out[2] = hex(lit);
 }
 
+// Material colours for each time of day. Day is sampled from the finished
+// frame of t3ssel8r's scene video; golden hour, twilight and night follow
+// his day/night video: warm lit faces against violet shadow, then a
+// low-contrast dusk, then everything in moonlit navy.
+void setPhasePalettes(pxe::Scene& scene) {
+  using namespace pxe;
+  struct Ramps {
+    std::uint32_t band[3], detail[3], tip[3];
+  };
+  auto set = [&](Phase ph, Surface s, Ramps r) {
+    setRamp(scene.palette[ph][s].band, r.band[0], r.band[1], r.band[2]);
+    setRamp(scene.palette[ph][s].detail, r.detail[0], r.detail[1], r.detail[2]);
+    setRamp(scene.palette[ph][s].tip, r.tip[0], r.tip[1], r.tip[2]);
+  };
+  auto plain = [](std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+    return Ramps{{a, b, c}, {a, b, c}, {a, b, c}};
+  };
+
+  set(kPhaseDay, kSurfGrass, {{0x648474, 0x94b064, 0xacbc6c}, {0x74947c, 0x7c9c54, 0x8ca454}, {0x648474, 0xacbc6c, 0xc8d690}});
+  set(kPhaseDay, kSurfDirt, plain(0x5c6468, 0x7c7874, 0x948c80));
+  set(kPhaseDay, kSurfStone, plain(0x747480, 0xa49c8c, 0xbcac94));
+  set(kPhaseDay, kSurfBark, plain(0x6c7078, 0x8c8a84, 0xaca494));
+  set(kPhaseDay, kSurfLeaf, {{0x4c705c, 0x6c945c, 0x8cac54}, {0x5c8064, 0x80a85c, 0xa8c46c}, {0x4c705c, 0x6c945c, 0x8cac54}});
+  set(kPhaseDay, kSurfWater, {{0x74949c, 0x8cb4cc, 0x8cb4cc}, {0x84a4ac, 0xa4c8d8, 0xa4c8d8}, {0x74949c, 0x8cb4cc, 0x8cb4cc}});
+  set(kPhaseDay, kSurfFoam, plain(0xc4d4d8, 0xdce8ec, 0xe8f2f2));
+  scene.rim[kPhaseDay] = hex(0xf5f0dc);
+  scene.ink[kPhaseDay] = hex(0x4c4c66);
+
+  set(kPhaseGolden, kSurfGrass, {{0x44665c, 0x84a444, 0xb4c050}, {0x547464, 0x6c943c, 0x94ac3c}, {0x44665c, 0xa8b850, 0xe0d070}});
+  set(kPhaseGolden, kSurfDirt, plain(0x4c4c5c, 0x6c6058, 0x9c8460));
+  set(kPhaseGolden, kSurfStone, plain(0x5c5874, 0x9c8474, 0xdcb070));
+  set(kPhaseGolden, kSurfBark, plain(0x545468, 0x84746c, 0xc09c70));
+  set(kPhaseGolden, kSurfLeaf, {{0x3c5854, 0x5c8448, 0x94ac44}, {0x48685c, 0x749c44, 0xc0bc50}, {0x3c5854, 0x5c8448, 0x94ac44}});
+  set(kPhaseGolden, kSurfWater, {{0x5c7488, 0x8ca0b4, 0x8ca0b4}, {0x6c8498, 0xc4bca8, 0xc4bca8}, {0x5c7488, 0x8ca0b4, 0x8ca0b4}});
+  set(kPhaseGolden, kSurfFoam, plain(0xa8b4c4, 0xd8d4cc, 0xf0e0c0));
+  scene.rim[kPhaseGolden] = hex(0xffe0a0);
+  scene.ink[kPhaseGolden] = hex(0x403860);
+
+  set(kPhaseTwilight, kSurfGrass, {{0x2c4c50, 0x34565a, 0x3c5e5c}, {0x345a58, 0x3c625c, 0x446a60}, {0x2c4c50, 0x446a64, 0x507468}});
+  set(kPhaseTwilight, kSurfDirt, plain(0x34364c, 0x3c3e54, 0x46465c));
+  set(kPhaseTwilight, kSurfStone, plain(0x4c4868, 0x585474, 0x6c6484));
+  set(kPhaseTwilight, kSurfBark, plain(0x40405c, 0x4c4c66, 0x585874));
+  set(kPhaseTwilight, kSurfLeaf, {{0x203c44, 0x284648, 0x30504c}, {0x2c4a4c, 0x345450, 0x3c5e54}, {0x203c44, 0x284648, 0x30504c}});
+  set(kPhaseTwilight, kSurfWater, {{0x34486c, 0x445a80, 0x445a80}, {0x40567c, 0x5c6c94, 0x5c6c94}, {0x34486c, 0x445a80, 0x445a80}});
+  set(kPhaseTwilight, kSurfFoam, plain(0x6c7898, 0x848cac, 0x9ca4bc));
+  scene.rim[kPhaseTwilight] = hex(0x9c94bc);
+  scene.ink[kPhaseTwilight] = hex(0x24203c);
+
+  set(kPhaseNight, kSurfGrass, {{0x1c2448, 0x222c54, 0x28345e}, {0x222c54, 0x28345e, 0x2e3c6a}, {0x1c2448, 0x2e3c6a, 0x384a7c}});
+  set(kPhaseNight, kSurfDirt, plain(0x1a1e3e, 0x20264a, 0x262e54));
+  set(kPhaseNight, kSurfStone, plain(0x2a3260, 0x34406e, 0x445484));
+  set(kPhaseNight, kSurfBark, plain(0x222a52, 0x2a345e, 0x343e6c));
+  set(kPhaseNight, kSurfLeaf, {{0x141c3c, 0x1a2446, 0x202c52}, {0x1a2446, 0x202c52, 0x283662}, {0x141c3c, 0x1a2446, 0x202c52}});
+  set(kPhaseNight, kSurfWater, {{0x1c2a58, 0x243668, 0x243668}, {0x2c4078, 0x3c5492, 0x3c5492}, {0x1c2a58, 0x243668, 0x243668}});
+  set(kPhaseNight, kSurfFoam, plain(0x44548a, 0x54649a, 0x6474aa));
+  scene.rim[kPhaseNight] = hex(0x7084c0);
+  scene.ink[kPhaseNight] = hex(0x12163a);
+}
+
 struct Triangle {
   glm::vec3 p[3];
   glm::vec3 n[3];
@@ -252,9 +311,11 @@ float hillHeight(float x, float z) {
 
 pxe::Scene buildHills(const BuildOptions& options) {
   pxe::Scene scene;
-  setRamp(scene.palette[pxe::kSurfGrass].band, 0x46766e, 0x83ab5c, 0xc7e487);
-  setRamp(scene.palette[pxe::kSurfGrass].detail, 0x5b8a6e, 0x6b944e, 0x9cc266);
-  setRamp(scene.palette[pxe::kSurfGrass].tip, 0x46766e, 0xa2c66c, 0xe2f3a8);
+  setPhasePalettes(scene);
+  pxe::Palette& day = scene.palette[pxe::kPhaseDay][pxe::kSurfGrass];
+  setRamp(day.band, 0x46766e, 0x83ab5c, 0xc7e487);
+  setRamp(day.detail, 0x5b8a6e, 0x6b944e, 0x9cc266);
+  setRamp(day.tip, 0x46766e, 0xa2c66c, 0xe2f3a8);
   scene.tLit = 0.75f;
   scene.tMid = 0.585f;
   scene.yawDegrees = 45.f;
@@ -308,7 +369,8 @@ pxe::Scene buildHills(const BuildOptions& options) {
 
   const glm::vec3 flatForward{std::sin(kHillsYaw), 0.f, std::cos(kHillsYaw)};
   const glm::vec3 right{-std::cos(kHillsYaw), 0.f, std::sin(kHillsYaw)};
-  scene.sunDir = glm::normalize(0.62f * flatForward - 0.30f * right + glm::vec3{0.f, 0.72f, 0.f});
+  scene.sunEast = right;
+  scene.sunSouth = flatForward;
   scene.focus = glm::vec3{0.f, 2.f, 0.f};
 
   std::mt19937 rng(7);
@@ -338,19 +400,7 @@ pxe::Scene buildHills(const BuildOptions& options) {
 
 pxe::Scene buildRuins(const BuildOptions& options) {
   pxe::Scene scene;
-  // Sampled from the finished frame of t3ssel8r's scene video.
-  pxe::Palette* pal = scene.palette;
-  setRamp(pal[pxe::kSurfGrass].band, 0x648474, 0x94b064, 0xacbc6c);
-  setRamp(pal[pxe::kSurfGrass].detail, 0x74947c, 0x7c9c54, 0x8ca454);
-  setRamp(pal[pxe::kSurfGrass].tip, 0x648474, 0xacbc6c, 0xc8d690);
-  setRamp(pal[pxe::kSurfDirt].band, 0x5c6468, 0x7c7874, 0x948c80);
-  setRamp(pal[pxe::kSurfStone].band, 0x747480, 0xa49c8c, 0xbcac94);
-  setRamp(pal[pxe::kSurfBark].band, 0x6c7078, 0x8c8a84, 0xaca494);
-  setRamp(pal[pxe::kSurfLeaf].band, 0x4c705c, 0x6c945c, 0x8cac54);
-  setRamp(pal[pxe::kSurfLeaf].detail, 0x5c8064, 0x80a85c, 0xa8c46c);
-  setRamp(pal[pxe::kSurfWater].band, 0x74949c, 0x8cb4cc, 0x8cb4cc);
-  setRamp(pal[pxe::kSurfWater].detail, 0x84a4ac, 0xa4c8d8, 0xa4c8d8);
-  setRamp(pal[pxe::kSurfFoam].band, 0xc4d4d8, 0xdce8ec, 0xe8f2f2);
+  setPhasePalettes(scene);
   scene.tLit = 0.6f;
   scene.tMid = 0.18f;
 
@@ -358,10 +408,17 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   scene.yawDegrees = 180.f;
   const glm::vec3 forward{0.f, 0.f, -1.f};
   const glm::vec3 right{1.f, 0.f, 0.f};
-  // Sun from the left and a little behind, as in the video: the pillars'
-  // left faces lit, right faces in shadow, shadows falling to the right.
-  scene.sunDir = glm::normalize(-0.75f * right + 0.3f * forward + glm::vec3{0.f, 0.95f, 0.f});
+  // Rises on the right of the screen and sets on the left, arcing over the
+  // pond, so by mid-afternoon the pillars' left faces are lit as in the video.
+  scene.sunEast = right;
+  scene.sunSouth = forward;
   scene.focus = glm::vec3{2.f, 1.f, -6.f};
+  // Wooded hills just past the edge of the frame. Pillar tops (about 10 m)
+  // catch the first sun; the lawn waits until the sun is ~15 degrees up.
+  scene.horizonCentre = glm::vec2{2.f, -6.f};
+  scene.horizonRadius = 46.f;
+  scene.horizonHeight = 12.f;
+  scene.horizonRelief = 9.f;
 
   const auto prims = pxe::loadGltf(std::string(PXE_ASSET_DIR) + "/scenes/ruins.glb");
 
@@ -437,8 +494,7 @@ pxe::Scene buildRuins(const BuildOptions& options) {
 
 pxe::Scene buildScene(const BuildOptions& options) {
   pxe::Scene scene = (options.scene == "hills") ? buildHills(options) : buildRuins(options);
-  std::fprintf(stderr, "pxe: scene %s, %zu sprites, sun %.3f %.3f %.3f\n", options.scene.c_str(), scene.grass.size(),
-               scene.sunDir.x, scene.sunDir.y, scene.sunDir.z);
+  std::fprintf(stderr, "pxe: scene %s, %zu sprites\n", options.scene.c_str(), scene.grass.size());
   return scene;
 }
 

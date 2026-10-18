@@ -25,7 +25,7 @@ struct CameraFrame {
   float pitchRadians = 0.f;
   float nearPlane = 0.5f;
   float farPlane = 220.f;
-  int pixelsPerUnit = 16;
+  float pixelsPerUnit = 16.f;
 };
 
 // Orthographic camera pitched 30° down. Yaw rests on 45° steps. Translation

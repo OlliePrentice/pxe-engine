@@ -1,6 +1,8 @@
 #pragma once
 
 #include "pxe/camera.hpp"
+#include "pxe/config.hpp"
+#include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 
 #include <cstdint>
@@ -23,6 +25,8 @@ struct FrameParams {
   float time = 0.f;
   // Light rims and dark outlines on stone and bark.
   bool edges = true;
+  // Sun or moon, palettes and clouds for this frame (see lightingAt).
+  Lighting lighting;
 };
 
 class Renderer {
@@ -33,6 +37,10 @@ class Renderer {
   Renderer& operator=(const Renderer&) = delete;
 
   void init();
+  int viewW() const { return RenderConfig::kViewW; }
+  int viewH() const { return RenderConfig::kViewH; }
+  int rtW() const { return RenderConfig::kViewW + 2 * RenderConfig::kPad; }
+  int rtH() const { return RenderConfig::kViewH + 2 * RenderConfig::kPad; }
   void upload(const Scene& scene);
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
 
