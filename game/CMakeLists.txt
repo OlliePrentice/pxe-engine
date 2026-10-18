@@ -1,6 +1,7 @@
 add_executable(pxe
   src/main.cpp
   src/scene.cpp
+  src/settings.cpp
 )
 
 target_include_directories(pxe PRIVATE
@@ -14,7 +15,7 @@ target_compile_options(pxe PRIVATE
 
 target_compile_definitions(pxe PRIVATE PXE_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets")
 
-target_link_libraries(pxe PRIVATE pxe_engine glfw)
+target_link_libraries(pxe PRIVATE pxe_engine glfw imgui)
 
 # Keep the binary name stable across generators (pxe, pxe.exe).
 set_target_properties(pxe PROPERTIES OUTPUT_NAME pxe)

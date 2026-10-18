@@ -53,7 +53,7 @@ Camera::Camera() {
   basis(yaw_, forward, right, up);
   // 40 low-res pixels below the view centre, matching the brief's mock so
   // the hill and the lit stripes sit where the reference metrics expect.
-  const glm::vec3 focus = up * (40.f / static_cast<float>(RenderConfig::kPixelsPerUnit));
+  const glm::vec3 focus = up * 2.5f;
   rawPos_ = smoothPos_ = focus;
 }
 
@@ -139,7 +139,7 @@ CameraFrame Camera::frame(int rtW, int rtH) const {
   f.right = right;
   f.up = up;
 
-  f.texelWorld = 1.f / static_cast<float>(f.pixelsPerUnit);
+  f.texelWorld = 1.f / f.pixelsPerUnit;
   f.orthoHalfW = f.texelWorld * static_cast<float>(rtW) * 0.5f;
   f.orthoHalfH = f.texelWorld * static_cast<float>(rtH) * 0.5f;
 

@@ -4,9 +4,13 @@ A small C++20 prototype of t3ssel8r-style 3D pixel art. The default scene recrea
 
 Every surface is lit by a hard three-colour toon ramp per material (grass, dirt, stone, bark, leaf, water, foam), using the same normal and the same sun shadow for the ground and for every sprite on it. Grass is instanced screen-space quads whose blades are drawn procedurally in the fragment shader and lit once at the root, so a clump matches the ground under it and only shows as a saw-tooth fringe where it overhangs the next band. A clump's top pixel turns lighter where it sticks out over darker ground. Sparse V-shaped tufts sit one shade off the ground colour. One travelling wind field sways every blade by whole pixels. Tree crowns get the same treatment with leaf-cluster sprites whose normals are jittered, so crowns go dappled where the light turns. A post pass over the low-res target puts light rims on the top edges of stone and bark and dark outlines on their other silhouettes.
 
-Rendered at 640×360 and copied to the window with nearest-neighbour integer upscaling. The orthographic camera is pitched 30° down, yaws in 45° steps, and snaps to the view-aligned texel grid; the upscale shifts back by the snap error.
+Rendered at 960×540, 24 pixels per metre, and copied to the window with nearest-neighbour integer upscaling. That matches the finished frame of t3ssel8r's scene video, where every art pixel is 2×2 on a 1920×1080 recording. Grass and leaf sprites are sized in pixels, so their spacing in metres follows the pixel density. The orthographic camera is pitched 30° down, yaws in 45° steps, and snaps to the view-aligned texel grid; the upscale shifts back by the snap error.
 
-No day/night, weather, clouds, water reflections, or god rays.
+A procedural day/night cycle, after t3ssel8r's day/night video, moves the sun along an arc by day and the moon along the same arc by night: the moon rises an hour after sunset and sets an hour before sunrise, and whichever is higher lights the scene, so they swap in the dark and moonlight catches the pillar tops and sinks down them just like the sunrise. Every material has day, golden-hour, twilight and night palettes that are blended by sun elevation, so the art direction stays in hand-picked colours at every hour. Cloud shadows are a fractal-noise layer that drifts with the wind. Their density is cut into three steps, so each cloud has a stepped edge that thickens toward the middle, and a strength setting decides how far a thick cloud pulls colours toward shadow. The grass sways downwind, with gusts rolling across the field in the same direction as the clouds.
+
+Chipped stone keeps the normal of the box side each face came from, so a block side shades as one flat face while its silhouette stays chipped. The shadow map is a fixed square around the scene, so its texel size does not change as the sun turns. The light moves continuously. Cast shadows are hard, pixel-crisp edges, taken by thresholding a 3x3 filtered shadow kernel so they do not crawl as the sun turns. Curved surfaces quantise N·L into in-between shades, so a band edge moves across them pixel by pixel. Cut stone, whose faces each have one flat normal, follows the sun's angle continuously, so a pillar face fades smoothly from one shade to the next by sun or moonlight instead of jumping a step at a time. The ruins sit inside a ring of off-screen hills, computed analytically in the shaders rather than modelled: the sun has to clear that ridge before it reaches a point. At sunrise the light finds the pillar tops first, a crisp edge sinks down the shafts as the sun climbs, and the lawn lights last; sunset runs the same in reverse. The ridge is kept smooth so that edge crosses each face as a straight line.
+
+No weather, water reflections, or god rays.
 
 ## The Blender scene
 
@@ -35,7 +39,7 @@ cmake --build build -j
 ./build/game/pxe
 ```
 
-The window defaults to 1920×1080, an exact 3× scale of the 640×360 target. Retina framebuffers use `glfwGetFramebufferSize`, and the upscale is `floor` of the fit so it stays an integer.
+The window defaults to 1920×1080, an exact 2× scale of the 960×540 target. Retina framebuffers use `glfwGetFramebufferSize`, and the upscale is `floor` of the fit so it stays an integer.
 
 ### Linux
 
@@ -56,18 +60,22 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 
 | Input | Action |
 |---|---|
+| Tab | Settings menu: time of day, time speed, clouds, wind |
+| Space | Pause or resume time |
+| [ / ] | Halve or double the speed of time |
 | WASD or arrows | Pan along the ground |
 | Shift | Pan faster |
 | Q / E | Yaw by 45° |
 | F1 | N·L as grey |
 | F2 | Hide grass |
 | F3 | Draw grass in magenta |
-| F4 | Write `shot.png` (640×360) |
+| F4 | Write `shot.png` at the low resolution |
 | Esc | Quit |
 
 ```text
 pxe [--capture out.png] [--window-png out.png]
-    [--scene ruins|hills] [--yaw degrees] [--slide metres] [--target x,y,z]
+    [--scene ruins|hills] [--hour H] [--clouds C] [--menu] [--ui-shot out.png]
+    [--yaw degrees] [--slide metres] [--target x,y,z]
     [--min-dist metres] [--hide-grass] [--magenta] [--ndl]
     [--test-colours] [--no-tufts] [--no-edges] [--stamps] [--no-depth] [--time seconds]
     [--self-test] [--no-vsync]

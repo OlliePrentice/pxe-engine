@@ -6,7 +6,6 @@ in vec3 vWorld;
 in vec3 vNormal;
 flat in int vSurface;
 
-uniform vec3 uDetail[kSurfaces * 3];
 uniform float uTime;
 uniform int uShowNdl;
 
@@ -25,13 +24,15 @@ void main() {
         return;
     }
     // Water only takes cast shadow, never N·L: it is a flat mirror.
-    int band = (vSurface == kSurfWater) ? (sunVisible(vWorld, n) < 0.5 ? 0 : 2) : toonBand(vWorld, n);
-    vec3 col = bandColour(vSurface, band);
+    float tone = (vSurface == kSurfWater) ? 2.0 * sunLit(vWorld, n, 1.0) * horizonLight(vWorld)
+               : (vSurface == kSurfStone) ? toonToneFlat(vWorld, n)
+                                          : toonTone(vWorld, n);
+    vec3 col = toneColour(vSurface, tone);
     if (vSurface == kSurfWater) {
         // Slow drifting streaks stand in for reflected sky.
         vec2 p = vWorld.xz;
         float s = sin(p.x * 0.9 + p.y * 0.35 + uTime * 0.4) + 0.6 * sin(p.x * 0.31 - p.y * 1.3 - uTime * 0.25);
-        if (s > 1.05) col = uDetail[kSurfWater * 3 + band];
+        if (s > 1.05) col = toneDetail(kSurfWater, tone);
     }
-    oColor = vec4(col, 1.0);
+    oColor = vec4(clouded(col, vSurface, cloudShade(vWorld)), 1.0);
 }

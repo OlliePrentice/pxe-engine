@@ -1,8 +1,10 @@
 #include "scene.hpp"
+#include "settings.hpp"
 
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
 #include "pxe/gl_loader.hpp"
+#include "pxe/lighting.hpp"
 #include "pxe/renderer.hpp"
 
 #include <GLFW/glfw3.h>
@@ -47,6 +49,10 @@ struct Options {
   bool stamps = false;
   bool tufts = true;
   bool edges = true;
+  float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
+  float clouds = 0.35f;
+  bool menu = false;
+  std::string uiShot;
   float time = 0.f;
   std::string scene = "ruins";
   bool haveYaw = false;
@@ -64,6 +70,10 @@ void printUsage() {
                "  --capture path.png       640x360 low-res framebuffer, then exit\n"
                "  --window-png path.png    integer-upscaled window, then exit\n"
                "  --scene ruins|hills      default ruins\n"
+               "  --hour H                 time of day, 0-24 (captures default to 15)\n"
+               "  --clouds C               cloud cover 0-1 (default 0.35)\n"
+               "  --menu                   start with the settings menu open (Tab)\n"
+               "  --ui-shot path.png       run the interactive loop briefly, save the window with the menu, exit\n"
                "  --yaw degrees            default from the scene\n"
                "  --slide metres           move the focus along horizontal forward\n"
                "  --target x,y,z\n"
@@ -127,6 +137,14 @@ Options parseArgs(int argc, char** argv) {
       opt.ndl = true;
     } else if (a == "--test-colours" || a == "--test-colors") {
       opt.testColours = true;
+    } else if (a == "--ui-shot") {
+      opt.uiShot = need("--ui-shot");
+    } else if (a == "--menu") {
+      opt.menu = true;
+    } else if (a == "--hour") {
+      opt.hour = std::atof(need("--hour"));
+    } else if (a == "--clouds") {
+      opt.clouds = std::atof(need("--clouds"));
     } else if (a == "--no-edges") {
       opt.edges = false;
     } else if (a == "--no-tufts") {
@@ -170,6 +188,9 @@ struct Input {
   bool toggleGrass = false;
   bool toggleMagenta = false;
   bool toggleNdl = false;
+  bool toggleMenu = false;
+  bool togglePause = false;
+  int speedSteps = 0;  // +1 doubles, -1 halves
   bool shot = false;
   bool quit = false;
 };
@@ -181,8 +202,11 @@ bool pressed(GLFWwindow* win, int key, bool& latch) {
   return edge;
 }
 
-Input pollInput(GLFWwindow* win) {
+Input pollInput(GLFWwindow* win, bool keyboardTaken) {
   Input in;
+  static bool tab = false;
+  if (pressed(win, GLFW_KEY_TAB, tab)) in.toggleMenu = true;
+  if (keyboardTaken) return in;
   auto down = [&](int key) { return glfwGetKey(win, key) == GLFW_PRESS; };
   if (down(GLFW_KEY_A) || down(GLFW_KEY_LEFT)) in.panX -= 1.f;
   if (down(GLFW_KEY_D) || down(GLFW_KEY_RIGHT)) in.panX += 1.f;
@@ -192,7 +216,11 @@ Input pollInput(GLFWwindow* win) {
   in.panX *= speed;
   in.panY *= speed;
 
-  static bool q = false, e = false, f1 = false, f2 = false, f3 = false, f4 = false, esc = false;
+  static bool q = false, e = false, f1 = false, f2 = false, f3 = false, f4 = false, esc = false, space = false,
+              slower = false, faster = false;
+  if (pressed(win, GLFW_KEY_SPACE, space)) in.togglePause = true;
+  if (pressed(win, GLFW_KEY_LEFT_BRACKET, slower)) in.speedSteps -= 1;
+  if (pressed(win, GLFW_KEY_RIGHT_BRACKET, faster)) in.speedSteps += 1;
   if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
   if (pressed(win, GLFW_KEY_E, e)) in.rotate += 1;
   if (pressed(win, GLFW_KEY_F1, f1)) in.toggleNdl = true;
@@ -229,6 +257,17 @@ int shiftedDiff(const std::vector<std::uint8_t>& base, const std::vector<std::ui
   return diff;
 }
 
+constexpr float kCaptureHour = 15.f;
+
+pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock) {
+  pxe::Lighting lighting = pxe::lightingAt(scene, clock.hour);
+  lighting.cloudCover = clock.cloudCover;
+  lighting.cloudOffset = clock.cloudOffset;
+  lighting.cloudStrength = clock.cloudStrength;
+  lighting.windDir = clock.windDir();
+  return lighting;
+}
+
 pxe::FrameParams makeParams(const Options& opt) {
   pxe::FrameParams params;
   params.framebufferW = opt.width;
@@ -246,12 +285,13 @@ pxe::FrameParams makeParams(const Options& opt) {
 
 int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& scene) {
   pxe::FrameParams params;
+  params.lighting = pxe::lightingAt(scene, kCaptureHour);
   params.framebufferW = 320;
   params.framebufferH = 180;
   params.present = false;
 
   auto grab = [&]() {
-    const pxe::CameraFrame frame = camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH);
+    const pxe::CameraFrame frame = camera.frame(renderer.rtW(), renderer.rtH());
     renderer.render(scene, frame, params);
     return std::pair{frame, renderer.readView()};
   };
@@ -266,7 +306,7 @@ int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& sce
 
   camera.nudgeImmediate(frameB.right * frameB.texelWorld * 1.f);
   auto [frameC, imageC] = grab();
-  const int panDiff = shiftedDiff(imageA, imageC, pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH, 1);
+  const int panDiff = shiftedDiff(imageA, imageC, renderer.viewW(), renderer.viewH(), 1);
 
   const bool errorMoved = glm::distance(frameA.texelError, frameB.texelError) > 0.05f;
   const bool pass = repeatDiff == 0 && subpixelDiff == 0 && panDiff == 0 && errorMoved;
@@ -296,7 +336,7 @@ int main(int argc, char** argv) {
   glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_FALSE);
   glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
   const bool headless = opt.selfTest || !opt.capture.empty() || !opt.windowPng.empty();
-  if (headless) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  if (headless || !opt.uiShot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
   GLFWwindow* window = glfwCreateWindow(opt.width, opt.height, "pxe", nullptr, nullptr);
   if (!window) {
@@ -319,7 +359,12 @@ int main(int argc, char** argv) {
     }
     if (exitCode == 0) {
       game::BuildOptions build;
-      build.minDist = opt.minDist;
+      // Grass and leaf sprites are sized in pixels and their spacing was tuned
+      // at 16 px/m, so scale it to keep the same density per pixel.
+      const float density = pxe::RenderConfig::kPixelsPerUnit / 16.f;
+      build.minDist = opt.minDist / density;
+      build.tuftDist /= density;
+      build.leafDensity *= density * density;
       build.tufts = opt.tufts && !opt.stamps;
       build.stamps = opt.stamps;
       build.scene = opt.scene;
@@ -344,7 +389,7 @@ int main(int argc, char** argv) {
       }
 
       auto draw = [&](const pxe::FrameParams& params) {
-        const pxe::CameraFrame frame = camera.frame(pxe::RenderConfig::kRtW, pxe::RenderConfig::kRtH);
+        const pxe::CameraFrame frame = camera.frame(renderer.rtW(), renderer.rtH());
         renderer.render(scene, frame, params);
         return frame;
       };
@@ -354,14 +399,18 @@ int main(int argc, char** argv) {
       } else if (headless) {
         int fbW = 0, fbH = 0;
         glfwGetFramebufferSize(window, &fbW, &fbH);
+        game::WorldClock clock;
+        clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
+        clock.cloudCover = opt.clouds;
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
+        params.lighting = lightingFor(scene, clock);
         const pxe::CameraFrame frame = draw(params);
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
         bool ok = true;
         if (!opt.capture.empty()) {
-          ok = writePng(opt.capture, pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH,
+          ok = writePng(opt.capture, renderer.viewW(), renderer.viewH(),
                         renderer.readView()) &&
                ok;
           std::fprintf(stderr, "pxe: %s %s\n", ok ? "wrote" : "failed", opt.capture.c_str());
@@ -376,19 +425,36 @@ int main(int argc, char** argv) {
         }
         exitCode = ok ? 0 : 1;
       } else {
-        bool showGrass = !opt.hideGrass;
+        game::ViewToggles view;
+        view.grass = !opt.hideGrass;
+        view.edges = opt.edges;
         bool magenta = opt.magenta;
         bool ndl = opt.ndl;
+        game::WorldClock clock;
+        if (opt.hour >= 0.f) clock.hour = opt.hour;
+        clock.cloudCover = opt.clouds;
+        game::SettingsMenu menu;
+        menu.init(window);
+        if (opt.menu) menu.toggle();
+        float fps = 0.f;
+        int frameCount = 0;
         double previous = glfwGetTime();
         while (!glfwWindowShouldClose(window)) {
           const double now = glfwGetTime();
           float dt = static_cast<float>(now - previous);
           previous = now;
+          if (dt > 1e-4f) fps = (fps == 0.f) ? 1.f / dt : fps * 0.95f + 0.05f / dt;
           dt = std::clamp(dt, 0.f, 0.05f);
           glfwPollEvents();
-          Input input = pollInput(window);
+          Input input = pollInput(window, menu.wantsKeyboard());
           if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
-          if (input.toggleGrass) showGrass = !showGrass;
+          if (input.toggleMenu) menu.toggle();
+          if (input.togglePause) clock.paused = !clock.paused;
+          if (input.speedSteps)
+            clock.hoursPerMinute = std::clamp(clock.hoursPerMinute * std::pow(2.f, static_cast<float>(input.speedSteps)),
+                                              1.f / 60.f, 120.f);
+          clock.advance(dt);
+          if (input.toggleGrass) view.grass = !view.grass;
           if (input.toggleMagenta) magenta = !magenta;
           if (input.toggleNdl) ndl = !ndl;
           camera.setPanVelocity({input.panX, input.panY});
@@ -400,24 +466,34 @@ int main(int argc, char** argv) {
           pxe::FrameParams params = makeParams(opt);
           params.framebufferW = fbW;
           params.framebufferH = fbH;
-          params.showGrass = showGrass;
+          params.showGrass = view.grass;
+          params.edges = view.edges;
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
+          params.lighting = lightingFor(scene, clock);
           const pxe::CameraFrame frame = draw(params);
           if (input.shot) {
-            const bool ok = writePng("shot.png", pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH,
+            const bool ok = writePng("shot.png", renderer.viewW(), renderer.viewH(),
                                      renderer.readView());
             std::fprintf(stderr, "pxe: %s shot.png\n", ok ? "wrote" : "failed");
           }
-          char title[160];
+          menu.draw(clock, view, fps);
+          if (!opt.uiShot.empty() && ++frameCount == 8) {
+            const bool ok = writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
+            std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", ok ? "wrote" : "failed", opt.uiShot.c_str(), fbW, fbH);
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+          }
+          char title[200];
+          const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  WASD pan   Q/E yaw   F1 N·L %s   F2 grass %s   F3 magenta %s   F4 capture",
-                        ndl ? "on" : "off", showGrass ? "on" : "off", magenta ? "on" : "off");
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD pan   Q/E yaw   F4 capture",
+                        minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
           (void)frame;
           glfwSwapBuffers(window);
         }
+        menu.shutdown();
       }
     }
   }
