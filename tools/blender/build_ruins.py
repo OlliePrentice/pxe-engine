@@ -11,7 +11,7 @@ normals are bent toward one big ellipsoid so they shade as a single soft
 mass.
 
 Material names are the contract with the engine: Grass, Dirt, Stone, Bark,
-Leaf, Water, Foam. Ground faces under paving are Dirt so no grass grows
+Leaf, Water. Ground faces under paving are Dirt so no grass grows
 through stone.
 
 Layout coordinates are metres in a plan where +a runs up-right on screen and
@@ -48,7 +48,6 @@ MATERIAL_COLOURS = {
     "Bark": (0.37, 0.33, 0.29),
     "Leaf": (0.23, 0.37, 0.09),
     "Water": (0.27, 0.42, 0.55),
-    "Foam": (0.85, 0.90, 0.92),
 }
 
 
@@ -175,7 +174,7 @@ def stone_block(name, size, centre, rot_z=0.0, tilt=(0.0, 0.0), strength=0.07, r
     return obj
 
 
-def rock(name, centre, size, flat=0.7, rot=None):
+def rock(name, centre, size, flat=0.7, rot=None, levels=2, ratio=0.2):
     """Cube -> smooth subdivision -> cloud displacement -> heavy decimation."""
     mesh = box_mesh(name, (size, size * rng.uniform(0.8, 1.15), size * flat))
     obj = bpy.data.objects.new(name, mesh)
@@ -183,14 +182,14 @@ def rock(name, centre, size, flat=0.7, rot=None):
     rot = rot if rot is not None else rng.uniform(0, math.tau)
     obj.matrix_local = Matrix.Translation(Vector(centre)) @ Matrix.Rotation(rot, 4, "Z")
     sub = obj.modifiers.new("Subdivide", "SUBSURF")
-    sub.levels = 2
+    sub.levels = levels
     disp = obj.modifiers.new("Displace", "DISPLACE")
     disp.texture = noise_texture("RockNoise", "CLOUDS", 0.5, 2)
     disp.texture_coords = "GLOBAL"
     disp.strength = size * 0.22
     dec = obj.modifiers.new("Decimate", "DECIMATE")
     dec.decimate_type = "COLLAPSE"
-    dec.ratio = 0.2
+    dec.ratio = ratio
     bake_modifiers(obj)
     set_smooth(obj.data, False)
     return obj
@@ -308,51 +307,41 @@ def build_ground():
 
 
 def build_pond():
+    """A flat water sheet that runs a little past the shore under the bank,
+    so the waterline is where the sheet meets the ground. The engine draws
+    the light contact line there, and around anything standing in the
+    water, from depth."""
     segs = 72
     bm = bmesh.new()
     centre = bm.verts.new((POND_C.x, POND_C.y, WATER_Z))
-    inner, outer = [], []
+    ring = []
     for k in range(segs):
         t = k / segs * math.tau
-        r = pond_radius(t)
+        r = pond_radius(t) * 1.12
         d = Vector((math.cos(t), math.sin(t)))
-        p_in = POND_C + d * (r * 0.985 - 0.06)
-        p_out = POND_C + d * (r * 0.985 + 0.02)
-        inner.append(bm.verts.new((p_in.x, p_in.y, WATER_Z)))
-        outer.append(bm.verts.new((p_out.x, p_out.y, WATER_Z + 0.005)))
+        p = POND_C + d * r
+        ring.append(bm.verts.new((p.x, p.y, WATER_Z)))
     for k in range(segs):
-        bm.faces.new((centre, inner[k], inner[(k + 1) % segs]))
+        bm.faces.new((centre, ring[k], ring[(k + 1) % segs]))
     mesh = bpy.data.meshes.new("Water")
     bm.to_mesh(mesh)
     bm.free()
     water = link(bpy.data.objects.new("Water", mesh), "Water")
     set_smooth(water.data, False)
 
-    bm = bmesh.new()
-    inner2, outer2 = [], []
-    for k in range(segs):
-        t = k / segs * math.tau
-        r = pond_radius(t)
-        d = Vector((math.cos(t), math.sin(t)))
-        p_in = POND_C + d * (r * 0.985 - 0.06)
-        p_out = POND_C + d * (r * 0.985 + 0.02)
-        inner2.append(bm.verts.new((p_in.x, p_in.y, WATER_Z + 0.01)))
-        outer2.append(bm.verts.new((p_out.x, p_out.y, WATER_Z + 0.01)))
-    for k in range(segs):
-        bm.faces.new((inner2[k], outer2[k], outer2[(k + 1) % segs], inner2[(k + 1) % segs]))
-    mesh = bpy.data.meshes.new("Foam")
-    bm.to_mesh(mesh)
-    bm.free()
-    link(bpy.data.objects.new("Foam", mesh), "Foam")
-
     # Stepping stones and a rim of rocks on the far bank.
-    for (a, b, s) in [(-0.8, 12.6, 1.1), (3.2, 13.8, 0.9), (1.2, 11.4, 0.7)]:
-        rock("PondStone", (a, b, WATER_Z - 0.05), s, flat=0.45)
+    for (da, db, s) in [(-2.2, 0.6, 1.1), (1.9, -0.7, 0.9), (0.4, 1.4, 0.7)]:
+        rock("PondStone", (POND_C.x + da, POND_C.y + db, WATER_Z - 0.05), s, flat=0.45)
     for k in range(9):
         t = math.radians(35 + k * 13 + rng.uniform(-4, 4))
         r = pond_radius(t) * 1.06
         p = POND_C + Vector((math.cos(t), math.sin(t))) * r
         rock("RimStone", (p.x, p.y, height(p.x, p.y) - 0.1), rng.uniform(0.7, 1.3), flat=0.55)
+    # A big boulder sitting half in the water on the far right of the pond,
+    # as in the video. Added last so earlier random draws, and so the rest
+    # of the scene, stay as they were.
+    # More facets than the small rocks, so it reads as a rounded, cut boulder.
+    rock("PondBoulder", (POND_C.x + 4.2, POND_C.y - 3.4, WATER_Z - 0.15), 2.7, flat=0.85, rot=0.6, levels=3, ratio=0.12)
 
 
 # --------------------------------------------------------------------------

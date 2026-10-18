@@ -41,6 +41,13 @@ enum Phase : int {
 
 struct Scene {
   std::vector<Mesh> meshes;  // opaque; all cast shadows
+  // Water sheets, drawn after the opaque meshes with reflections. They do
+  // not cast shadows. waterLevel is the height of the (flat) water plane,
+  // and waterMin/Max bound the sheets for the reflection pass's scissor.
+  std::vector<Mesh> water;
+  float waterLevel = 0.f;
+  glm::vec3 waterMin{0.f};
+  glm::vec3 waterMax{0.f};
   std::vector<GrassInstance> grass;
   Palette palette[kPhaseCount][kSurfCount];
   // Edge-pass colours per phase: light rim on stone tops, dark outline.

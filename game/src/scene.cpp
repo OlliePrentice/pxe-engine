@@ -455,8 +455,18 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   }
   for (int s = 0; s < pxe::kSurfCount; ++s) {
     if (indices[s].empty()) continue;
-    scene.meshes.emplace_back();
-    scene.meshes.back().upload(verts[s], indices[s]);
+    auto& target = (s == pxe::kSurfWater) ? scene.water : scene.meshes;
+    target.emplace_back();
+    target.back().upload(verts[s], indices[s]);
+  }
+  if (!verts[pxe::kSurfWater].empty()) {
+    scene.waterMin = glm::vec3{1e9f};
+    scene.waterMax = glm::vec3{-1e9f};
+    for (const pxe::Vertex& v : verts[pxe::kSurfWater]) {
+      scene.waterMin = glm::min(scene.waterMin, glm::vec3(v.px, v.py, v.pz));
+      scene.waterMax = glm::max(scene.waterMax, glm::vec3(v.px, v.py, v.pz));
+    }
+    scene.waterLevel = 0.5f * (scene.waterMin.y + scene.waterMax.y);
   }
 
   std::mt19937 rng(7);

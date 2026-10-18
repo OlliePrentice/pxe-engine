@@ -55,6 +55,10 @@ class Renderer {
   void createTargets();
   void createQuads();
   void drawPresent(const CameraFrame& camera, const FrameParams& params);
+  // Draw the scene's meshes (and sprites, if shown) with the given mirror.
+  void drawMeshes(const Scene& scene, const glm::mat4& viewProj, const glm::mat4& mirror, float clipBelow);
+  void drawSprites(const Scene& scene, const CameraFrame& camera, const FrameParams& params,
+                   const glm::mat4& viewProj, const glm::mat4& mirror, float spriteFlip, float clipBelow);
   unsigned makeColor(int w, int h);
   unsigned makeDepth(int w, int h, bool shadowCompare);
 
@@ -64,6 +68,12 @@ class Renderer {
   unsigned normals_ = 0;  // normal + surface, for the edge pass
   unsigned final_ = 0;    // colour after the edge pass
   unsigned fboFinal_ = 0;
+  // Water: the mirrored scene, and the scene + depth under the water.
+  unsigned refl_ = 0;
+  unsigned reflDepth_ = 0;
+  unsigned fboRefl_ = 0;
+  unsigned bed_ = 0;
+  unsigned bedDepth_ = 0;
   unsigned ground_ = 0;  // copy of color_ after terrain, read by grass
   unsigned depth_ = 0;
   unsigned shadow_ = 0;
@@ -73,6 +83,7 @@ class Renderer {
   unsigned progShadow_ = 0;
   unsigned progPresent_ = 0;
   unsigned progEdge_ = 0;
+  unsigned progWater_ = 0;
 
   unsigned grassVao_ = 0;
   unsigned grassCorner_ = 0;

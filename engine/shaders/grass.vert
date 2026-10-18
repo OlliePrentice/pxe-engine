@@ -10,6 +10,10 @@ uniform float uTime;
 uniform float uWindPx;    // peak tip sway in target pixels
 uniform vec2 uWindDir;    // world XZ, unit
 uniform float uWindLean;  // how much of the wind points along screen right, -1..1
+uniform mat4 uMirror;       // identity, or the mirror about the water plane
+uniform float uSpriteFlip;  // 1, or -1 in the reflection so blades hang down
+uniform float uClipBelow;
+uniform int uLeavesOnly;    // reflection pass: grass is too low to matter, skip it
 
 layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec3 iRoot;
@@ -43,17 +47,23 @@ float wind(vec2 xz) {
 }
 
 void main() {
-    vec4 c = uViewProj * vec4(iRoot, 1.0);
+    vec4 c = uViewProj * uMirror * vec4(iRoot, 1.0);
+    gl_ClipDistance[0] = iRoot.y - uClipBelow;
     vec2 ndc = c.xy / c.w;
     vec2 px = floor((ndc * 0.5 + 0.5) * uTarget);
 
     vKind = iParams.x;
     bool leaf = vKind > 1.5;
+    if (uLeavesOnly == 1 && !leaf) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);  // outside the view: dropped before rasterising
+        gl_ClipDistance[0] = -1.0;
+        return;
+    }
     vec2 box = leaf ? kLeafBox : ((vKind < 0.5) ? kClumpBox : kTuftBox);
     float halfW = floor(box.x * 0.5);
     float halfH = leaf ? floor(box.y * 0.5) : 0.0;
     vLocal = vec2(aCorner.x * box.x - halfW, aCorner.y * box.y - halfH);
-    vec2 p = px + vLocal;
+    vec2 p = px + vec2(vLocal.x, vLocal.y * uSpriteFlip);
     gl_Position = vec4(p / uTarget * 2.0 - 1.0, c.z / c.w - uDepthBiasNdc, 1.0);
 
     vSeed = iParams.y;

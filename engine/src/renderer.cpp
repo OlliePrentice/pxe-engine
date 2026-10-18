@@ -121,16 +121,18 @@ Renderer::~Renderer() {
   if (progShadow_) glDeleteProgram(progShadow_);
   if (progPresent_) glDeleteProgram(progPresent_);
   if (progEdge_) glDeleteProgram(progEdge_);
+  if (progWater_) glDeleteProgram(progWater_);
   destroyTargets();
 }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_};
-  glDeleteTextures(6, textures);
-  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = 0;
+  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, refl_, reflDepth_, bed_, bedDepth_};
+  glDeleteTextures(10, textures);
+  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
   if (fboFinal_) glDeleteFramebuffers(1, &fboFinal_);
-  fboFinal_ = 0;
+  if (fboRefl_) glDeleteFramebuffers(1, &fboRefl_);
+  fboFinal_ = fboRefl_ = 0;
   if (fboShadow_) glDeleteFramebuffers(1, &fboShadow_);
   fbo_ = fboShadow_ = 0;
 }
@@ -178,6 +180,10 @@ void Renderer::createTargets() {
   final_ = makeColor(rtW(), rtH());
   ground_ = makeColor(rtW(), rtH());
   depth_ = makeDepth(rtW(), rtH(), false);
+  refl_ = makeColor(rtW(), rtH());
+  reflDepth_ = makeDepth(rtW(), rtH(), false);
+  bed_ = makeColor(rtW(), rtH());
+  bedDepth_ = makeDepth(rtW(), rtH(), false);
   shadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
 
   glGenFramebuffers(1, &fbo_);
@@ -189,6 +195,14 @@ void Renderer::createTargets() {
   glDrawBuffers(2, draws);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   requireFbo("colour");
+
+  glGenFramebuffers(1, &fboRefl_);
+  glBindFramebuffer(GL_FRAMEBUFFER, fboRefl_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, refl_, 0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, reflDepth_, 0);
+  const unsigned reflDraw = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &reflDraw);
+  requireFbo("reflection");
 
   glGenFramebuffers(1, &fboFinal_);
   glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
@@ -252,6 +266,7 @@ void Renderer::init() {
   progShadow_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag");
   progPresent_ = linkProgram(dir + "/present.vert", dir + "/present.frag");
   progEdge_ = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
+  progWater_ = linkProgram(dir + "/water.vert", dir + "/water.frag", dir + "/common.glsl");
   createTargets();
   createQuads();
 
@@ -325,6 +340,38 @@ void Renderer::drawPresent(const CameraFrame& camera, const FrameParams& params)
   glBindVertexArray(0);
 }
 
+void Renderer::drawMeshes(const Scene& scene, const glm::mat4& viewProj, const glm::mat4& mirror, float clipBelow) {
+  glEnable(GL_DEPTH_TEST);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
+  glUseProgram(progMesh_);
+  umat(progMesh_, "uViewProj", viewProj);
+  umat(progMesh_, "uMirror", mirror);
+  u1f(progMesh_, "uClipBelow", clipBelow);
+  for (const Mesh& m : scene.meshes) m.draw();
+}
+
+void Renderer::drawSprites(const Scene&, const CameraFrame&, const FrameParams& params, const glm::mat4& viewProj,
+                           const glm::mat4& mirror, float spriteFlip, float clipBelow) {
+  glUseProgram(progGrass_);
+  umat(progGrass_, "uViewProj", viewProj);
+  umat(progGrass_, "uMirror", mirror);
+  u1f(progGrass_, "uSpriteFlip", spriteFlip);
+  u1f(progGrass_, "uClipBelow", clipBelow);
+  u1i(progGrass_, "uLeavesOnly", spriteFlip < 0.f ? 1 : 0);
+  if (params.grassDepthTest) {
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+  } else {
+    glDisable(GL_DEPTH_TEST);
+  }
+  glDisable(GL_CULL_FACE);
+  glBindVertexArray(grassVao_);
+  glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, grassCount_);
+  glBindVertexArray(0);
+  glEnable(GL_DEPTH_TEST);
+}
+
 void Renderer::render(const Scene& scene, const CameraFrame& camera, const FrameParams& params) {
   const Lighting& lighting = params.lighting;
   const LightFit light = fitLight(scene, lighting.lightDir);
@@ -360,27 +407,26 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
 
   glActiveTexture(GL_TEXTURE1);
   glBindTexture(GL_TEXTURE_2D, shadow_);
+  const glm::mat4 identity{1.f};
 
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
+  // Program state shared by every mesh and sprite draw this frame.
   glUseProgram(progMesh_);
-  umat(progMesh_, "uViewProj", viewProj);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
   u1f(progMesh_, "uTime", params.time);
   bindToon(progMesh_, lighting, light.viewProj, normalBias, params.testColours);
-  for (const Mesh& m : scene.meshes) m.draw();
-
   if (params.showGrass && grassCount_ > 0) {
     glUseProgram(progGrass_);
-    umat(progGrass_, "uViewProj", viewProj);
     u2f(progGrass_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
     u1f(progGrass_, "uDepthBiasNdc", biasNdc);
     bindToon(progGrass_, lighting, light.viewProj, normalBias, params.testColours);
     u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
+    // Bound before any sprite draw: the reflection pass draws sprites before
+    // this frame's ground copy exists, and an empty unit makes the driver
+    // substitute a zero texture (and log a warning). Last frame's copy is
+    // fine there, since tips only matter on screen.
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, ground_);
-    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, rtW(), rtH());
     u1f(progGrass_, "uTime", params.time);
     u1f(progGrass_, "uWindPx", kWindPx);
     const glm::vec2 wd = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{1.f, 0.f};
@@ -390,17 +436,75 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     const float lean = glm::dot(glm::vec3{wd.x, 0.f, wd.y}, camera.right);
     u1f(progGrass_, "uWindLean", std::copysign(std::max(std::fabs(lean), 0.35f), lean));
     u1i(progGrass_, "uMagenta", params.magentaGrass ? 1 : 0);
-    if (params.grassDepthTest) {
-      glEnable(GL_DEPTH_TEST);
-      glDepthMask(GL_TRUE);
-    } else {
-      glDisable(GL_DEPTH_TEST);
+  }
+
+  // Reflection: the scene mirrored about the water plane, clipped to what
+  // stands above it, drawn only where the water can be on screen.
+  const bool hasWater = !scene.water.empty();
+  if (hasWater) {
+    const float h = scene.waterLevel;
+    const glm::mat4 mirror = glm::translate(glm::mat4{1.f}, {0.f, h, 0.f}) * glm::scale(glm::mat4{1.f}, {1.f, -1.f, 1.f}) *
+                             glm::translate(glm::mat4{1.f}, {0.f, -h, 0.f});
+    glm::vec2 lo{1e9f}, hi{-1e9f};
+    for (int i = 0; i < 8; ++i) {
+      const glm::vec3 c{(i & 1) ? scene.waterMax.x : scene.waterMin.x, h, (i & 4) ? scene.waterMax.z : scene.waterMin.z};
+      const glm::vec4 q = viewProj * glm::vec4(c, 1.f);
+      const glm::vec2 px = (glm::vec2(q) / q.w * 0.5f + 0.5f) * glm::vec2(rtW(), rtH());
+      lo = glm::min(lo, px);
+      hi = glm::max(hi, px);
     }
+    const int x0 = std::clamp(static_cast<int>(lo.x) - 4, 0, rtW());
+    const int y0 = std::clamp(static_cast<int>(lo.y) - 4, 0, rtH());
+    const int x1 = std::clamp(static_cast<int>(hi.x) + 4, 0, rtW());
+    const int y1 = std::clamp(static_cast<int>(hi.y) + 4, 0, rtH());
+    glBindFramebuffer(GL_FRAMEBUFFER, fboRefl_);
+    glViewport(0, 0, rtW(), rtH());
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (x1 > x0 && y1 > y0) {
+      glEnable(GL_SCISSOR_TEST);
+      glScissor(x0, y0, x1 - x0, y1 - y0);
+      glEnable(GL_CLIP_DISTANCE0);
+      glFrontFace(GL_CW);  // the mirror flips winding
+      drawMeshes(scene, viewProj, mirror, h);
+      glFrontFace(GL_CCW);
+      if (params.showGrass && grassCount_ > 0) drawSprites(scene, camera, params, viewProj, mirror, -1.f, h);
+      glDisable(GL_CLIP_DISTANCE0);
+      glDisable(GL_SCISSOR_TEST);
+    }
+  }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+  glViewport(0, 0, rtW(), rtH());
+  drawMeshes(scene, viewProj, identity, -1e9f);
+
+  if (hasWater) {
+    // What the water covers, and how far away it is, before the water hides it.
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, bed_);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, rtW(), rtH());
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, bedDepth_);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, rtW(), rtH());
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D, refl_);
+    glUseProgram(progWater_);
+    umat(progWater_, "uViewProj", viewProj);
+    bindToon(progWater_, lighting, light.viewProj, normalBias, params.testColours);
+    u1i(progWater_, "uBed", 3);
+    u1i(progWater_, "uBedDepth", 4);
+    u1i(progWater_, "uReflection", 5);
+    u1f(progWater_, "uDepthMetres", camera.farPlane - camera.nearPlane);
+    u1f(progWater_, "uTime", params.time);
     glDisable(GL_CULL_FACE);
-    glBindVertexArray(grassVao_);
-    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, grassCount_);
-    glBindVertexArray(0);
-    glEnable(GL_DEPTH_TEST);
+    for (const Mesh& m : scene.water) m.draw();
+  }
+
+  if (params.showGrass && grassCount_ > 0) {
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, ground_);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, rtW(), rtH());
+    drawSprites(scene, camera, params, viewProj, identity, 1.f, -1e9f);
   }
 
   // Edge pass into final_, which is what gets presented and captured.
