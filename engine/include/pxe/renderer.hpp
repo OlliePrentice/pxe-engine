@@ -9,14 +9,16 @@
 namespace pxe {
 
 struct FrameParams {
-  int framebufferW = 1280;
-  int framebufferH = 720;
-  bool outlines = true;
-  // 0 final, 1 nearest raw, 2 albedo, 3 normals, 4 unlit albedo (no upscale filter)
-  int debugView = 0;
-  // 0 clear sun, 1 hazy god rays, 2 rain
-  int weather = 1;
-  float time = 0.f;
+  int framebufferW = 1920;
+  int framebufferH = 1080;
+  bool showGrass = true;
+  bool magentaGrass = false;
+  bool showNdl = false;
+  bool testColours = false;
+  bool present = true;
+  // When false, grass still draws but ignores the depth buffer. Used to
+  // stamp isolated sprites for the pixel-exact check.
+  bool grassDepthTest = true;
 };
 
 class Renderer {
@@ -27,53 +29,49 @@ class Renderer {
   Renderer& operator=(const Renderer&) = delete;
 
   void init();
-  void uploadFoliage(const std::vector<FoliageInstance>& instances);
+  void upload(const Scene& scene);
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
 
-  // Final low-res colour (bottom-up RGBA8), including outlines, water and rays.
-  std::vector<std::uint8_t> readLowRes();
+  // Centre 640×360 of the low-res target, bottom-up RGBA8. This is the
+  // snapped image, before the subpixel present shift.
+  std::vector<std::uint8_t> readView();
   // Window framebuffer, bottom-up RGBA8. Call before swapping buffers.
   std::vector<std::uint8_t> readPresented(int width, int height);
-  int lowResWidth() const;
-  int lowResHeight() const;
 
  private:
   void destroyTargets();
   void createTargets();
-  void createPresentQuad();
-  void updatePresentQuad(const CameraFrame& camera, const FrameParams& params);
-  unsigned makeTarget(int w, int h, int internal, int format, int type, int filter);
+  void createQuads();
+  void drawPresent(const CameraFrame& camera, const FrameParams& params);
+  unsigned makeColor(int w, int h);
+  unsigned makeDepth(int w, int h, bool shadowCompare);
 
-  unsigned fboG_ = 0;
-  unsigned fboLight_ = 0;
-  unsigned fboComp_ = 0;
+  unsigned fbo_ = 0;
   unsigned fboShadow_ = 0;
-  unsigned albedo_ = 0;
-  unsigned normal_ = 0;
-  unsigned linDepth_ = 0;
+  unsigned color_ = 0;
   unsigned depth_ = 0;
-  unsigned colorA_ = 0;
-  unsigned colorB_ = 0;
-  unsigned shadowTex_ = 0;
+  unsigned shadow_ = 0;
+  unsigned normal_ = 0;
+  unsigned atlas_ = 0;
 
-  unsigned progG_ = 0;
-  unsigned progFoliage_ = 0;
+  unsigned progTerrain_ = 0;
+  unsigned progGrass_ = 0;
   unsigned progShadow_ = 0;
-  unsigned progLight_ = 0;
-  unsigned progOutline_ = 0;
-  unsigned progWater_ = 0;
-  unsigned progRays_ = 0;
   unsigned progPresent_ = 0;
 
-  unsigned foliageVao_ = 0;
-  unsigned foliageVbo_ = 0;
-  unsigned foliageEbo_ = 0;
-  unsigned foliageInst_ = 0;
-  int foliageCount_ = 0;
+  unsigned grassVao_ = 0;
+  unsigned grassCorner_ = 0;
+  unsigned grassInst_ = 0;
+  int grassCount_ = 0;
 
   unsigned presentVao_ = 0;
   unsigned presentVbo_ = 0;
-  unsigned emptyVao_ = 0;
+
+  float spriteRects_[4][4] = {};
+  float worldMin_ = -45.f;
+  float worldSize_ = 90.f;
+  int atlasW_ = 64;
+  int atlasH_ = 16;
 
   bool ready_ = false;
 };

@@ -65,6 +65,8 @@
   M(PFNGLUNIFORM3FPROC, glUniform3f)                \
   M(PFNGLUNIFORM4FPROC, glUniform4f)                \
   M(PFNGLUNIFORM1IPROC, glUniform1i)                \
+  M(PFNGLUNIFORM3FVPROC, glUniform3fv)              \
+  M(PFNGLUNIFORM4FVPROC, glUniform4fv)              \
   M(PFNGLUNIFORMMATRIX4FVPROC, glUniformMatrix4fv)  \
   M(PFNGLENABLEVERTEXATTRIBARRAYPROC, glEnableVertexAttribArray) \
   M(PFNGLVERTEXATTRIBPOINTERPROC, glVertexAttribPointer) \
@@ -79,6 +81,7 @@
   M(PFNGLCHECKFRAMEBUFFERSTATUSPROC, glCheckFramebufferStatus) \
   M(PFNGLDRAWBUFFERSPROC, glDrawBuffers)            \
   M(PFNGLDRAWELEMENTSINSTANCEDPROC, glDrawElementsInstanced) \
+  M(PFNGLDRAWARRAYSINSTANCEDPROC, glDrawArraysInstanced) \
   M(PFNGLFINISHPROC, glFinish)
 
 #define PXE_GL_DECLARE(TYPE, NAME) inline TYPE NAME = nullptr;
