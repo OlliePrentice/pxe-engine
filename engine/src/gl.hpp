@@ -14,6 +14,11 @@
   M(PFNGLCULLFACEPROC, glCullFace)                  \
   M(PFNGLFRONTFACEPROC, glFrontFace)                \
   M(PFNGLSCISSORPROC, glScissor)                    \
+  M(PFNGLGENQUERIESPROC, glGenQueries)              \
+  M(PFNGLDELETEQUERIESPROC, glDeleteQueries)        \
+  M(PFNGLBEGINQUERYPROC, glBeginQuery)              \
+  M(PFNGLENDQUERYPROC, glEndQuery)                  \
+  M(PFNGLGETQUERYOBJECTUI64VPROC, glGetQueryObjectui64v) \
   M(PFNGLENABLEPROC, glEnable)                      \
   M(PFNGLDISABLEPROC, glDisable)                    \
   M(PFNGLVIEWPORTPROC, glViewport)                  \

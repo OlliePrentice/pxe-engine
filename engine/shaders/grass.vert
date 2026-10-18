@@ -62,6 +62,16 @@ void main() {
     vec2 box = leaf ? kLeafBox : ((vKind < 0.5) ? kClumpBox : kTuftBox);
     float halfW = floor(box.x * 0.5);
     float halfH = leaf ? floor(box.y * 0.5) : 0.0;
+    // Most sprites are off screen. Their whole quad is the box, so if the box
+    // misses the target, drop the quad here, before any of the lighting.
+    float y0 = -halfH * uSpriteFlip, y1 = (box.y - halfH) * uSpriteFlip;
+    vec2 lo = px + vec2(-halfW, min(y0, y1));
+    vec2 hi = px + vec2(box.x - halfW, max(y0, y1));
+    if (hi.x < 0.0 || hi.y < 0.0 || lo.x > uTarget.x || lo.y > uTarget.y) {
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        gl_ClipDistance[0] = -1.0;
+        return;
+    }
     vLocal = vec2(aCorner.x * box.x - halfW, aCorner.y * box.y - halfH);
     vec2 p = px + vec2(vLocal.x, vLocal.y * uSpriteFlip);
     gl_Position = vec4(p / uTarget * 2.0 - 1.0, c.z / c.w - uDepthBiasNdc, 1.0);

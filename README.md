@@ -77,10 +77,13 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 ```text
 pxe [--capture out.png] [--window-png out.png]
     [--scene ruins|hills] [--hour H] [--clouds C] [--menu] [--ui-shot out.png]
+    [--bench N] [--bench-paused]
     [--yaw degrees] [--slide metres] [--target x,y,z]
     [--min-dist metres] [--hide-grass] [--magenta] [--ndl]
     [--test-colours] [--no-tufts] [--no-edges] [--stamps] [--no-depth] [--time seconds]
     [--self-test] [--no-vsync]
 ```
+
+`--bench N` renders N frames at the window's size with vsync off and the day running, and prints the wall-clock time per frame; `--bench-paused` holds the time of day, which lets the shadow map be reused. Close other GPU-heavy apps first (a video playing in a browser skews it badly). Set `PXE_BENCH_PASSES=1` for rough per-pass GPU timers.
 
 `--self-test` renders twice (the low-res image must be identical), nudges the camera by a fraction of a texel (still identical), then by one texel (the image shifts by exactly one pixel).
