@@ -4,6 +4,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -19,9 +20,58 @@ void clockText(float hour, char* out, int size) {
   std::snprintf(out, static_cast<std::size_t>(size), "%02d:%02d", minutes / 60, minutes % 60);
 }
 
+// A flash's brightness `age` seconds after it begins, after the video: on
+// at full in one frame and held a moment, then fading away over most of a
+// second. A flickering flash dips and comes back once before it falls away.
+// The fade is smooth here; the toon ramp still lightens its shadows in
+// steps, a quarter band at a time.
+float flashLevel(float age, bool flicker) {
+  if (age < 0.07f) return 1.f;
+  if (flicker) {
+    if (age < 0.13f) return 0.35f;
+    if (age < 0.2f) return 1.f;
+    age -= 0.13f;
+  }
+  const float level = 0.9f * std::exp(-(age - 0.07f) / 0.3f);
+  return level < 0.01f ? 0.f : level;
+}
+
 }  // namespace
 
+float WorldClock::random() {
+  rng_ ^= rng_ << 13;
+  rng_ ^= rng_ >> 17;
+  rng_ ^= rng_ << 5;
+  return static_cast<float>(rng_ & 0xffffff) / 16777216.f;
+}
+
+void WorldClock::strike() {
+  // Anywhere around the sky, between 30 and 65 degrees up.
+  const float az = random() * 6.2831853f;
+  const float el = (30.f + 35.f * random()) * 3.14159265f / 180.f;
+  flashDir = {std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)};
+  strikeAge_ = 0.f;
+  flicker_ = random() < 0.4f;
+}
+
 void WorldClock::advance(float dt) {
+  // Lightning keeps real time, like the rain, even with the clock paused.
+  // It strikes only in rain and downpour, more often the heavier the rain.
+  if (lightning && rain >= 0.4f) {
+    nextStrike_ -= dt;
+    if (nextStrike_ <= 0.f) {
+      strike();
+      const float heavy = std::clamp((rain - 0.4f) / 0.6f, 0.f, 1.f);
+      nextStrike_ = (16.f + (6.f - 16.f) * heavy) * (0.5f + random());
+    }
+  }
+  flash = 0.f;
+  if (strikeAge_ >= 0.f) {
+    strikeAge_ += dt;
+    flash = flashLevel(strikeAge_, flicker_);
+    if (flash <= 0.f && strikeAge_ > 0.3f) strikeAge_ = -1.f;
+  }
+
   if (paused) return;
   hour = std::fmod(hour + dt / 60.f * hoursPerMinute, 24.f);
   if (hour < 0.f) hour += 24.f;
@@ -122,6 +172,10 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, float fps) {
         if (ImGui::Button(weather[i].label)) clock.rain = weather[i].rain;
       }
       ImGui::TextDisabled("R cycles none / drizzle / rain / downpour");
+      ImGui::Checkbox("Lightning", &clock.lightning);
+      ImGui::SameLine();
+      if (ImGui::Button("Strike now")) clock.strike();
+      ImGui::TextDisabled("Flashes in rain and downpour; L strikes now");
 
       ImGui::SeparatorText("Rendering");
       ImGui::Checkbox("Grass and leaves  (F2)", &view.grass);

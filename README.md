@@ -12,7 +12,9 @@ Chipped stone keeps the normal of the box side each face came from, so a block s
 
 Water reflects the scene: a second pass draws everything above the water plane mirrored (meshes and leaves, not grass), clipped and scissored to the pond's area on screen. The water pass also reads a copy of the scene behind it and its depth, so it knows how deep the water is at each pixel: the shallows show the pond bed darkly through a blue tint, deeper water shows the reflection, or the sky's stepped blotches where nothing is mirrored, with a one-pixel ripple, and a thin light contact line traces the shore and everything standing in the water.
 
-Rain, after t3ssel8r's rain shader, has one severity from drizzle to downpour. It brings a murky, even overcast under which cast shadows from the sun and moon soften with severity and are gone in a downpour (drifting cloud shadows fade out as it sets in) and a cool, hazy grade; sparse one-pixel streaks in two layers that hold still and are redrawn about ten times a second, for a stepped, low-frame-rate flicker, leaning with the wind's direction across the screen and its strength; a soft light haze along the upper outlines of stone and trunks; occasional three-stage splashes (a dot, a little crown, two droplets) on stone and bark, and small ones scattered on crowns and the lawn; ripple rings on the water; and upward-facing leaves bobbing as drops hit them. Streaks, splashes and haze are drawn in the post pass on a pixel grid anchored to the world, so they do not slide when the camera pans.
+Rain, after t3ssel8r's rain shader, has one severity from drizzle to downpour. It brings a murky, even overcast under which cast shadows from the sun and moon soften with severity and are gone in a downpour (drifting cloud shadows fade out as it sets in) and a cool, hazy grade; sparse one-pixel streaks in two layers that hold still and are redrawn about ten times a second, for a stepped, low-frame-rate flicker, leaning with the wind's direction across the screen and its strength; a soft light haze along the upper outlines of stone and trunks; occasional three-stage splashes (a dot, a little crown, two droplets) on stone and bark, and small ones scattered on crowns and the lawn; ripple rings on the water; and upward-facing leaves bobbing as drops hit them. Splashes are hashed on cells of the surfaces themselves, rebuilt from depth, and the two streak layers drift at their own depths as the camera turns, so the rain stays with the world as the camera pans or turns.
+
+Lightning flashes now and then in rain and downpour, more often the heavier the rain, and can be switched off in the menu. Each flash is a second light from a random direction, anywhere around the sky between 30 and 65 degrees up, with its own shadow map, so it casts hard shadows through the rain: lit faces go a cold blue-white and the shadow side stays storm-dark. As in the video it comes on at full in one frame and sometimes dips and comes back once. It then fades over most of a second, blended over the sun or moon by its strength, so its shadows lighten a quarter band at a time into the scene's own light instead of snapping off.
 
 No lightning or god rays.
 
@@ -67,6 +69,7 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 | Tab | Settings menu: time of day, time speed, clouds, wind, rain |
 | Space | Pause or resume time |
 | R | Cycle rain: none, drizzle, rain, downpour |
+| L | Lightning strike now |
 | [ / ] | Halve or double the speed of time |
 | WASD or arrows | Pan along the ground |
 | Shift | Pan faster |
@@ -79,7 +82,7 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 
 ```text
 pxe [--capture out.png] [--window-png out.png]
-    [--scene ruins|hills] [--hour H] [--clouds C] [--rain R] [--wind DEG] [--wind-strength S]
+    [--scene ruins|hills] [--hour H] [--clouds C] [--rain R] [--no-lightning] [--flash AZ,EL[,LEVEL]] [--wind DEG] [--wind-strength S]
     [--menu] [--ui-shot out.png]
     [--bench N] [--bench-paused]
     [--yaw degrees] [--slide metres] [--target x,y,z]

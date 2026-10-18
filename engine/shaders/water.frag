@@ -56,6 +56,7 @@ void main() {
 
     float depth = (texelFetch(uBedDepth, p, 0).r - gl_FragCoord.z) * uDepthMetres;
     float lit = sunLit(vWorld, n, 1.0) * horizonLight(vWorld);
+    if (uFlash > 0.0) lit = mix(lit, uFlashDir.y > 0.0 ? flashLit(vWorld, n, 1.0) : 0.0, uFlash);
     float tone = 2.0 * lit;
     float shade = cloudShade(vWorld);
 

@@ -31,6 +31,7 @@ uniform vec3 uRim;  // blended with the time of day
 uniform vec3 uInk;
 
 uniform float uRain;        // 0 dry .. 1 downpour
+uniform float uFlash;       // lightning, 0 none .. 1 peak
 uniform float uTime;        // seconds
 uniform vec2 uCamTexel;     // camera position in whole low-res texels
 uniform float uRainSlant;   // pixels sideways per pixel of fall; positive leans right
@@ -166,9 +167,11 @@ vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
     vec2 w = vec2(p) + uCamTexel;  // pixel grid anchored to the focus
 
     // Murky grade: cooler, flatter, darker, with an even haze over it all.
+    // A lightning flash cuts through most of it while it lasts.
+    float murk = uRain * (1.0 - 0.7 * uFlash);
     float l = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(col, l * vec3(0.86, 0.93, 1.06), 0.45 * uRain) * (1.0 - 0.14 * uRain);
-    col = mix(col, uRainColour * 0.85, 0.1 * uRain);
+    col = mix(col, l * vec3(0.86, 0.93, 1.06), 0.45 * murk) * (1.0 - 0.14 * murk);
+    col = mix(col, uRainColour * 0.85, 0.1 * murk);
 
     // Wet stone and trunks pick up a soft light line along their upper
     // outlines, a two-pixel haze where they meet what is behind them.
