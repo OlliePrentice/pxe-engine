@@ -116,7 +116,9 @@ void Camera::basis(float yaw, glm::vec3& forward, glm::vec3& right, glm::vec3& u
   const float cp = std::cos(kPitch);
   const float sp = std::sin(kPitch);
   const glm::vec3 flatForward{std::sin(yaw), 0.f, std::cos(yaw)};
-  right = glm::vec3{std::cos(yaw), 0.f, -std::sin(yaw)};
+  // Right-handed: looking along +z with y up, right is -x. The old
+  // (cos, 0, -sin) here rendered a mirror image of the world.
+  right = glm::vec3{-std::cos(yaw), 0.f, std::sin(yaw)};
   forward = cp * flatForward + glm::vec3{0.f, -sp, 0.f};
   up = glm::cross(right, forward);
   if (up.y < 0.f) up = -up;

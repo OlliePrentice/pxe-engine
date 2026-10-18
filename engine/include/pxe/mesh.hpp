@@ -5,10 +5,25 @@
 
 namespace pxe {
 
-// Position only. Lighting reads a baked normal texture, not vertex normals,
-// so band edges do not follow the triangulation.
-struct TerrainVertex {
-  float x, y, z;
+// Material families. Each one has its own three-step toon ramp, and the
+// glTF loader picks one from the material name.
+enum Surface : int {
+  kSurfGrass = 0,
+  kSurfDirt = 1,
+  kSurfStone = 2,
+  kSurfBark = 3,
+  kSurfLeaf = 4,
+  kSurfWater = 5,
+  kSurfFoam = 6,
+  kSurfCount = 7,
+};
+
+// World-space vertex. Lighting uses the vertex normal, so a crown's custom
+// normals from Blender survive into the toon ramp.
+struct Vertex {
+  float px, py, pz;
+  float nx, ny, nz;
+  float surface;
 };
 
 class Mesh {
@@ -20,7 +35,7 @@ class Mesh {
   Mesh(const Mesh&) = delete;
   Mesh& operator=(const Mesh&) = delete;
 
-  void upload(const std::vector<TerrainVertex>& vertices, const std::vector<std::uint32_t>& indices);
+  void upload(const std::vector<Vertex>& vertices, const std::vector<std::uint32_t>& indices);
   void draw() const;
   bool empty() const { return indexCount_ == 0; }
 
