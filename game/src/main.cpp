@@ -1,3 +1,4 @@
+#include "audio.hpp"
 #include "scene.hpp"
 #include "settings.hpp"
 
@@ -53,6 +54,8 @@ struct Options {
   float clouds = 0.35f;
   float rain = 0.f;
   bool lightning = true;
+  bool sound = true;
+  std::string audioWav;
   float flash = 0.f;  // > 0: captures hold a flash at this level
   float flashAz = 0.f, flashEl = 45.f;
   float windDegrees = 20.f;
@@ -82,6 +85,8 @@ void printUsage() {
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
                "  --no-lightning           no lightning flashes in rain and downpour\n"
+               "  --mute                   start with sound off\n"
+               "  --audio-wav path.wav     render 20 s of weather sound (--rain, --wind-strength) with two thunderclaps, exit\n"
                "  --flash AZ,EL[,LEVEL]    captures: hold a lightning flash from compass AZ, EL degrees up\n"
                "  --wind DEG --wind-strength S   wind direction (compass) and strength (default 20, 1)\n"
                "  --menu                   start with the settings menu open (Tab)\n"
@@ -169,6 +174,10 @@ Options parseArgs(int argc, char** argv) {
       opt.rain = std::atof(need("--rain"));
     } else if (a == "--no-lightning") {
       opt.lightning = false;
+    } else if (a == "--mute") {
+      opt.sound = false;
+    } else if (a == "--audio-wav") {
+      opt.audioWav = need("--audio-wav");
     } else if (a == "--flash") {
       opt.flash = 1.f;
       std::sscanf(need("--flash"), "%f,%f,%f", &opt.flashAz, &opt.flashEl, &opt.flash);
@@ -220,6 +229,7 @@ struct Input {
   bool toggleMenu = false;
   bool cycleRain = false;
   bool strike = false;
+  bool toggleSound = false;
   bool togglePause = false;
   int speedSteps = 0;  // +1 doubles, -1 halves
   bool shot = false;
@@ -254,6 +264,8 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken) {
   if (pressed(win, GLFW_KEY_R, rkey)) in.cycleRain = true;
   static bool lkey = false;
   if (pressed(win, GLFW_KEY_L, lkey)) in.strike = true;
+  static bool mkey = false;
+  if (pressed(win, GLFW_KEY_M, mkey)) in.toggleSound = true;
   if (pressed(win, GLFW_KEY_LEFT_BRACKET, slower)) in.speedSteps -= 1;
   if (pressed(win, GLFW_KEY_RIGHT_BRACKET, faster)) in.speedSteps += 1;
   if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
@@ -390,8 +402,57 @@ int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& sce
 
 }  // namespace
 
+// Weather sound rendered offline to a 16-bit WAV: 20 s of wind and rain as
+// set on the command line, with a near thunderclap on the left at 2 s and a
+// far one on the right at 10 s. Prints the level of each second.
+int writeAudioWav(const Options& opt) {
+  game::Audio audio;
+  game::SoundSettings sound;
+  audio.setVolumes(sound);
+  audio.setWeather(opt.windStrength, opt.rain);
+  constexpr int kSeconds = 20;
+  const int rate = game::Audio::kRate;
+  std::vector<float> buf(static_cast<std::size_t>(rate) * 2);
+  std::vector<std::int16_t> pcm;
+  for (int sec = 0; sec < kSeconds; ++sec) {
+    if (sec == 2) audio.thunderAt(-0.7f, 0.05f);
+    if (sec == 10) audio.thunderAt(0.7f, 0.8f);
+    audio.render(buf.data(), rate);
+    double sum = 0.0;
+    float peak = 0.f;
+    for (float v : buf) {
+      sum += static_cast<double>(v) * v;
+      peak = std::max(peak, std::fabs(v));
+      pcm.push_back(static_cast<std::int16_t>(std::clamp(v, -1.f, 1.f) * 32767.f));
+    }
+    std::fprintf(stderr, "audio: %2d s  rms %.3f  peak %.3f\n", sec, std::sqrt(sum / buf.size()), peak);
+  }
+  std::FILE* f = std::fopen(opt.audioWav.c_str(), "wb");
+  if (!f) return 1;
+  auto u32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
+  auto u16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
+  const std::uint32_t bytes = static_cast<std::uint32_t>(pcm.size() * 2);
+  std::fwrite("RIFF", 1, 4, f);
+  u32(36 + bytes);
+  std::fwrite("WAVEfmt ", 1, 8, f);
+  u32(16);
+  u16(1);
+  u16(2);
+  u32(static_cast<std::uint32_t>(rate));
+  u32(static_cast<std::uint32_t>(rate) * 4);
+  u16(4);
+  u16(16);
+  std::fwrite("data", 1, 4, f);
+  u32(bytes);
+  std::fwrite(pcm.data(), 2, pcm.size(), f);
+  std::fclose(f);
+  std::fprintf(stderr, "pxe: wrote %s\n", opt.audioWav.c_str());
+  return 0;
+}
+
 int main(int argc, char** argv) {
   const Options opt = parseArgs(argc, argv);
+  if (!opt.audioWav.empty()) return writeAudioWav(opt);
 
   if (!glfwInit()) {
     std::fprintf(stderr, "glfwInit failed\n");
@@ -556,6 +617,11 @@ int main(int argc, char** argv) {
         clock.lightning = opt.lightning;
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
+        game::SoundSettings sound;
+        sound.on = opt.sound;
+        game::Audio audio;
+        if (!audio.start()) std::fprintf(stderr, "pxe: no audio output, running silent\n");
+        int heardStrikes = 0;
         game::SettingsMenu menu;
         menu.init(window);
         if (opt.menu) menu.toggle();
@@ -584,6 +650,7 @@ int main(int argc, char** argv) {
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
           if (input.strike) clock.strike();
+          if (input.toggleSound) sound.on = !sound.on;
           if (input.cycleRain) clock.rain = clock.rain <= 0.f ? 0.2f : clock.rain < 0.5f ? 0.55f : clock.rain < 0.9f ? 1.f : 0.f;
           if (input.speedSteps)
             clock.hoursPerMinute = std::clamp(clock.hoursPerMinute * std::pow(2.f, static_cast<float>(input.speedSteps)),
@@ -608,12 +675,20 @@ int main(int argc, char** argv) {
           params.time = static_cast<float>(now);
           params.lighting = lightingFor(scene, clock);
           const pxe::CameraFrame frame = draw(params);
+          // Weather sound follows the settings; each new flash queues its
+          // thunder, panned toward the side of the screen it lit from.
+          audio.setVolumes(sound);
+          audio.setWeather(clock.cloudSpeed, clock.rain);
+          if (clock.strikes != heardStrikes) {
+            heardStrikes = clock.strikes;
+            audio.thunder(glm::dot(clock.flashDir, frame.right) / std::max(glm::length(glm::vec2{clock.flashDir.x, clock.flashDir.z}), 1e-3f));
+          }
           if (input.shot) {
             const bool ok = writePng("shot.png", renderer.viewW(), renderer.viewH(),
                                      renderer.readView());
             std::fprintf(stderr, "pxe: %s shot.png\n", ok ? "wrote" : "failed");
           }
-          menu.draw(clock, view, fps);
+          menu.draw(clock, view, sound, fps);
           if (!opt.uiShot.empty() && ++frameCount == 8) {
             const bool ok = writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
             std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", ok ? "wrote" : "failed", opt.uiShot.c_str(), fbW, fbH);
