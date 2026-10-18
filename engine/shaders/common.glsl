@@ -23,6 +23,10 @@ uniform vec2 uCloudOffset;   // drift, in cloud-noise units
 uniform float uCloudStrength;  // 0..1, how dark a thick cloud's shadow gets
 uniform float uOvercast;       // 0..1, rain: everything pulled toward shadow
 uniform float uRain;           // 0 dry .. 1 downpour
+uniform float uFlash;          // lightning, 0 none .. 1 peak
+uniform vec3 uFlashDir;        // toward the flash
+uniform mat4 uFlashViewProj;
+uniform sampler2DShadow uFlashShadowMap;
 
 vec3 bandColour(int surface, int band) {
     return uBand[surface * 3 + band];
@@ -54,14 +58,18 @@ vec3 toneDetail(int surface, float tone) {
 // texels across. Under a turning sun the stair-steps of a rasterised edge
 // slide sideways past each point; a kernel this wide averages them out, so
 // the fraction falls steadily instead of flickering on and off.
-float sunVisibleSpread(vec3 wpos, vec3 n, float spread, float biasScale) {
-    vec4 ls = uLightViewProj * vec4(wpos + n * uNormalBias * biasScale, 1.0);
+float visibleIn(sampler2DShadow map, mat4 viewProj, vec3 wpos, vec3 n, float spread, float biasScale) {
+    vec4 ls = viewProj * vec4(wpos + n * uNormalBias * biasScale, 1.0);
     vec3 p = ls.xyz / ls.w * 0.5 + 0.5;
     float v = 0.0;
     for (int y = -1; y <= 1; ++y)
         for (int x = -1; x <= 1; ++x)
-            v += texture(uShadowMap, vec3(p.xy + vec2(x, y) * uShadowTexel * spread, p.z));
+            v += texture(map, vec3(p.xy + vec2(x, y) * uShadowTexel * spread, p.z));
     return v / 9.0;
+}
+
+float sunVisibleSpread(vec3 wpos, vec3 n, float spread, float biasScale) {
+    return visibleIn(uShadowMap, uLightViewProj, wpos, n, spread, biasScale);
 }
 
 float sunVisible(vec3 wpos, vec3 n) { return sunVisibleSpread(wpos, n, 1.25, 1.0); }
@@ -74,6 +82,12 @@ float sunVisible(vec3 wpos, vec3 n) { return sunVisibleSpread(wpos, n, 1.25, 1.0
 float sunLit(vec3 wpos, vec3 n, float biasScale) {
     float lit = step(0.5, sunVisibleSpread(wpos, n, 1.25, biasScale));
     return mix(lit, 1.0, smoothstep(0.15, 0.95, uRain));
+}
+
+// A lightning flash has its own shadow map, and its shadows stay hard
+// through any rain.
+float flashLit(vec3 wpos, vec3 n, float biasScale) {
+    return step(0.5, visibleIn(uFlashShadowMap, uFlashViewProj, wpos, n, 1.25, biasScale));
 }
 
 // Ridge height around the ring, 0..1, by angle: a few broad hills, with
@@ -153,11 +167,28 @@ vec3 clouded(vec3 col, int surface, float shade) {
 
 // N·L part of the tone, unquantised, 0 shadow .. 2 lit. Nothing is lit
 // while the light is below the horizon.
-float ndlTone(vec3 n) {
-    if (uSunDir.y <= 0.0) return 0.0;
-    float ndl = dot(normalize(n), uSunDir);
+float ndlToneFor(vec3 n, vec3 L) {
+    if (L.y <= 0.0) return 0.0;
+    float ndl = dot(normalize(n), L);
     return clamp((ndl - uTMid) / kToneSoftness + 0.5, 0.0, 1.0)
          + clamp((ndl - uTLit) / kToneSoftness + 0.5, 0.0, 1.0);
+}
+
+float ndlTone(vec3 n) { return ndlToneFor(n, uSunDir); }
+
+// The light part of the tone, 0..2: N·L toward the sun or moon cut by their
+// shadows and the ridge. A lightning flash is a second light blended over
+// it by the flash's strength, so as the flash fades its shadows lighten
+// band by band into the scene's own light rather than snapping off.
+float litTone(vec3 wpos, vec3 n, float biasScale) {
+    float t = ndlTone(n);
+    if (t > 0.0) t *= sunLit(wpos, n, biasScale) * horizonLight(wpos);
+    if (uFlash > 0.0) {
+        float f = ndlToneFor(n, uFlashDir);
+        if (f > 0.0) f *= flashLit(wpos, n, biasScale);
+        t = mix(t, f, uFlash);
+    }
+    return t;
 }
 
 float quantiseTone(float t) { return floor(t * kToneSteps + 0.5) / kToneSteps; }
@@ -185,8 +216,7 @@ float barkNoise(vec3 p) {
 // breaks into soft, irregular blotches of a few close shades, like the
 // watercolour trunks in the video. The shadow side keeps faint blotches.
 float barkTone(vec3 wpos, vec3 n) {
-    float lit = ndlTone(n);
-    if (lit > 0.0) lit *= sunLit(wpos, n, 1.0) * horizonLight(wpos);
+    float lit = litTone(wpos, n, 1.0);
     vec3 q = wpos * vec3(2.4, 0.55, 2.4);
     // Broad blotches, smaller ones, and fine streaks drawn up the trunk.
     float w = 0.5 * barkNoise(q) + 0.25 * barkNoise(q * 2.3 + 7.1)
@@ -199,9 +229,7 @@ float barkTone(vec3 wpos, vec3 n) {
 // across them pixel by pixel as the sun turns, which already reads smooth.
 // Shadows are hard, so a cast shadow is a crisp edge.
 float toonTone(vec3 wpos, vec3 n) {
-    float t = ndlTone(n);
-    if (t > 0.0) t *= sunLit(wpos, n, 1.0) * horizonLight(wpos);
-    return quantiseTone(t);
+    return quantiseTone(litTone(wpos, n, 1.0));
 }
 
 // Tone for flat-shaded faces (cut stone). A face has one normal, so a
@@ -210,10 +238,8 @@ float toonTone(vec3 wpos, vec3 n) {
 // a face shows one colour per side, that colour eases through the ramp, and
 // the shadow across it is a crisp pixel edge.
 float toonToneFlat(vec3 wpos, vec3 n) {
-    float t = ndlTone(n);
     // Chipped stone sits up to ~12 cm off its flat box face, so it needs a
     // bias bigger than its own bumps or they shadow the face in speckles that
     // crawl as the light moves.
-    if (t > 0.0) t *= sunLit(wpos, n, 2.5) * horizonLight(wpos);
-    return t;
+    return litTone(wpos, n, 2.5);
 }

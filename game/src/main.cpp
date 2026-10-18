@@ -52,6 +52,9 @@ struct Options {
   float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
   float clouds = 0.35f;
   float rain = 0.f;
+  bool lightning = true;
+  float flash = 0.f;  // > 0: captures hold a flash at this level
+  float flashAz = 0.f, flashEl = 45.f;
   float windDegrees = 20.f;
   float windStrength = 1.f;
   bool menu = false;
@@ -78,6 +81,8 @@ void printUsage() {
                "  --hour H                 time of day, 0-24 (captures default to 15)\n"
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
+               "  --no-lightning           no lightning flashes in rain and downpour\n"
+               "  --flash AZ,EL[,LEVEL]    captures: hold a lightning flash from compass AZ, EL degrees up\n"
                "  --wind DEG --wind-strength S   wind direction (compass) and strength (default 20, 1)\n"
                "  --menu                   start with the settings menu open (Tab)\n"
                "  --ui-shot path.png       run the interactive loop briefly, save the window with the menu, exit\n"
@@ -162,6 +167,11 @@ Options parseArgs(int argc, char** argv) {
       opt.windStrength = std::atof(need("--wind-strength"));
     } else if (a == "--rain") {
       opt.rain = std::atof(need("--rain"));
+    } else if (a == "--no-lightning") {
+      opt.lightning = false;
+    } else if (a == "--flash") {
+      opt.flash = 1.f;
+      std::sscanf(need("--flash"), "%f,%f,%f", &opt.flashAz, &opt.flashEl, &opt.flash);
     } else if (a == "--clouds") {
       opt.clouds = std::atof(need("--clouds"));
     } else if (a == "--no-edges") {
@@ -209,6 +219,7 @@ struct Input {
   bool toggleNdl = false;
   bool toggleMenu = false;
   bool cycleRain = false;
+  bool strike = false;
   bool togglePause = false;
   int speedSteps = 0;  // +1 doubles, -1 halves
   bool shot = false;
@@ -241,6 +252,8 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken) {
   if (pressed(win, GLFW_KEY_SPACE, space)) in.togglePause = true;
   static bool rkey = false;
   if (pressed(win, GLFW_KEY_R, rkey)) in.cycleRain = true;
+  static bool lkey = false;
+  if (pressed(win, GLFW_KEY_L, lkey)) in.strike = true;
   if (pressed(win, GLFW_KEY_LEFT_BRACKET, slower)) in.speedSteps -= 1;
   if (pressed(win, GLFW_KEY_RIGHT_BRACKET, faster)) in.speedSteps += 1;
   if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
@@ -294,6 +307,33 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
   lighting.rain = clock.rain;
   lighting.overcast = 0.7f * clock.rain;
   lighting.cloudStrength *= std::clamp(1.f - 2.f * clock.rain, 0.f, 1.f);
+
+  // A lightning flash: a second light from the flash's direction with hard
+  // shadows, blended over the sun or moon by its strength, and the overcast
+  // drops away while it lasts. Lit faces take the midday colours washed out
+  // to a cold blue-white; the shadow side stays close to the storm's dark.
+  if (clock.flash > 0.f) {
+    const float f = clock.flash;
+    const pxe::Lighting day = pxe::lightingAt(scene, 12.f);
+    auto cold = [](glm::vec3 c) {
+      const float l = glm::dot(c, glm::vec3{0.299f, 0.587f, 0.114f});
+      return glm::mix(c, glm::vec3{l}, 0.55f) * glm::vec3{0.86f, 0.95f, 1.18f};
+    };
+    for (int s = 0; s < pxe::kSurfCount; ++s)
+      for (int b = 0; b < 3; ++b) {
+        pxe::Palette& p = lighting.palette[s];
+        const pxe::Palette& d = day.palette[s];
+        const float k = f * (b == 0 ? 0.35f : 1.f);
+        p.band[b] = glm::mix(p.band[b], cold(d.band[b]), k);
+        p.detail[b] = glm::mix(p.detail[b], cold(d.detail[b]), k);
+        p.tip[b] = glm::mix(p.tip[b], cold(d.tip[b]), k);
+      }
+    lighting.rim = glm::mix(lighting.rim, cold(day.rim), f);
+    lighting.ink = glm::mix(lighting.ink, day.ink, f);
+    lighting.flashDir = clock.flashDir;
+    lighting.overcast *= 1.f - f;
+    lighting.flash = f;
+  }
   return lighting;
 }
 
@@ -431,6 +471,7 @@ int main(int argc, char** argv) {
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
         clock.rain = opt.rain;
+        clock.lightning = opt.lightning;
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
         // Per-pass GPU timers block every frame and, on macOS's GL-on-Metal,
@@ -471,6 +512,13 @@ int main(int argc, char** argv) {
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
         clock.rain = opt.rain;
+        clock.lightning = opt.lightning;
+        if (opt.flash > 0.f) {
+          // Compass bearing, like the wind: 0 north (-z), 90 east (+x).
+          const float az = opt.flashAz * 3.14159265f / 180.f, el = opt.flashEl * 3.14159265f / 180.f;
+          clock.flash = opt.flash;
+          clock.flashDir = {std::cos(el) * std::sin(az), std::sin(el), -std::cos(el) * std::cos(az)};
+        }
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
         pxe::FrameParams params = makeParams(opt);
@@ -505,6 +553,7 @@ int main(int argc, char** argv) {
         if (opt.hour >= 0.f) clock.hour = opt.hour;
         clock.cloudCover = opt.clouds;
         clock.rain = opt.rain;
+        clock.lightning = opt.lightning;
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
         game::SettingsMenu menu;
@@ -534,6 +583,7 @@ int main(int argc, char** argv) {
           if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
+          if (input.strike) clock.strike();
           if (input.cycleRain) clock.rain = clock.rain <= 0.f ? 0.2f : clock.rain < 0.5f ? 0.55f : clock.rain < 0.9f ? 1.f : 0.f;
           if (input.speedSteps)
             clock.hoursPerMinute = std::clamp(clock.hoursPerMinute * std::pow(2.f, static_cast<float>(input.speedSteps)),

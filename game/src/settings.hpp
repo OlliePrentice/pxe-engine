@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 struct GLFWwindow;
 
@@ -16,12 +17,27 @@ struct WorldClock {
   float cloudStrength = 0.6f;    // 0 no shadow, 1 as dark as a cast shadow
   float windDegrees = 20.f;      // direction the wind blows toward, compass-style
   float rain = 0.f;              // 0 dry, 0.2 drizzle, 0.55 rain, 1 downpour
+  bool lightning = true;         // flashes now and then in rain and downpour
   glm::vec2 cloudOffset{0.f};
+
+  // The flash now lighting the scene, 0 none .. 1 at its peak, and the
+  // direction toward where it lights from.
+  float flash = 0.f;
+  glm::vec3 flashDir{0.f, 1.f, 0.f};
 
   // Advance by `dt` real seconds.
   void advance(float dt);
+  // A lightning flash now, lighting the scene from a random direction.
+  void strike();
   // Unit vector, world XZ, the wind blows toward.
   glm::vec2 windDir() const;
+
+ private:
+  float random();
+  float nextStrike_ = 3.f;    // seconds until the next flash
+  float strikeAge_ = -1.f;    // seconds since the flash began; < 0 none
+  bool flicker_ = false;      // the flash dips and comes back once
+  unsigned rng_ = 0x9e3779b9u;
 };
 
 struct ViewToggles {

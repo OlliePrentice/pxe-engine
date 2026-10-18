@@ -87,6 +87,8 @@ class Renderer {
   unsigned ground_ = 0;  // copy of color_ after terrain, read by grass
   unsigned depth_ = 0;
   unsigned shadow_ = 0;
+  unsigned flashShadow_ = 0;  // lightning's shadow map, redrawn per strike
+  unsigned fboFlash_ = 0;
 
   unsigned progMesh_ = 0;
   unsigned progGrass_ = 0;
@@ -108,6 +110,8 @@ class Renderer {
   bool profiling_ = false;
   // The shadow map is only redrawn when the light or the scene changes.
   glm::vec3 shadowLight_{0.f};
+  glm::vec3 flashLight_{0.f};
+  const Scene* flashScene_ = nullptr;
   const Scene* shadowScene_ = nullptr;
   unsigned queries_[PassTimes::kCount] = {};
   PassTimes passTimes_;

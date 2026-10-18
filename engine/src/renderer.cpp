@@ -89,8 +89,8 @@ std::vector<float> ramp(const Lighting& lighting, glm::vec3 (Palette::*field)[3]
   return out;
 }
 
-void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP, float normalBias,
-              bool testColours) {
+void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP, const glm::mat4& flashVP,
+              float normalBias, bool testColours) {
   u1f(prog, "uTLit", lighting.tLit);
   u1f(prog, "uTMid", lighting.tMid);
   const glm::vec3 light = glm::normalize(lighting.lightDir);
@@ -106,6 +106,11 @@ void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP,
   u1f(prog, "uCloudStrength", lighting.cloudStrength);
   u1f(prog, "uOvercast", lighting.overcast);
   u1f(prog, "uRain", lighting.rain);
+  u1f(prog, "uFlash", lighting.flash);
+  const glm::vec3 flash = glm::normalize(lighting.flashDir);
+  u3f(prog, "uFlashDir", flash.x, flash.y, flash.z);
+  umat(prog, "uFlashViewProj", flashVP);
+  u1i(prog, "uFlashShadowMap", 6);
   glUniform4f(uloc(prog, "uHorizon"), lighting.horizon.x, lighting.horizon.y, lighting.horizon.z, lighting.horizon.w);
   u1f(prog, "uHorizonRelief", lighting.horizonRelief);
 }
@@ -129,15 +134,16 @@ Renderer::~Renderer() {
 }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, refl_, reflDepth_, bed_, bedDepth_};
+  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, flashShadow_, refl_, reflDepth_, bed_, bedDepth_};
   glDeleteTextures(10, textures);
-  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
+  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = flashShadow_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
   if (fboFinal_) glDeleteFramebuffers(1, &fboFinal_);
   if (fboRefl_) glDeleteFramebuffers(1, &fboRefl_);
   fboFinal_ = fboRefl_ = 0;
   if (fboShadow_) glDeleteFramebuffers(1, &fboShadow_);
-  fbo_ = fboShadow_ = 0;
+  if (fboFlash_) glDeleteFramebuffers(1, &fboFlash_);
+  fbo_ = fboShadow_ = fboFlash_ = 0;
 }
 
 unsigned Renderer::makeColor(int w, int h) {
@@ -188,6 +194,7 @@ void Renderer::createTargets() {
   bed_ = makeColor(rtW(), rtH());
   bedDepth_ = makeDepth(rtW(), rtH(), false);
   shadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
+  flashShadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
 
   glGenFramebuffers(1, &fbo_);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
@@ -217,6 +224,9 @@ void Renderer::createTargets() {
   glGenFramebuffers(1, &fboShadow_);
   glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadow_, 0);
+  glGenFramebuffers(1, &fboFlash_);
+  glBindFramebuffer(GL_FRAMEBUFFER, fboFlash_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, flashShadow_, 0);
   glDrawBuffer(GL_NONE);
   glReadBuffer(GL_NONE);
   requireFbo("shadow");
@@ -394,6 +404,7 @@ void Renderer::drawSprites(const Scene&, const CameraFrame&, const FrameParams& 
 void Renderer::render(const Scene& scene, const CameraFrame& camera, const FrameParams& params) {
   const Lighting& lighting = params.lighting;
   const LightFit light = fitLight(scene, lighting.lightDir);
+  const LightFit flash = fitLight(scene, lighting.flashDir);
   const float normalBias = 3.f * light.texel;
   const glm::mat4 viewProj = camera.proj * camera.view;
   const float biasNdc = kGrassBiasMetres * 2.f / (camera.farPlane - camera.nearPlane);
@@ -423,6 +434,17 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     shadowScene_ = &scene;
     shadowLight_ = lighting.lightDir;
   }
+  // Lightning's map: drawn once when a flash strikes from a new direction.
+  if (lighting.flash > 0.f && (flashScene_ != &scene || flashLight_ != lighting.flashDir)) {
+    glBindFramebuffer(GL_FRAMEBUFFER, fboFlash_);
+    glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glUseProgram(progShadow_);
+    umat(progShadow_, "uLightViewProj", flash.viewProj);
+    for (const Mesh& m : scene.meshes) m.draw();
+    flashScene_ = &scene;
+    flashLight_ = lighting.flashDir;
+  }
   glDisable(GL_POLYGON_OFFSET_FILL);
   endPass();
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -434,18 +456,20 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
 
   glActiveTexture(GL_TEXTURE1);
   glBindTexture(GL_TEXTURE_2D, shadow_);
+  glActiveTexture(GL_TEXTURE6);
+  glBindTexture(GL_TEXTURE_2D, flashShadow_);
   const glm::mat4 identity{1.f};
 
   // Program state shared by every mesh and sprite draw this frame.
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
   u1f(progMesh_, "uTime", params.time);
-  bindToon(progMesh_, lighting, light.viewProj, normalBias, params.testColours);
+  bindToon(progMesh_, lighting, light.viewProj, flash.viewProj, normalBias, params.testColours);
   if (params.showGrass && grassCount_ > 0) {
     glUseProgram(progGrass_);
     u2f(progGrass_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
     u1f(progGrass_, "uDepthBiasNdc", biasNdc);
-    bindToon(progGrass_, lighting, light.viewProj, normalBias, params.testColours);
+    bindToon(progGrass_, lighting, light.viewProj, flash.viewProj, normalBias, params.testColours);
     u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
     // Bound before any sprite draw: the reflection pass draws sprites before
@@ -523,7 +547,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glBindTexture(GL_TEXTURE_2D, refl_);
     glUseProgram(progWater_);
     umat(progWater_, "uViewProj", viewProj);
-    bindToon(progWater_, lighting, light.viewProj, normalBias, params.testColours);
+    bindToon(progWater_, lighting, light.viewProj, flash.viewProj, normalBias, params.testColours);
     u1i(progWater_, "uBed", 3);
     u1i(progWater_, "uBedDepth", 4);
     u1i(progWater_, "uReflection", 5);
@@ -565,6 +589,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u3f(progEdge_, "uLight", edgeLight.x, edgeLight.y, edgeLight.z);
   u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
   u1f(progEdge_, "uRain", lighting.rain);
+  u1f(progEdge_, "uFlash", lighting.flash);
   u1f(progEdge_, "uTime", params.time);
   // The camera's snapped position in whole texels anchors the rain's pixel
   // grid to the world, so it does not slide with the view.

@@ -29,6 +29,11 @@ struct Lighting {
   // every colour is pulled toward its shadow tone.
   float rain = 0.f;
   float overcast = 0.f;
+  // A lightning flash, 0 none .. 1 at its peak, and the direction toward
+  // it. It is a second light with its own hard shadows, blended over the
+  // sun or moon by its strength.
+  float flash = 0.f;
+  glm::vec3 flashDir{0.f, 1.f, 0.f};
   // Horizontal wind direction (unit, world XZ) for the grass sway, and how
   // hard it blows (the drift-speed setting, 1 by default).
   glm::vec2 windDir{1.f, 0.f};
