@@ -7,6 +7,7 @@ flat in float vKind;
 flat in float vSeed;
 flat in float vScale;
 flat in float vSway;
+flat in float vFlutter;
 
 uniform int uMagenta;
 uniform sampler2D uGround;  // terrain colour, copied before grass draws
@@ -31,14 +32,14 @@ int blade(vec2 p, float baseX, float h, float lean, float rootW) {
     return (p.y + 1.0 > h) ? 2 : 1;
 }
 
-// A leaf: a small ellipse of `len` by `wid` pixels, centred at c, pointing
-// along angle a.
+// A leaf: an almond of `len` by `wid` pixels, centred at c, pointing along
+// angle a, widest in the middle and pointed at both ends.
 bool leafShape(vec2 p, vec2 c, float a, float len, float wid) {
     vec2 d = p - c;
     vec2 u = vec2(cos(a), sin(a));
     float x = dot(d, u) / (len * 0.5);
     float y = dot(d, vec2(-u.y, u.x)) / (wid * 0.5);
-    return x * x + y * y <= 1.0;
+    return abs(x) <= 1.0 && abs(y) <= 1.0 - x * x;
 }
 
 void main() {
@@ -46,15 +47,16 @@ void main() {
     int hit = 0;
 
     if (vKind > 1.5) {
-        // Leaf cluster: two or three leaves fanned around the root, the
-        // whole cluster nudged by the wind.
-        int n = hash(1.0) < 0.5 ? 2 : 3;
-        float base = hash(2.0) * 6.2831;
+        // Leaf cluster: two or three big leaves fanned out from the root,
+        // the whole cluster nudged by the wind.
+        int n = hash(1.0) < 0.45 ? 2 : 3;
+        float base = hash(2.0) * 6.2831 + vFlutter;
         for (int i = 0; i < 3; ++i) {
             if (i >= n) break;
-            float a = base + float(i) * 6.2831 / float(n) + (hash(float(i) + 3.0) - 0.5);
-            vec2 c = vec2(cos(a), sin(a)) * 1.6 + vec2(0.5 + vSway * 0.5, 0.5);
-            if (leafShape(p, c, a, mix(3.2, 4.6, hash(float(i) + 7.0)) * vScale, 2.2)) hit = 1;
+            float a = base + float(i) * 6.2831 / float(n) + (hash(float(i) + 3.0) - 0.5) * 0.9;
+            float len = mix(6.0, 10.0, hash(float(i) + 7.0)) * vScale;
+            vec2 c = vec2(cos(a), sin(a)) * len * 0.42 + vec2(0.5 + vSway, 0.5 + 0.35 * vSway);
+            if (leafShape(p, c, a, len, mix(3.0, 4.2, hash(float(i) + 9.0)))) hit = 1;
         }
     } else if (vKind < 0.5) {
         // Clump: three short, near-vertical blades, the middle one tallest.

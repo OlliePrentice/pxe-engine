@@ -2,6 +2,8 @@
 // vertex shader so both run the same function on the same kind of inputs.
 const int kSurfaces = 7;
 const int kSurfStone = 2;
+const int kSurfBark = 3;
+const int kSurfLeaf = 4;
 const int kSurfWater = 5;
 const int kSurfFoam = 6;
 
@@ -148,6 +150,39 @@ float ndlTone(vec3 n) {
 }
 
 float quantiseTone(float t) { return floor(t * kToneSteps + 0.5) / kToneSteps; }
+
+float barkHash(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float barkNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n000 = barkHash(i), n100 = barkHash(i + vec3(1, 0, 0));
+    float n010 = barkHash(i + vec3(0, 1, 0)), n110 = barkHash(i + vec3(1, 1, 0));
+    float n001 = barkHash(i + vec3(0, 0, 1)), n101 = barkHash(i + vec3(1, 0, 1));
+    float n011 = barkHash(i + vec3(0, 1, 1)), n111 = barkHash(i + vec3(1, 1, 1));
+    return mix(mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+               mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);
+}
+
+// Bark, painted rather than carved: the smooth light is pushed around by
+// noise stretched up the trunk and cut into half-band steps, so the bark
+// breaks into soft, irregular blotches of a few close shades, like the
+// watercolour trunks in the video. The shadow side keeps faint blotches.
+float barkTone(vec3 wpos, vec3 n) {
+    float lit = ndlTone(n);
+    if (lit > 0.0) lit *= sunLit(wpos, n, 1.0) * horizonLight(wpos);
+    vec3 q = wpos * vec3(2.4, 0.55, 2.4);
+    // Broad blotches, smaller ones, and fine streaks drawn up the trunk.
+    float w = 0.5 * barkNoise(q) + 0.25 * barkNoise(q * 2.3 + 7.1)
+            + 0.25 * barkNoise(wpos * vec3(7.0, 0.35, 7.0) + 3.3);
+    float t = clamp(lit + (w - 0.5) * 1.4, 0.0, 2.0);
+    return floor(t * 2.0 + 0.5) * 0.5;
+}
 
 // Quantised tone, 0 shadow .. 2 lit, for curved surfaces: a band edge moves
 // across them pixel by pixel as the sun turns, which already reads smooth.

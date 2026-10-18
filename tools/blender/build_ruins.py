@@ -26,7 +26,7 @@ import random
 
 import bmesh
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Vector, noise
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.normpath(os.path.join(HERE, "..", "..", "assets", "scenes", "ruins.glb"))
@@ -492,22 +492,26 @@ def build_ruin_wall():
 # Trees
 
 
-def canopy(name, centre, radii, blobs=7):
+def canopy(name, centre, radii, blobs=12):
     """Merged spheres, remeshed into one skin, with normals bent toward a
-    single ellipsoid so the crown shades as one soft mass."""
+    single ellipsoid so the crown shades as one soft mass. Lobes of mixed
+    sizes sit out on the ellipsoid around a smaller core, so the outline is
+    lumpy, like a real crown, rather than a ball on a stick."""
     bm = bmesh.new()
     cx, cy, cz = centre
     for k in range(blobs):
-        u = rng.uniform(-1, 1)
+        # Spread lobes over the upper two thirds; crowns hang, they do not
+        # bulge underneath.
+        u = rng.uniform(-0.45, 1.0)
         th = rng.uniform(0, math.tau)
         rr = math.sqrt(1 - u * u)
-        d = Vector((rr * math.cos(th) * radii[0], rr * math.sin(th) * radii[1], u * radii[2] * 0.6))
-        d *= 0.55
-        r = min(radii) * rng.uniform(0.5, 0.7)
-        geom = bmesh.ops.create_uvsphere(bm, u_segments=20, v_segments=12, radius=r)
+        d = Vector((rr * math.cos(th) * radii[0], rr * math.sin(th) * radii[1], u * radii[2]))
+        d *= rng.uniform(0.55, 0.85)
+        r = min(radii) * rng.uniform(0.28, 0.58)
+        geom = bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=r)
         bmesh.ops.translate(bm, vec=Vector((cx, cy, cz)) + d, verts=geom["verts"])
-    geom = bmesh.ops.create_uvsphere(bm, u_segments=24, v_segments=14, radius=1.0)
-    bmesh.ops.scale(bm, vec=Vector(radii) * 0.72, verts=geom["verts"])
+    geom = bmesh.ops.create_uvsphere(bm, u_segments=20, v_segments=12, radius=1.0)
+    bmesh.ops.scale(bm, vec=Vector(radii) * 0.55, verts=geom["verts"])
     bmesh.ops.translate(bm, vec=Vector(centre), verts=geom["verts"])
     mesh = bpy.data.meshes.new(name)
     bm.to_mesh(mesh)
@@ -528,69 +532,144 @@ def canopy(name, centre, radii, blobs=7):
     for v in mesh.vertices:
         d = v.co - c
         e = Vector((d.x / radii[0] ** 2, d.y / radii[1] ** 2, d.z / radii[2] ** 2))
-        n = (v.normal * 0.3 + e.normalized() * 0.7).normalized()
+        n = (v.normal * 0.45 + e.normalized() * 0.55).normalized()
         normals.append(n)
     mesh.normals_split_custom_set_from_vertices(normals)
     return obj
 
 
-def trunk(name, points, r0, r1):
-    """Tapered tube along a poly-line, smoothed and lightly chipped."""
-    curve = bpy.data.curves.new(name, "CURVE")
-    curve.dimensions = "3D"
-    curve.bevel_depth = 1.0
-    curve.bevel_resolution = 3
-    curve.resolution_u = 6
-    spline = curve.splines.new("BEZIER")
-    spline.bezier_points.add(len(points) - 1)
-    for k, p in enumerate(points):
-        bp = spline.bezier_points[k]
-        bp.co = Vector(p)
-        bp.handle_left_type = bp.handle_right_type = "AUTO"
-        t = k / (len(points) - 1)
-        bp.radius = r0 + (r1 - r0) * t
-    obj = bpy.data.objects.new(name, curve)
-    bpy.context.scene.collection.objects.link(obj)
-    obj.parent = ROOT
-    deps = bpy.context.evaluated_depsgraph_get()
-    mesh = bpy.data.meshes.new_from_object(obj.evaluated_get(deps))
-    mobj = bpy.data.objects.new(name, mesh)
-    bpy.data.objects.remove(obj)
-    link(mobj, "Bark")
-    disp = mobj.modifiers.new("Displace", "DISPLACE")
-    disp.texture = noise_texture("BarkNoise", "CLOUDS", 0.4, 1)
-    disp.texture_coords = "GLOBAL"
-    disp.strength = 0.12
-    bake_modifiers(mobj)
-    set_smooth(mobj.data, True)
-    return mobj
+def catmull_rom(points, step=0.3):
+    """Resample a poly-line into a smooth curve, roughly `step` metres apart."""
+    pts = [Vector(p) for p in points]
+    ext = [pts[0] * 2 - pts[1]] + pts + [pts[-1] * 2 - pts[-2]]
+    out = []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        n = max(2, int((p2 - p1).length / step))
+        for k in range(n):
+            t = k / n
+            t2, t3 = t * t, t * t * t
+            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+                              + (-p0 + 3 * p1 - 3 * p2 + p3) * t3))
+    out.append(pts[-1])
+    return out
+
+
+def trunk(name, points, r0, r1, flare=0.0, roots=0.0, sides=11):
+    """A bark tube along a curve: the rings twist a little, knots and bulges
+    along the length make the outline crooked, and the base can flare into
+    root buttresses. Shaded smooth; the shader paints the bark."""
+    path = catmull_rom(points)
+    bm = bmesh.new()
+    rings = []
+    # Parallel-transport a frame along the path so the facets do not flip.
+    tangent = (path[1] - path[0]).normalized()
+    side = tangent.cross(Vector((0.0, 0.0, 1.0)))
+    if side.length < 1e-3:
+        side = Vector((1.0, 0.0, 0.0))
+    side.normalize()
+    length = sum((path[i + 1] - path[i]).length for i in range(len(path) - 1))
+    travelled = 0.0
+    phase = rng.uniform(0, math.tau)
+    root_phase = rng.uniform(0, math.tau)
+    seed = Vector((rng.uniform(0, 100), rng.uniform(0, 100), rng.uniform(0, 100)))
+    base_z = path[0].z
+    for i, c in enumerate(path):
+        if i > 0:
+            travelled += (path[i] - path[i - 1]).length
+            new_t = (path[min(i + 1, len(path) - 1)] - path[i - 1]).normalized()
+            axis = tangent.cross(new_t)
+            if axis.length > 1e-6:
+                side.rotate(Matrix.Rotation(tangent.angle(new_t), 3, axis.normalized()))
+            tangent = new_t
+        up = tangent.cross(side).normalized()
+        f = travelled / max(length, 1e-6)
+        h = c.z - base_z
+        radius = r0 + (r1 - r0) * f
+        ring = []
+        for k in range(sides):
+            th = k / sides * math.tau + travelled * 0.18 + phase
+            r = radius * (1.0 + flare * math.exp(-h / 0.7))
+            r *= 1.0 + roots * max(0.0, math.cos(4.0 * th + root_phase)) ** 2 * math.exp(-h / 0.9)
+            r *= 1.0 + 0.06 * math.sin(3.0 * th + 1.7)
+            out = side * math.cos(th) + up * math.sin(th)
+            # Knots and bulges: lumpy noise over the bark so neighbouring
+            # facets turn slightly different ways and shade as patches.
+            r *= 1.0 + 0.16 * noise.noise(seed + (c + out * radius) * 1.7)
+            ring.append(bm.verts.new(c + out * r))
+        rings.append(ring)
+    for i in range(len(rings) - 1):
+        for k in range(sides):
+            bm.faces.new((rings[i][k], rings[i][(k + 1) % sides], rings[i + 1][(k + 1) % sides], rings[i + 1][k]))
+    # Two or three long seams marked sharp, each running part of the way up.
+    # The trunk stays smooth elsewhere; along a seam the normals split, and
+    # the edge pass draws one thin light line there, like the few bark
+    # strokes on the video's trunks.
+    bm.edges.ensure_lookup_table()
+    for _ in range(rng.choice([2, 3])):
+        k = rng.randrange(sides)
+        i0 = rng.randrange(0, max(1, len(rings) // 3))
+        i1 = min(len(rings) - 1, i0 + max(2, int(len(rings) * rng.uniform(0.35, 0.7))))
+        for i in range(i0, i1):
+            edge = bm.edges.get((rings[i][k], rings[i + 1][k]))
+            if edge:
+                edge.smooth = False
+    bm.faces.new(list(reversed(rings[0])))
+    bm.faces.new(rings[-1])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(name, mesh)
+    link(obj, "Bark")
+    # Smooth normals: the bark's colour comes from painted noise in the
+    # shader, not from facets, so it reads soft rather than carved.
+    set_smooth(mesh, True)
+    return obj
 
 
 def tree(name, a, b, height_m, crown, lean=(0.0, 0.0)):
+    """A trunk that forks into two or three branches reaching up into a
+    lumpy crown, so some limbs show through and under the foliage."""
     z = height(a, b) - 0.2
     top = (a + lean[0], b + lean[1], z + height_m)
-    mid = (a + lean[0] * 0.4, b + lean[1] * 0.4, z + height_m * 0.5)
-    trunk(name + "Trunk", [(a, b, z - 0.3), mid, top], crown[0] * 0.16 + 0.15, crown[0] * 0.08 + 0.08)
-    canopy(name + "Crown", (top[0], top[1], top[2] + crown[2] * 0.55), crown)
+    mid = (a + lean[0] * 0.4 + rng.uniform(-0.2, 0.2), b + lean[1] * 0.4 + rng.uniform(-0.2, 0.2), z + height_m * 0.5)
+    r0 = crown[0] * 0.13 + 0.14
+    trunk(name + "Trunk", [(a, b, z - 0.3), mid, top], r0, r0 * 0.6, flare=0.45, roots=0.35)
+    centre = (top[0], top[1], top[2] + crown[2] * 0.6)
+    for k in range(rng.choice([2, 3])):
+        ang = rng.uniform(0, math.tau)
+        reach = (math.cos(ang) * crown[0] * 0.5, math.sin(ang) * crown[1] * 0.5)
+        tip = (centre[0] + reach[0], centre[1] + reach[1], centre[2] + rng.uniform(-0.2, 0.5) * crown[2])
+        bend = (top[0] + reach[0] * 0.35, top[1] + reach[1] * 0.35, top[2] + crown[2] * 0.25)
+        trunk(name + "Branch", [top, bend, tip], r0 * 0.55, r0 * 0.22)
+    canopy(name + "Crown", centre, crown)
     footprints.append((a - 0.4, a + 0.4, b - 0.4, b + 0.4))
 
 
 def pond_tree():
-    """The bent tree at the pond: one trunk that forks toward the far bank."""
-    # Rooted on the pond's front-left bank, leaning out over the water.
+    """The big tree on the pond's front-left bank, as in the video: a thick,
+    crooked trunk with a flared, rooted base and a broken stub, leaning out
+    over the water and opening into one big limb, under a broad crown that
+    hangs low over the pond."""
     a, b = 2.6, 7.4
     z = height(a, b) - 0.3
-    trunk("PondTrunk", [(a, b, z - 0.4), (a + 0.9, b + 0.2, z + 2.2), (a + 2.6, b + 0.9, z + 5.5),
-                        (a + 4.4, b + 1.6, z + 9.5), (a + 5.2, b + 2.4, z + 13.0)], 0.7, 0.28)
-    trunk("PondBranch", [(a + 2.0, b + 0.7, z + 4.5), (a + 1.6, b + 2.2, z + 7.5),
-                         (a + 0.8, b + 3.8, z + 11.0)], 0.3, 0.15)
-    canopy("PondCrown", (a + 4.0, b + 3.0, z + 14.5), (4.6, 4.0, 2.4), blobs=9)
-    footprints.append((a - 0.8, a + 0.8, b - 0.8, b + 0.8))
+    trunk("PondTrunk", [(a, b, z - 0.5), (a + 0.35, b + 0.05, z + 1.3), (a + 0.6, b + 0.45, z + 2.6),
+                        (a + 1.3, b + 0.9, z + 3.9), (a + 1.7, b + 1.6, z + 5.4), (a + 2.1, b + 2.2, z + 6.8)],
+          0.85, 0.42, flare=0.4, roots=0.25, sides=12)
+    # One big limb leaning out over the water toward screen right.
+    trunk("PondLimb", [(a + 1.0, b + 0.7, z + 3.3), (a + 2.1, b + 0.6, z + 4.6), (a + 3.4, b + 0.9, z + 5.9),
+                       (a + 4.4, b + 1.4, z + 7.0)], 0.42, 0.2, sides=9)
+    # A short broken stub low on the trunk, angled up and out.
+    trunk("PondStub", [(a + 0.35, b + 0.15, z + 1.9), (a - 0.15, b + 0.55, z + 2.6), (a - 0.45, b + 0.8, z + 3.0)],
+          0.27, 0.16, sides=7)
+    canopy("PondCrown", (a + 2.6, b + 2.0, z + 8.2), (5.2, 4.6, 2.6), blobs=13)
+    footprints.append((a - 1.0, a + 1.0, b - 1.0, b + 1.0))
 
 
 def bush(name, a, b, r):
     z = height(a, b) + r * 0.45
-    canopy(name, (a, b, z), (r, r * 0.9, r * 0.75), blobs=5)
+    canopy(name, (a, b, z), (r, r * 0.9, r * 0.75), blobs=7)
 
 
 # --------------------------------------------------------------------------
@@ -621,8 +700,8 @@ def main():
         rock("Rock", (a, b, height(a, b) - 0.1 * s), s)
 
     pond_tree()
-    tree("TreeA", 0.5, -8.6, 2.0, (2.4, 2.2, 2.0))
-    tree("TreeB", 7.5, -9.2, 1.8, (2.2, 2.0, 1.9))
+    tree("TreeA", 0.5, -8.6, 1.6, (2.2, 2.0, 3.0))
+    tree("TreeB", 7.5, -9.2, 1.4, (2.0, 1.9, 2.8))
     tree("TreeC", -6.0, 15.0, 4.5, (5.5, 5.0, 3.5))
     tree("TreeD", 19.0, 2.0, 3.5, (4.6, 4.2, 3.2))
     tree("TreeE", -15.0, -3.0, 3.0, (4.0, 3.8, 3.0))
