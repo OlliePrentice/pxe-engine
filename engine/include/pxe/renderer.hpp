@@ -19,6 +19,8 @@ struct FrameParams {
   // When false, grass still draws but ignores the depth buffer. Used to
   // stamp isolated sprites for the pixel-exact check.
   bool grassDepthTest = true;
+  // Seconds, drives the grass wind. Hold it fixed for repeatable captures.
+  float time = 0.f;
 };
 
 class Renderer {
@@ -49,10 +51,10 @@ class Renderer {
   unsigned fbo_ = 0;
   unsigned fboShadow_ = 0;
   unsigned color_ = 0;
+  unsigned ground_ = 0;  // copy of color_ after terrain, read by grass
   unsigned depth_ = 0;
   unsigned shadow_ = 0;
   unsigned normal_ = 0;
-  unsigned atlas_ = 0;
 
   unsigned progTerrain_ = 0;
   unsigned progGrass_ = 0;
@@ -67,11 +69,8 @@ class Renderer {
   unsigned presentVao_ = 0;
   unsigned presentVbo_ = 0;
 
-  float spriteRects_[4][4] = {};
   float worldMin_ = -45.f;
   float worldSize_ = 90.f;
-  int atlasW_ = 64;
-  int atlasH_ = 16;
 
   bool ready_ = false;
 };

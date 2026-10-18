@@ -73,52 +73,16 @@ glm::vec3 sampleNormal(const std::vector<float>& tex, float x, float z) {
   return glm::normalize(n);
 }
 
-struct Glyph {
-  int w;
-  int h;
-  const char* rows[12];
-};
-
-// Top row first, matching the proposed PNGs. '#' is opaque.
-constexpr Glyph kTuftA{11, 10, {".....#.....", "....##.....", ".#..##...#.", ".##.##..##.", "..#.##.##..",
-                                "..##.#.##..", "...#####...", "...#####...", "....###....", "....###...."}};
-constexpr Glyph kTuftB{10, 9, {".......#..", "..#...##..", ".##...##..", ".##..##...", "..##.##.#.",
-                               "..##.####.", "...#####..", "...####...", "....###..."}};
-constexpr Glyph kTuftC{9, 8, {"...#.....", "..##..#..", "#.##.##..", "##.#.##..", ".##.###..",
-                              ".######..", "..####...", "...##...."}};
-constexpr Glyph kClaw{11, 12, {".....#.....", ".....##....", "....###....", "....###....", "....###....",
-                               "#...###...#", "##..###..##", "###.###.###", ".##.###.##.", ".##.##..##.",
-                               "..#.##.##..", "..........."}};
-
-void stampGlyph(std::vector<std::uint8_t>& atlas, int atlasW, int cellX, const Glyph& g) {
-  for (int row = 0; row < g.h; ++row) {
-    const int y = g.h - 1 - row;  // GL row 0 is the bottom of the sprite
-    for (int x = 0; x < g.w; ++x) {
-      if (g.rows[row][x] == '#') atlas[static_cast<std::size_t>(y * atlasW + cellX + x)] = 255;
-    }
-  }
+// Slow 0..1 field so grass grows in taller and shorter patches; a uniform
+// height makes every band edge the same fine comb.
+float patchiness(float x, float z) {
+  const float a = std::sin(0.31f * x + 1.7f * std::sin(0.23f * z));
+  const float b = std::sin(0.27f * z - 1.3f * std::sin(0.19f * x + 0.5f));
+  return std::clamp(0.5f + 0.5f * a * b + 0.15f * std::sin(0.9f * x + 0.7f * z), 0.f, 1.f);
 }
 
-void buildAtlas(pxe::Scene& scene) {
-  scene.atlasW = 64;
-  scene.atlasH = 16;
-  scene.atlas.assign(static_cast<std::size_t>(scene.atlasW * scene.atlasH), 0);
-  stampGlyph(scene.atlas, scene.atlasW, 0, kTuftA);
-  stampGlyph(scene.atlas, scene.atlasW, 16, kTuftB);
-  stampGlyph(scene.atlas, scene.atlasW, 32, kTuftC);
-  stampGlyph(scene.atlas, scene.atlasW, 48, kClaw);
-  const float rects[4][4] = {
-      {0.f, 0.f, 11.f, 10.f},
-      {16.f, 0.f, 10.f, 9.f},
-      {32.f, 0.f, 9.f, 8.f},
-      {48.f, 0.f, 11.f, 12.f},
-  };
-  for (int i = 0; i < 4; ++i)
-    for (int j = 0; j < 4; ++j) scene.spriteRects[i][j] = rects[i][j];
-}
-
-pxe::GrassInstance makeInstance(float x, float z, const std::vector<float>& normals, float sprite, float flip,
-                                float accent) {
+pxe::GrassInstance makeInstance(float x, float z, const std::vector<float>& normals, float kind, float seed,
+                                float scale) {
   pxe::GrassInstance g{};
   const glm::vec3 n = sampleNormal(normals, x, z);
   g.px = x;
@@ -127,9 +91,9 @@ pxe::GrassInstance makeInstance(float x, float z, const std::vector<float>& norm
   g.nx = n.x;
   g.ny = n.y;
   g.nz = n.z;
-  g.sprite = sprite;
-  g.flip = flip;
-  g.accent = accent;
+  g.kind = kind;
+  g.seed = seed;
+  g.scale = scale;
   g.pad = 0.f;
   return g;
 }
@@ -262,7 +226,6 @@ pxe::Scene buildTerrain(const BuildOptions& options) {
   pxe::Scene scene;
   scene.worldMin = -kHalf;
   scene.worldSize = kWorld;
-  buildAtlas(scene);
 
   const int n = static_cast<int>(std::lround(kWorld / kGrid)) + 1;
   std::vector<pxe::TerrainVertex> verts(static_cast<std::size_t>(n * n));
@@ -330,7 +293,6 @@ pxe::Scene buildTerrain(const BuildOptions& options) {
 
   std::mt19937 rng(7);
   std::uniform_real_distribution<float> unit(0.f, 1.f);
-  int accents = 0;
   if (options.stamps) {
     const float step = 2.6f;
     int s = 0;
@@ -340,27 +302,28 @@ pxe::Scene buildTerrain(const BuildOptions& options) {
                         flatForward.x * (static_cast<float>(row) - 0.5f) * step;
         const float z = right.z * (static_cast<float>(col) - 1.5f) * step +
                         flatForward.z * (static_cast<float>(row) - 0.5f) * step;
-        const float sprite = static_cast<float>(s % 4);
-        const float flip = (s >= 4) ? 1.f : 0.f;
-        scene.grass.push_back(makeInstance(x, z, scene.normals, sprite, flip, -1.f));
+        const float kind = static_cast<float>(row);
+        scene.grass.push_back(makeInstance(x, z, scene.normals, kind, static_cast<float>(col) * 0.25f, 1.f));
       }
     }
   } else {
-    const auto points = poisson(verts, n, options.minDist, rng);
-    scene.grass.reserve(points.size());
-    for (const auto& p : points) {
-      const bool accent = options.accents && unit(rng) < 0.006f;
-      const float sprite = accent ? 3.f : static_cast<float>(rng() % 3);
-      const float flip = unit(rng) < 0.5f ? 1.f : 0.f;
-      const float accentIndex = accent ? unit(rng) * 5.f : -1.f;
-      if (accent) ++accents;
-      scene.grass.push_back(makeInstance(p.first, p.second, scene.normals, sprite, flip, accentIndex));
-    }
+    // Clumps carpet the ground at blade spacing so every band edge gets a
+    // continuous saw-tooth; tufts are a sparse second layer on top.
+    const auto clumps = poisson(verts, n, options.minDist, rng);
+    const auto tufts = options.tufts ? poisson(verts, n, options.tuftDist, rng)
+                                     : std::vector<std::pair<float, float>>{};
+    scene.grass.reserve(clumps.size() + tufts.size());
+    for (const auto& p : clumps)
+      scene.grass.push_back(makeInstance(p.first, p.second, scene.normals, 0.f, unit(rng),
+                                         0.55f + 0.75f * patchiness(p.first, p.second) + 0.25f * unit(rng)));
+    for (const auto& p : tufts)
+      scene.grass.push_back(makeInstance(p.first, p.second, scene.normals, 1.f, unit(rng), 0.85f + 0.3f * unit(rng)));
+    std::fprintf(stderr, "pxe: clumps %zu, tufts %zu\n", clumps.size(), tufts.size());
   }
 
   const float density = static_cast<float>(scene.grass.size()) / (kWorld * kWorld);
-  std::fprintf(stderr, "pxe: grid %d, grass %zu (%.3f /m^2), accents %d, sun %.3f %.3f %.3f\n", n,
-               scene.grass.size(), density, accents, scene.sunDir.x, scene.sunDir.y, scene.sunDir.z);
+  std::fprintf(stderr, "pxe: grid %d, grass %zu (%.3f /m^2), sun %.3f %.3f %.3f\n", n, scene.grass.size(),
+               density, scene.sunDir.x, scene.sunDir.y, scene.sunDir.z);
   return scene;
 }
 

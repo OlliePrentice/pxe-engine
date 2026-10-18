@@ -1,6 +1,6 @@
 # pxe
 
-A small C++20 prototype of t3ssel8r-style contoured grass. The terrain is a smooth rolling heightfield. The contour lines are a hard three-colour toon ramp on the same normal and the same sun shadow for the ground and for every grass tuft. Grass is instanced screen-space sprites, lit once at the root.
+A small C++20 prototype of t3ssel8r-style contoured grass. The terrain is a smooth rolling heightfield. The contour lines are a hard three-colour toon ramp on the same normal and the same sun shadow for the ground and for every grass tuft. Grass is instanced screen-space quads whose blades are drawn procedurally in the fragment shader and lit once at the root, so a clump matches the ground under it and only shows as a saw-tooth fringe where it overhangs the next band. A clump's top pixel turns lighter where it sticks out over darker ground. Sparse V-shaped tufts sit one shade off the ground colour. One travelling wind field sways every blade by whole pixels.
 
 Rendered at 640×360 and copied to the window with nearest-neighbour integer upscaling. The orthographic camera is pitched 30° down, yaws in 45° steps, and snaps to the view-aligned texel grid; the upscale shifts back by the snap error.
 
@@ -52,7 +52,7 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 pxe [--capture out.png] [--window-png out.png]
     [--yaw degrees] [--slide metres] [--target x,y,z]
     [--min-dist metres] [--hide-grass] [--magenta] [--ndl]
-    [--test-colours] [--no-accent] [--stamps] [--no-depth]
+    [--test-colours] [--no-tufts] [--stamps] [--no-depth] [--time seconds]
     [--self-test] [--no-vsync]
 ```
 

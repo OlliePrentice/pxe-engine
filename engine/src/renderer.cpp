@@ -23,11 +23,18 @@ constexpr float kGrassBiasMetres = 0.6f;
 constexpr float kLit[3] = {0xc7 / 255.f, 0xe4 / 255.f, 0x87 / 255.f};
 constexpr float kMid[3] = {0x83 / 255.f, 0xab / 255.f, 0x5c / 255.f};
 constexpr float kShadow[3] = {0x46 / 255.f, 0x76 / 255.f, 0x6e / 255.f};
-constexpr float kAccent[15] = {
-    0x86 / 255.f, 0xa4 / 255.f, 0x44 / 255.f, 0xc4 / 255.f, 0xea / 255.f, 0x96 / 255.f,
-    0x47 / 255.f, 0x71 / 255.f, 0x60 / 255.f, 0x7d / 255.f, 0xb5 / 255.f, 0x60 / 255.f,
-    0xc4 / 255.f, 0xed / 255.f, 0xb2 / 255.f,
+// Tuft colour per band (shadow, mid, lit): one step darker than lit and mid
+// ground, one step lighter and greener than shadow, so tufts read on both.
+constexpr float kDetail[9] = {
+    0x5b / 255.f, 0x8a / 255.f, 0x6e / 255.f, 0x6b / 255.f, 0x94 / 255.f, 0x4e / 255.f,
+    0x9c / 255.f, 0xc2 / 255.f, 0x66 / 255.f,
 };
+// Blade tip over darker ground. Shadow never overhangs anything darker.
+constexpr float kTip[9] = {
+    0x46 / 255.f, 0x76 / 255.f, 0x6e / 255.f, 0xa2 / 255.f, 0xc6 / 255.f, 0x6c / 255.f,
+    0xe2 / 255.f, 0xf3 / 255.f, 0xa8 / 255.f,
+};
+constexpr float kWindPx = 1.6f;
 constexpr float kTest[9] = {1.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 1.f};
 
 int uloc(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
@@ -40,9 +47,6 @@ void u3f(unsigned prog, const char* name, float x, float y, float z) {
 }
 void u3fv(unsigned prog, const char* name, int count, const float* v) {
   glUniform3fv(uloc(prog, name), count, v);
-}
-void u4fv(unsigned prog, const char* name, int count, const float* v) {
-  glUniform4fv(uloc(prog, name), count, v);
 }
 void umat(unsigned prog, const char* name, const glm::mat4& m) {
   glUniformMatrix4fv(uloc(prog, name), 1, GL_FALSE, &m[0][0]);
@@ -116,8 +120,6 @@ void bindToon(unsigned prog, const glm::mat4& lightVP, float normalBias, bool te
   umat(prog, "uLightViewProj", lightVP);
   u1i(prog, "uShadowMap", 1);
   u1f(prog, "uNormalBias", normalBias);
-  if (!testColours) u3fv(prog, "uAccent", 5, kAccent);
-  else u3fv(prog, "uAccent", 5, kAccent);
 }
 
 }  // namespace
@@ -136,9 +138,9 @@ Renderer::~Renderer() {
 }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {color_, depth_, shadow_, normal_, atlas_};
+  unsigned textures[] = {color_, ground_, depth_, shadow_, normal_};
   glDeleteTextures(5, textures);
-  color_ = depth_ = shadow_ = normal_ = atlas_ = 0;
+  color_ = ground_ = depth_ = shadow_ = normal_ = 0;
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
   if (fboShadow_) glDeleteFramebuffers(1, &fboShadow_);
   fbo_ = fboShadow_ = 0;
@@ -179,6 +181,7 @@ unsigned Renderer::makeDepth(int w, int h, bool shadowCompare) {
 
 void Renderer::createTargets() {
   color_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
+  ground_ = makeColor(RenderConfig::kRtW, RenderConfig::kRtH);
   depth_ = makeDepth(RenderConfig::kRtW, RenderConfig::kRtH, false);
   shadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
 
@@ -265,11 +268,6 @@ void Renderer::init() {
 void Renderer::upload(const Scene& scene) {
   worldMin_ = scene.worldMin;
   worldSize_ = scene.worldSize;
-  atlasW_ = scene.atlasW;
-  atlasH_ = scene.atlasH;
-  for (int i = 0; i < 4; ++i)
-    for (int j = 0; j < 4; ++j) spriteRects_[i][j] = scene.spriteRects[i][j];
-
   if (!normal_) glGenTextures(1, &normal_);
   glBindTexture(GL_TEXTURE_2D, normal_);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, scene.normalSize, scene.normalSize, 0, GL_RGBA, GL_FLOAT,
@@ -279,15 +277,6 @@ void Renderer::upload(const Scene& scene) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-  if (!atlas_) glGenTextures(1, &atlas_);
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-  glBindTexture(GL_TEXTURE_2D, atlas_);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, scene.atlasW, scene.atlasH, 0, GL_RED, GL_UNSIGNED_BYTE,
-               scene.atlas.empty() ? nullptr : scene.atlas.data());
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glBindTexture(GL_TEXTURE_2D, 0);
 
   grassCount_ = static_cast<int>(scene.grass.size());
@@ -393,15 +382,18 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     umat(progGrass_, "uViewProj", viewProj);
     u2f(progGrass_, "uTarget", static_cast<float>(RenderConfig::kRtW),
         static_cast<float>(RenderConfig::kRtH));
-    u4fv(progGrass_, "uRect", 4, &spriteRects_[0][0]);
-    u2f(progGrass_, "uAtlasSize", static_cast<float>(atlasW_), static_cast<float>(atlasH_));
     u1f(progGrass_, "uDepthBiasNdc", biasNdc);
     bindToon(progGrass_, light.viewProj, normalBias, params.testColours);
-    u3f(progGrass_, "uSunDir", sun.x, sun.y, sun.z);
-    u1i(progGrass_, "uAtlas", 2);
-    u1i(progGrass_, "uMagenta", params.magentaGrass ? 1 : 0);
+    u3fv(progGrass_, "uDetail", 3, params.testColours ? kTest : kDetail);
+    u3fv(progGrass_, "uTip", 3, params.testColours ? kTest : kTip);
+    u1i(progGrass_, "uGround", 2);
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, atlas_);
+    glBindTexture(GL_TEXTURE_2D, ground_);
+    glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, RenderConfig::kRtW, RenderConfig::kRtH);
+    u3f(progGrass_, "uSunDir", sun.x, sun.y, sun.z);
+    u1f(progGrass_, "uTime", params.time);
+    u1f(progGrass_, "uWindPx", kWindPx);
+    u1i(progGrass_, "uMagenta", params.magentaGrass ? 1 : 0);
     if (params.grassDepthTest) {
       glEnable(GL_DEPTH_TEST);
       glDepthMask(GL_TRUE);

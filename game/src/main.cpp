@@ -45,10 +45,11 @@ struct Options {
   bool testColours = false;
   bool noDepth = false;
   bool stamps = false;
-  bool accents = true;
+  bool tufts = true;
+  float time = 0.f;
   float yawDeg = 45.f;
   float slide = 0.f;
-  float minDist = 0.62f;
+  float minDist = 0.34f;
   bool haveTarget = false;
   glm::vec3 target{0.f};
 };
@@ -62,8 +63,9 @@ void printUsage() {
                "  --yaw degrees            default 45\n"
                "  --slide metres           move the focus along horizontal forward\n"
                "  --target x,y,z\n"
-               "  --min-dist metres        Poisson spacing (default 0.62)\n"
-               "  --hide-grass --magenta --ndl --test-colours --no-accent\n"
+               "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
+               "  --time seconds           wind time for captures (default 0)\n"
+               "  --hide-grass --magenta --ndl --test-colours --no-tufts\n"
                "  --stamps --no-depth\n"
                "  --self-test              snap stability of the low-res image\n"
                "  --no-vsync\n");
@@ -118,8 +120,10 @@ Options parseArgs(int argc, char** argv) {
       opt.ndl = true;
     } else if (a == "--test-colours" || a == "--test-colors") {
       opt.testColours = true;
-    } else if (a == "--no-accent") {
-      opt.accents = false;
+    } else if (a == "--no-tufts") {
+      opt.tufts = false;
+    } else if (a == "--time") {
+      opt.time = std::atof(need("--time"));
     } else if (a == "--stamps") {
       opt.stamps = true;
     } else if (a == "--no-depth") {
@@ -225,6 +229,7 @@ pxe::FrameParams makeParams(const Options& opt) {
   params.showNdl = opt.ndl;
   params.testColours = opt.testColours;
   params.grassDepthTest = !opt.noDepth;
+  params.time = opt.time;
   params.present = true;
   return params;
 }
@@ -305,7 +310,7 @@ int main(int argc, char** argv) {
     if (exitCode == 0) {
       game::BuildOptions build;
       build.minDist = opt.minDist;
-      build.accents = opt.accents && !opt.stamps;
+      build.tufts = opt.tufts && !opt.stamps;
       build.stamps = opt.stamps;
       pxe::Scene scene = game::buildTerrain(build);
       renderer.upload(scene);
@@ -379,6 +384,7 @@ int main(int argc, char** argv) {
           params.showGrass = showGrass;
           params.magentaGrass = magenta;
           params.showNdl = ndl;
+          params.time = static_cast<float>(now);
           const pxe::CameraFrame frame = draw(params);
           if (input.shot) {
             const bool ok = writePng("shot.png", pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH,
