@@ -591,6 +591,48 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   std::mt19937 rng(7);
   std::uniform_real_distribution<float> unit(0.f, 1.f);
   scatterGrass(scene, ground, options, patchiness, rng);
+  // The lawn runs on under the paving, plinths and trunks, so drop grass
+  // rooted beneath them: from inside the stone it showed through its faces.
+  {
+    constexpr float kCell = 0.1f;
+    const glm::vec2 lo{scene.boundsMin.x, scene.boundsMin.z};
+    const int gw = static_cast<int>(std::ceil((scene.boundsMax.x - lo.x) / kCell)) + 1;
+    const int gh = static_cast<int>(std::ceil((scene.boundsMax.z - lo.y) / kCell)) + 1;
+    std::vector<float> top(static_cast<std::size_t>(gw * gh), -1e9f);
+    for (int s : {static_cast<int>(pxe::kSurfStone), static_cast<int>(pxe::kSurfBark)}) {
+      const auto& v = verts[s];
+      const auto& idx = indices[s];
+      for (std::size_t i = 0; i + 2 < idx.size(); i += 3) {
+        const pxe::Vertex& a = v[idx[i]];
+        const pxe::Vertex& b = v[idx[i + 1]];
+        const pxe::Vertex& c = v[idx[i + 2]];
+        const float d = (b.pz - c.pz) * (a.px - c.px) + (c.px - b.px) * (a.pz - c.pz);
+        if (std::fabs(d) < 1e-9f) continue;  // a wall seen edge-on from above
+        const int x0 = std::max(0, static_cast<int>((std::min({a.px, b.px, c.px}) - lo.x) / kCell));
+        const int x1 = std::min(gw - 1, static_cast<int>((std::max({a.px, b.px, c.px}) - lo.x) / kCell) + 1);
+        const int z0 = std::max(0, static_cast<int>((std::min({a.pz, b.pz, c.pz}) - lo.y) / kCell));
+        const int z1 = std::min(gh - 1, static_cast<int>((std::max({a.pz, b.pz, c.pz}) - lo.y) / kCell) + 1);
+        for (int z = z0; z <= z1; ++z)
+          for (int x = x0; x <= x1; ++x) {
+            const float px = lo.x + (static_cast<float>(x) + 0.5f) * kCell;
+            const float pz = lo.y + (static_cast<float>(z) + 0.5f) * kCell;
+            const float u = ((b.pz - c.pz) * (px - c.px) + (c.px - b.px) * (pz - c.pz)) / d;
+            const float w = ((c.pz - a.pz) * (px - c.px) + (a.px - c.px) * (pz - c.pz)) / d;
+            if (u < 0.f || w < 0.f || u + w > 1.f) continue;
+            float& t = top[static_cast<std::size_t>(z * gw + x)];
+            t = std::max(t, a.py * u + b.py * w + c.py * (1.f - u - w));
+          }
+      }
+    }
+    const std::size_t before = scene.grass.size();
+    std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
+      if (g.surface != static_cast<float>(pxe::kSurfGrass)) return false;
+      const int x = static_cast<int>((g.px - lo.x) / kCell), z = static_cast<int>((g.pz - lo.y) / kCell);
+      if (x < 0 || z < 0 || x >= gw || z >= gh) return false;
+      return top[static_cast<std::size_t>(z * gw + x)] > g.py + 0.03f;
+    });
+    std::fprintf(stderr, "pxe: %zu grass sprites under stone or trunks dropped\n", before - scene.grass.size());
+  }
   // No grass in the fire pit.
   std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
     return glm::length(glm::vec2{g.px, g.pz} - campfire) < 1.05f;
