@@ -29,6 +29,13 @@ struct FrameParams {
   Lighting lighting;
 };
 
+// GPU milliseconds per pass for the last frame, when profiling is on.
+struct PassTimes {
+  enum Pass { kShadow, kReflection, kMeshes, kWater, kSprites, kEdge, kPresent, kCount };
+  double ms[kCount] = {};
+  static const char* name(int pass);
+};
+
 class Renderer {
  public:
   Renderer() = default;
@@ -37,6 +44,9 @@ class Renderer {
   Renderer& operator=(const Renderer&) = delete;
 
   void init();
+  // Time each pass on the GPU (blocks at the end of every frame; for --bench).
+  void setProfiling(bool on) { profiling_ = on; }
+  const PassTimes& passTimes() const { return passTimes_; }
   int viewW() const { return RenderConfig::kViewW; }
   int viewH() const { return RenderConfig::kViewH; }
   int rtW() const { return RenderConfig::kViewW + 2 * RenderConfig::kPad; }
@@ -95,6 +105,14 @@ class Renderer {
 
 
   bool ready_ = false;
+  bool profiling_ = false;
+  // The shadow map is only redrawn when the light or the scene changes.
+  glm::vec3 shadowLight_{0.f};
+  const Scene* shadowScene_ = nullptr;
+  unsigned queries_[PassTimes::kCount] = {};
+  PassTimes passTimes_;
+  void beginPass(int pass);
+  void endPass();
 };
 
 }  // namespace pxe

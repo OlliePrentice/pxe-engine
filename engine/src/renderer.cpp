@@ -111,6 +111,7 @@ void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP,
 }  // namespace
 
 Renderer::~Renderer() {
+  if (queries_[0]) glDeleteQueries(PassTimes::kCount, queries_);
   if (grassVao_) glDeleteVertexArrays(1, &grassVao_);
   if (grassCorner_) glDeleteBuffers(1, &grassCorner_);
   if (grassInst_) glDeleteBuffers(1, &grassInst_);
@@ -285,6 +286,7 @@ void Renderer::init() {
 }
 
 void Renderer::upload(const Scene& scene) {
+  shadowScene_ = nullptr;
   grassCount_ = static_cast<int>(scene.grass.size());
   glBindBuffer(GL_ARRAY_BUFFER, grassInst_);
   glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(scene.grass.size() * sizeof(GrassInstance)),
@@ -340,6 +342,21 @@ void Renderer::drawPresent(const CameraFrame& camera, const FrameParams& params)
   glBindVertexArray(0);
 }
 
+const char* PassTimes::name(int pass) {
+  static const char* names[kCount] = {"shadow", "reflection", "meshes", "water", "sprites", "edge", "present"};
+  return names[pass];
+}
+
+void Renderer::beginPass(int pass) {
+  if (!profiling_) return;
+  if (!queries_[0]) glGenQueries(PassTimes::kCount, queries_);
+  glBeginQuery(GL_TIME_ELAPSED, queries_[pass]);
+}
+
+void Renderer::endPass() {
+  if (profiling_) glEndQuery(GL_TIME_ELAPSED);
+}
+
 void Renderer::drawMeshes(const Scene& scene, const glm::mat4& viewProj, const glm::mat4& mirror, float clipBelow) {
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_CULL_FACE);
@@ -391,13 +408,21 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glDisable(GL_CULL_FACE);
   glEnable(GL_POLYGON_OFFSET_FILL);
   glPolygonOffset(2.f, 4.f);
-  glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
-  glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
-  glClear(GL_DEPTH_BUFFER_BIT);
-  glUseProgram(progShadow_);
-  umat(progShadow_, "uLightViewProj", light.viewProj);
-  for (const Mesh& m : scene.meshes) m.draw();
+  beginPass(PassTimes::kShadow);
+  // Nothing in the scene moves but the light, so while the time of day is
+  // paused (or has not ticked) last frame's shadow map is still right.
+  if (shadowScene_ != &scene || shadowLight_ != lighting.lightDir) {
+    glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
+    glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glUseProgram(progShadow_);
+    umat(progShadow_, "uLightViewProj", light.viewProj);
+    for (const Mesh& m : scene.meshes) m.draw();
+    shadowScene_ = &scene;
+    shadowLight_ = lighting.lightDir;
+  }
   glDisable(GL_POLYGON_OFFSET_FILL);
+  endPass();
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
@@ -441,6 +466,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   // Reflection: the scene mirrored about the water plane, clipped to what
   // stands above it, drawn only where the water can be on screen.
   const bool hasWater = !scene.water.empty();
+  beginPass(PassTimes::kReflection);
   if (hasWater) {
     const float h = scene.waterLevel;
     const glm::mat4 mirror = glm::translate(glm::mat4{1.f}, {0.f, h, 0.f}) * glm::scale(glm::mat4{1.f}, {1.f, -1.f, 1.f}) *
@@ -474,9 +500,14 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     }
   }
 
+  endPass();
+
+  beginPass(PassTimes::kMeshes);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glViewport(0, 0, rtW(), rtH());
   drawMeshes(scene, viewProj, identity, -1e9f);
+  endPass();
+  beginPass(PassTimes::kWater);
 
   if (hasWater) {
     // What the water covers, and how far away it is, before the water hides it.
@@ -499,6 +530,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glDisable(GL_CULL_FACE);
     for (const Mesh& m : scene.water) m.draw();
   }
+  endPass();
+  beginPass(PassTimes::kSprites);
 
   if (params.showGrass && grassCount_ > 0) {
     glActiveTexture(GL_TEXTURE2);
@@ -506,8 +539,10 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, rtW(), rtH());
     drawSprites(scene, camera, params, viewProj, identity, 1.f, -1e9f);
   }
+  endPass();
 
   // Edge pass into final_, which is what gets presented and captured.
+  beginPass(PassTimes::kEdge);
   glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
@@ -532,7 +567,18 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindVertexArray(0);
   glEnable(GL_DEPTH_TEST);
 
+  endPass();
+
+  beginPass(PassTimes::kPresent);
   if (params.present) drawPresent(camera, params);
+  endPass();
+  if (profiling_) {
+    for (int i = 0; i < PassTimes::kCount; ++i) {
+      GLuint64 ns = 0;
+      glGetQueryObjectui64v(queries_[i], GL_QUERY_RESULT, &ns);
+      passTimes_.ms[i] = static_cast<double>(ns) * 1e-6;
+    }
+  }
   pxeGlCheck("render");
 }
 

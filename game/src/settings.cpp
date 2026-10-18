@@ -114,7 +114,10 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, float fps) {
       ImGui::Checkbox("Grass and leaves  (F2)", &view.grass);
       ImGui::SameLine();
       ImGui::Checkbox("Stone edges", &view.edges);
-      ImGui::TextDisabled("%.0f fps", fps);
+      if (fps > 0.f)
+        ImGui::TextDisabled("%.0f fps (%.1f ms), capped by vsync; --bench measures uncapped", fps, 1000.f / fps);
+      else
+        ImGui::TextDisabled("measuring fps...");
     }
     ImGui::End();
   }

@@ -53,6 +53,8 @@ struct Options {
   float clouds = 0.35f;
   bool menu = false;
   std::string uiShot;
+  int bench = 0;
+  bool benchPaused = false;
   float time = 0.f;
   std::string scene = "ruins";
   bool haveYaw = false;
@@ -74,6 +76,8 @@ void printUsage() {
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --menu                   start with the settings menu open (Tab)\n"
                "  --ui-shot path.png       run the interactive loop briefly, save the window with the menu, exit\n"
+               "  --bench N                render N frames uncapped with time running, print ms per frame\n"
+               "  --bench-paused           ...with time paused (set PXE_BENCH_PASSES=1 for GPU timers)\n"
                "  --yaw degrees            default from the scene\n"
                "  --slide metres           move the focus along horizontal forward\n"
                "  --target x,y,z\n"
@@ -137,6 +141,10 @@ Options parseArgs(int argc, char** argv) {
       opt.ndl = true;
     } else if (a == "--test-colours" || a == "--test-colors") {
       opt.testColours = true;
+    } else if (a == "--bench") {
+      opt.bench = std::atoi(need("--bench"));
+    } else if (a == "--bench-paused") {
+      opt.benchPaused = true;
     } else if (a == "--ui-shot") {
       opt.uiShot = need("--ui-shot");
     } else if (a == "--menu") {
@@ -335,7 +343,7 @@ int main(int argc, char** argv) {
   glfwWindowHint(GLFW_SAMPLES, 0);
   glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_FALSE);
   glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
-  const bool headless = opt.selfTest || !opt.capture.empty() || !opt.windowPng.empty();
+  const bool headless = opt.selfTest || !opt.capture.empty() || !opt.windowPng.empty() || opt.bench > 0;
   if (headless || !opt.uiShot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
   GLFWwindow* window = glfwCreateWindow(opt.width, opt.height, "pxe", nullptr, nullptr);
@@ -394,7 +402,43 @@ int main(int argc, char** argv) {
         return frame;
       };
 
-      if (opt.selfTest) {
+      if (opt.bench > 0) {
+        // Same frame as the default window, wind running, timed per pass.
+        int fbW = 0, fbH = 0;
+        glfwGetFramebufferSize(window, &fbW, &fbH);
+        game::WorldClock clock;
+        clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
+        clock.cloudCover = opt.clouds;
+        // Per-pass GPU timers block every frame and, on macOS's GL-on-Metal,
+        // under-report; they are opt-in. The wall-clock figure is the one to trust.
+        const bool passes = std::getenv("PXE_BENCH_PASSES") != nullptr;
+        renderer.setProfiling(passes);
+        double sum[pxe::PassTimes::kCount] = {};
+        const int warmup = 10;
+        const double start = glfwGetTime();
+        double timedStart = start;
+        for (int f = 0; f < warmup + opt.bench; ++f) {
+          if (f == warmup) timedStart = glfwGetTime();
+          pxe::FrameParams params = makeParams(opt);
+          params.framebufferW = fbW;
+          params.framebufferH = fbH;
+          params.time = static_cast<float>(f) / 60.f;
+          // Advance the day as the game does at default speed, so the sun
+          // moves and the shadow map is redrawn every frame (unless paused).
+          if (!opt.benchPaused) clock.advance(1.f / 60.f);
+          params.lighting = lightingFor(scene, clock);
+          draw(params);
+          glfwSwapBuffers(window);
+          if (f >= warmup)
+            for (int i = 0; i < pxe::PassTimes::kCount; ++i) sum[i] += renderer.passTimes().ms[i];
+        }
+        const double wall = (glfwGetTime() - timedStart) / opt.bench * 1000.0;
+        if (passes) {
+          for (int i = 0; i < pxe::PassTimes::kCount; ++i)
+            std::fprintf(stderr, "bench: %-10s %6.2f ms (GPU timer)\n", pxe::PassTimes::name(i), sum[i] / opt.bench);
+        }
+        std::fprintf(stderr, "bench: wall %6.2f ms/frame (%.0f fps uncapped), %dx%d\n", wall, 1000.0 / wall, fbW, fbH);
+      } else if (opt.selfTest) {
         exitCode = selfTest(renderer, camera, scene);
       } else if (headless) {
         int fbW = 0, fbH = 0;
@@ -436,14 +480,24 @@ int main(int argc, char** argv) {
         game::SettingsMenu menu;
         menu.init(window);
         if (opt.menu) menu.toggle();
+        // Averaged over a whole second, so a slow first frame or a hitch
+        // does not skew it; with vsync on it tops out at the display rate.
         float fps = 0.f;
+        float fpsTime = 0.f;
+        int fpsFrames = 0;
         int frameCount = 0;
         double previous = glfwGetTime();
         while (!glfwWindowShouldClose(window)) {
           const double now = glfwGetTime();
           float dt = static_cast<float>(now - previous);
           previous = now;
-          if (dt > 1e-4f) fps = (fps == 0.f) ? 1.f / dt : fps * 0.95f + 0.05f / dt;
+          fpsTime += dt;
+          ++fpsFrames;
+          if (fpsTime >= 1.f) {
+            fps = static_cast<float>(fpsFrames) / fpsTime;
+            fpsTime = 0.f;
+            fpsFrames = 0;
+          }
           dt = std::clamp(dt, 0.f, 0.05f);
           glfwPollEvents();
           Input input = pollInput(window, menu.wantsKeyboard());
