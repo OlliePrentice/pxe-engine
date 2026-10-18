@@ -20,6 +20,15 @@ FetchContent_Declare(
   GIT_TAG v1.91.8
   GIT_SHALLOW TRUE
 )
+# miniaudio is a single header; populate it without its own CMake, and
+# compile the implementation in one source file of the game.
+FetchContent_Declare(
+  miniaudio
+  GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+  GIT_TAG 0.11.21
+  GIT_SHALLOW TRUE
+  SOURCE_SUBDIR no-cmake
+)
 FetchContent_Declare(
   glm
   GIT_REPOSITORY https://github.com/g-truc/glm.git
@@ -36,7 +45,7 @@ set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(glfw glm imgui)
+FetchContent_MakeAvailable(glfw glm imgui miniaudio)
 
 # Dear ImGui has no CMake of its own; build the core plus the GLFW and
 # OpenGL 3 backends for the in-game settings menu.

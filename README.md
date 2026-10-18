@@ -16,6 +16,8 @@ Rain, after t3ssel8r's rain shader, has one severity from drizzle to downpour. I
 
 Lightning flashes now and then in rain and downpour, more often the heavier the rain, and can be switched off in the menu. Each flash is a second light from a random direction, anywhere around the sky between 30 and 65 degrees up, with its own shadow map, so it casts hard shadows through the rain: lit faces go a cold blue-white and the shadow side stays storm-dark. As in the video it comes on at full in one frame and sometimes dips and comes back once. It then fades over most of a second, blended over the sun or moon by its strength, so its shadows lighten a quarter band at a time into the scene's own light instead of snapping off.
 
+Weather sound is synthesised as it plays rather than read from recordings, so each layer follows its setting continuously ([miniaudio](https://github.com/mackron/miniaudio) opens the output). Wind is a band of noise whose pitch climbs with each gust over a low rush, with leaves rustling in bursts that thicken as it blows harder. Rain is a steady hiss and a patter of drops that grows with the severity, plus a low roar in a downpour. Each lightning flash is followed by thunder, panned toward the side of the screen the flash lit from: a crack and a deep rumble when it is close, and later, quieter and lower when it is far off. The menu has volume sliders for each, and M mutes. `--audio-wav out.wav` renders 20 seconds of the weather set on the command line, with a near and a far thunderclap, so the sound can be checked without running the game.
+
 No lightning or god rays.
 
 ## The Blender scene
@@ -70,6 +72,7 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 | Space | Pause or resume time |
 | R | Cycle rain: none, drizzle, rain, downpour |
 | L | Lightning strike now |
+| M | Sound on/off |
 | [ / ] | Halve or double the speed of time |
 | WASD or arrows | Pan along the ground |
 | Shift | Pan faster |
@@ -82,7 +85,7 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 
 ```text
 pxe [--capture out.png] [--window-png out.png]
-    [--scene ruins|hills] [--hour H] [--clouds C] [--rain R] [--no-lightning] [--flash AZ,EL[,LEVEL]] [--wind DEG] [--wind-strength S]
+    [--scene ruins|hills] [--hour H] [--clouds C] [--rain R] [--no-lightning] [--flash AZ,EL[,LEVEL]] [--mute] [--audio-wav out.wav] [--wind DEG] [--wind-strength S]
     [--menu] [--ui-shot out.png]
     [--bench N] [--bench-paused]
     [--yaw degrees] [--slide metres] [--target x,y,z]

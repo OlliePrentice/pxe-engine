@@ -51,6 +51,7 @@ void WorldClock::strike() {
   const float el = (30.f + 35.f * random()) * 3.14159265f / 180.f;
   flashDir = {std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)};
   strikeAge_ = 0.f;
+  ++strikes;
   flicker_ = random() < 0.4f;
 }
 
@@ -111,7 +112,7 @@ void SettingsMenu::shutdown() {
 
 bool SettingsMenu::wantsKeyboard() const { return ready_ && open_ && ImGui::GetIO().WantTextInput; }
 
-void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, float fps) {
+void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, float fps) {
   if (!ready_) return;
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
@@ -176,6 +177,13 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, float fps) {
       ImGui::SameLine();
       if (ImGui::Button("Strike now")) clock.strike();
       ImGui::TextDisabled("Flashes in rain and downpour; L strikes now");
+
+      ImGui::SeparatorText("Sound");
+      ImGui::Checkbox("Sound on  (M)", &sound.on);
+      ImGui::SliderFloat("Volume", &sound.master, 0.f, 1.f, "%.2f");
+      ImGui::SliderFloat("Wind", &sound.wind, 0.f, 1.f, "%.2f");
+      ImGui::SliderFloat("Rain##sound", &sound.rain, 0.f, 1.f, "%.2f");
+      ImGui::SliderFloat("Thunder", &sound.thunder, 0.f, 1.f, "%.2f");
 
       ImGui::SeparatorText("Rendering");
       ImGui::Checkbox("Grass and leaves  (F2)", &view.grass);

@@ -3,6 +3,8 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include "audio.hpp"
+
 struct GLFWwindow;
 
 namespace game {
@@ -24,6 +26,7 @@ struct WorldClock {
   // direction toward where it lights from.
   float flash = 0.f;
   glm::vec3 flashDir{0.f, 1.f, 0.f};
+  int strikes = 0;  // counts flashes, so the game can follow each with thunder
 
   // Advance by `dt` real seconds.
   void advance(float dt);
@@ -59,7 +62,7 @@ class SettingsMenu {
   bool wantsKeyboard() const;
 
   // Build and draw the panel. Call after the scene is presented, before swap.
-  void draw(WorldClock& clock, ViewToggles& view, float fps);
+  void draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, float fps);
 
  private:
   bool ready_ = false;
