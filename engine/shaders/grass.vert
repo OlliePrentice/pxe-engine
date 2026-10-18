@@ -110,5 +110,8 @@ void main() {
         float gust = wind(iRoot.xz);
         vSway = uWindPx * (uWindLean * (0.4 + 0.8 * gust) + 0.7 * sin(uTime * 2.3 + vSeed * 6.2831 + iRoot.y));
         vFlutter = (0.25 + 0.2 * gust) * sin(uTime * 3.4 + vSeed * 31.0);
+        // In rain the upward-facing leaves bob as drops hit them.
+        if (uRain > 0.0 && iNormal.y > 0.3)
+            vFlutter += uRain * 0.45 * sin(uTime * 9.0 + vSeed * 57.0) * step(0.5, fract(vSeed * 13.0 + uTime * 0.7));
     }
 }

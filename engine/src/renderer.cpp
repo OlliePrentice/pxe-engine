@@ -104,6 +104,8 @@ void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP,
   u1f(prog, "uCloudCover", lighting.cloudCover);
   u2f(prog, "uCloudOffset", lighting.cloudOffset.x, lighting.cloudOffset.y);
   u1f(prog, "uCloudStrength", lighting.cloudStrength);
+  u1f(prog, "uOvercast", lighting.overcast);
+  u1f(prog, "uRain", lighting.rain);
   glUniform4f(uloc(prog, "uHorizon"), lighting.horizon.x, lighting.horizon.y, lighting.horizon.z, lighting.horizon.w);
   u1f(prog, "uHorizonRelief", lighting.horizonRelief);
 }
@@ -562,6 +564,29 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   const glm::vec3 edgeLight = glm::normalize(lighting.lightDir);
   u3f(progEdge_, "uLight", edgeLight.x, edgeLight.y, edgeLight.z);
   u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
+  u1f(progEdge_, "uRain", lighting.rain);
+  u1f(progEdge_, "uTime", params.time);
+  // The camera's snapped position in whole texels anchors the rain's pixel
+  // grid to the world, so it does not slide with the view.
+  u2f(progEdge_, "uCamTexel", std::round(glm::dot(camera.eye, camera.right) / camera.texelWorld),
+      std::round(glm::dot(camera.eye, camera.up) / camera.texelWorld));
+  {
+    const glm::vec2 wd = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{1.f, 0.f};
+    // Rain leans with the part of the wind that blows across the screen,
+    // more as the wind strengthens; wind toward or away from the camera
+    // leaves it falling straight.
+    const float across = glm::dot(glm::vec3{wd.x, 0.f, wd.y}, camera.right);
+    u1f(progEdge_, "uRainSlant", 0.3f * across * std::clamp(0.4f + 0.6f * lighting.windStrength, 0.f, 2.5f));
+  }
+  u3f(progEdge_, "uEye", camera.eye.x, camera.eye.y, camera.eye.z);
+  u3f(progEdge_, "uRight", camera.right.x, camera.right.y, camera.right.z);
+  u3f(progEdge_, "uUp", camera.up.x, camera.up.y, camera.up.z);
+  u3f(progEdge_, "uFwd", camera.forward.x, camera.forward.y, camera.forward.z);
+  u2f(progEdge_, "uOrthoHalf", camera.orthoHalfW, camera.orthoHalfH);
+  u1f(progEdge_, "uNear", camera.nearPlane);
+  u1f(progEdge_, "uYawTexels", camera.yawRadians / camera.texelWorld);
+  const glm::vec3 rainCol = lighting.palette[kSurfFoam].band[2];
+  u3f(progEdge_, "uRainColour", rainCol.x, rainCol.y, rainCol.z);
   glBindVertexArray(presentVao_);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);

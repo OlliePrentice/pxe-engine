@@ -51,6 +51,9 @@ struct Options {
   bool edges = true;
   float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
   float clouds = 0.35f;
+  float rain = 0.f;
+  float windDegrees = 20.f;
+  float windStrength = 1.f;
   bool menu = false;
   std::string uiShot;
   int bench = 0;
@@ -74,6 +77,8 @@ void printUsage() {
                "  --scene ruins|hills      default ruins\n"
                "  --hour H                 time of day, 0-24 (captures default to 15)\n"
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
+               "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
+               "  --wind DEG --wind-strength S   wind direction (compass) and strength (default 20, 1)\n"
                "  --menu                   start with the settings menu open (Tab)\n"
                "  --ui-shot path.png       run the interactive loop briefly, save the window with the menu, exit\n"
                "  --bench N                render N frames uncapped with time running, print ms per frame\n"
@@ -151,6 +156,12 @@ Options parseArgs(int argc, char** argv) {
       opt.menu = true;
     } else if (a == "--hour") {
       opt.hour = std::atof(need("--hour"));
+    } else if (a == "--wind") {
+      opt.windDegrees = std::atof(need("--wind"));
+    } else if (a == "--wind-strength") {
+      opt.windStrength = std::atof(need("--wind-strength"));
+    } else if (a == "--rain") {
+      opt.rain = std::atof(need("--rain"));
     } else if (a == "--clouds") {
       opt.clouds = std::atof(need("--clouds"));
     } else if (a == "--no-edges") {
@@ -197,6 +208,7 @@ struct Input {
   bool toggleMagenta = false;
   bool toggleNdl = false;
   bool toggleMenu = false;
+  bool cycleRain = false;
   bool togglePause = false;
   int speedSteps = 0;  // +1 doubles, -1 halves
   bool shot = false;
@@ -227,6 +239,8 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken) {
   static bool q = false, e = false, f1 = false, f2 = false, f3 = false, f4 = false, esc = false, space = false,
               slower = false, faster = false;
   if (pressed(win, GLFW_KEY_SPACE, space)) in.togglePause = true;
+  static bool rkey = false;
+  if (pressed(win, GLFW_KEY_R, rkey)) in.cycleRain = true;
   if (pressed(win, GLFW_KEY_LEFT_BRACKET, slower)) in.speedSteps -= 1;
   if (pressed(win, GLFW_KEY_RIGHT_BRACKET, faster)) in.speedSteps += 1;
   if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
@@ -273,6 +287,13 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
   lighting.cloudOffset = clock.cloudOffset;
   lighting.cloudStrength = clock.cloudStrength;
   lighting.windDir = clock.windDir();
+  lighting.windStrength = clock.cloudSpeed;
+  // Rain brings a murky, even overcast that fades sun and moon shadows. The
+  // drifting cloud shadows fade out as it sets in - under a rain sky there
+  // are no separate clouds to see - and are gone from moderate rain up.
+  lighting.rain = clock.rain;
+  lighting.overcast = 0.7f * clock.rain;
+  lighting.cloudStrength *= std::clamp(1.f - 2.f * clock.rain, 0.f, 1.f);
   return lighting;
 }
 
@@ -409,6 +430,9 @@ int main(int argc, char** argv) {
         game::WorldClock clock;
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
+        clock.rain = opt.rain;
+        clock.windDegrees = opt.windDegrees;
+        clock.cloudSpeed = opt.windStrength;
         // Per-pass GPU timers block every frame and, on macOS's GL-on-Metal,
         // under-report; they are opt-in. The wall-clock figure is the one to trust.
         const bool passes = std::getenv("PXE_BENCH_PASSES") != nullptr;
@@ -446,6 +470,9 @@ int main(int argc, char** argv) {
         game::WorldClock clock;
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
+        clock.rain = opt.rain;
+        clock.windDegrees = opt.windDegrees;
+        clock.cloudSpeed = opt.windStrength;
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
@@ -477,6 +504,9 @@ int main(int argc, char** argv) {
         game::WorldClock clock;
         if (opt.hour >= 0.f) clock.hour = opt.hour;
         clock.cloudCover = opt.clouds;
+        clock.rain = opt.rain;
+        clock.windDegrees = opt.windDegrees;
+        clock.cloudSpeed = opt.windStrength;
         game::SettingsMenu menu;
         menu.init(window);
         if (opt.menu) menu.toggle();
@@ -504,6 +534,7 @@ int main(int argc, char** argv) {
           if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
+          if (input.cycleRain) clock.rain = clock.rain <= 0.f ? 0.2f : clock.rain < 0.5f ? 0.55f : clock.rain < 0.9f ? 1.f : 0.f;
           if (input.speedSteps)
             clock.hoursPerMinute = std::clamp(clock.hoursPerMinute * std::pow(2.f, static_cast<float>(input.speedSteps)),
                                               1.f / 60.f, 120.f);

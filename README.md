@@ -12,7 +12,9 @@ Chipped stone keeps the normal of the box side each face came from, so a block s
 
 Water reflects the scene: a second pass draws everything above the water plane mirrored (meshes and leaves, not grass), clipped and scissored to the pond's area on screen. The water pass also reads a copy of the scene behind it and its depth, so it knows how deep the water is at each pixel: the shallows show the pond bed darkly through a blue tint, deeper water shows the reflection, or the sky's stepped blotches where nothing is mirrored, with a one-pixel ripple, and a thin light contact line traces the shore and everything standing in the water.
 
-No weather or god rays.
+Rain, after t3ssel8r's rain shader, has one severity from drizzle to downpour. It brings a murky, even overcast under which cast shadows from the sun and moon soften with severity and are gone in a downpour (drifting cloud shadows fade out as it sets in) and a cool, hazy grade; sparse one-pixel streaks in two layers that hold still and are redrawn about ten times a second, for a stepped, low-frame-rate flicker, leaning with the wind's direction across the screen and its strength; a soft light haze along the upper outlines of stone and trunks; occasional three-stage splashes (a dot, a little crown, two droplets) on stone and bark, and small ones scattered on crowns and the lawn; ripple rings on the water; and upward-facing leaves bobbing as drops hit them. Streaks, splashes and haze are drawn in the post pass on a pixel grid anchored to the world, so they do not slide when the camera pans.
+
+No lightning or god rays.
 
 ## The Blender scene
 
@@ -62,8 +64,9 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 
 | Input | Action |
 |---|---|
-| Tab | Settings menu: time of day, time speed, clouds, wind |
+| Tab | Settings menu: time of day, time speed, clouds, wind, rain |
 | Space | Pause or resume time |
+| R | Cycle rain: none, drizzle, rain, downpour |
 | [ / ] | Halve or double the speed of time |
 | WASD or arrows | Pan along the ground |
 | Shift | Pan faster |
@@ -76,7 +79,8 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 
 ```text
 pxe [--capture out.png] [--window-png out.png]
-    [--scene ruins|hills] [--hour H] [--clouds C] [--menu] [--ui-shot out.png]
+    [--scene ruins|hills] [--hour H] [--clouds C] [--rain R] [--wind DEG] [--wind-strength S]
+    [--menu] [--ui-shot out.png]
     [--bench N] [--bench-paused]
     [--yaw degrees] [--slide metres] [--target x,y,z]
     [--min-dist metres] [--hide-grass] [--magenta] [--ndl]

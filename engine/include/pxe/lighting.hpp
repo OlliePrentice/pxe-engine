@@ -25,8 +25,14 @@ struct Lighting {
   // Horizon ridge, copied from the scene: centre xz, radius, height, relief.
   glm::vec4 horizon{0.f};
   float horizonRelief = 0.f;
-  // Horizontal wind direction (unit, world XZ) for the grass sway.
+  // Rain severity, 0 dry .. 1 downpour, and the overcast it brings: how far
+  // every colour is pulled toward its shadow tone.
+  float rain = 0.f;
+  float overcast = 0.f;
+  // Horizontal wind direction (unit, world XZ) for the grass sway, and how
+  // hard it blows (the drift-speed setting, 1 by default).
   glm::vec2 windDir{1.f, 0.f};
+  float windStrength = 1.f;
 };
 
 // The scene lit at `hour` (0-24). Palettes blend day -> golden -> twilight
