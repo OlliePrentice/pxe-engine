@@ -13,6 +13,7 @@
 #define PXE_GL_EACH(M)                              \
   M(PFNGLCULLFACEPROC, glCullFace)                  \
   M(PFNGLFRONTFACEPROC, glFrontFace)                \
+  M(PFNGLSCISSORPROC, glScissor)                    \
   M(PFNGLENABLEPROC, glEnable)                      \
   M(PFNGLDISABLEPROC, glDisable)                    \
   M(PFNGLVIEWPORTPROC, glViewport)                  \
