@@ -420,6 +420,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u1f(progEdge_, "uDepthMetres", camera.farPlane - camera.nearPlane);
   u1i(progEdge_, "uEnabled", params.edges ? 1 : 0);
   u3f(progEdge_, "uRim", lighting.rim.x, lighting.rim.y, lighting.rim.z);
+  const glm::vec3 edgeLight = glm::normalize(lighting.lightDir);
+  u3f(progEdge_, "uLight", edgeLight.x, edgeLight.y, edgeLight.z);
   u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
   glBindVertexArray(presentVao_);
   glDrawArrays(GL_TRIANGLES, 0, 3);

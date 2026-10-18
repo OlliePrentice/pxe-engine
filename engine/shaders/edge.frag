@@ -14,6 +14,7 @@ uniform int uEnabled;
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
+uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
 uniform vec3 uInk;
 
@@ -33,6 +34,7 @@ void main() {
 
     bool rim = false;
     bool ink = false;
+    bool stroke = false;
     // Diagonal neighbours count for rims, so a seam that rasterises as a
     // 2:1 staircase joins into one line instead of a row of dots.
     const ivec2 kOffsets[8] = ivec2[8](ivec2(0, 1), ivec2(0, -1), ivec2(1, 0), ivec2(-1, 0),
@@ -47,8 +49,17 @@ void main() {
         bool crease = !behind && abs(dq - d) < kSilhouette && nq4.a > 0.0 && dot(n, nq) < 0.8;
         if (n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
         else if (behind && !diagonal) ink = true;
+        // Bark is smooth-shaded except along a few seams marked sharp in
+        // Blender; there the normal jumps a little, and one light stroke is
+        // drawn on the side that faces the light more.
+        if (surface == kSurfBark && !behind && !diagonal && abs(dq - d) < kSilhouette && nq4.a > 0.0 &&
+            dot(n, nq) < 0.97 && dot(n, uLight) > dot(nq, uLight)) stroke = true;
     }
-    if (rim) col = mix(col, uRim, 0.4);
-    else if (ink) col = mix(col, uInk, 0.35);
+    // Bark is painted, not carved: no rims, a faint outline, and its few
+    // seam strokes are soft.
+    if (surface == kSurfBark) rim = false;
+    if (stroke) col = mix(col, uRim, 0.15);
+    else if (rim) col = mix(col, uRim, 0.4);
+    else if (ink) col = mix(col, uInk, surface == kSurfBark ? 0.15 : 0.35);
     oColor = vec4(col, 1.0);
 }

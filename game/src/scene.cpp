@@ -13,6 +13,7 @@
 #include <functional>
 #include <optional>
 #include <random>
+#include <unordered_map>
 #include <stdexcept>
 #include <vector>
 
@@ -55,8 +56,8 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseDay, kSurfGrass, {{0x648474, 0x94b064, 0xacbc6c}, {0x74947c, 0x7c9c54, 0x8ca454}, {0x648474, 0xacbc6c, 0xc8d690}});
   set(kPhaseDay, kSurfDirt, plain(0x5c6468, 0x7c7874, 0x948c80));
   set(kPhaseDay, kSurfStone, plain(0x747480, 0xa49c8c, 0xbcac94));
-  set(kPhaseDay, kSurfBark, plain(0x6c7078, 0x8c8a84, 0xaca494));
-  set(kPhaseDay, kSurfLeaf, {{0x4c705c, 0x6c945c, 0x8cac54}, {0x5c8064, 0x80a85c, 0xa8c46c}, {0x4c705c, 0x6c945c, 0x8cac54}});
+  set(kPhaseDay, kSurfBark, plain(0x6a6a7a, 0x8a8684, 0xbcac90));
+  set(kPhaseDay, kSurfLeaf, {{0x4c6e5c, 0x68905a, 0x88a850}, {0x58806a, 0x7ca25a, 0xaac65c}, {0x4c6e5c, 0x68905a, 0x88a850}});
   set(kPhaseDay, kSurfWater, {{0x74949c, 0x8cb4cc, 0x8cb4cc}, {0x84a4ac, 0xa4c8d8, 0xa4c8d8}, {0x74949c, 0x8cb4cc, 0x8cb4cc}});
   set(kPhaseDay, kSurfFoam, plain(0xc4d4d8, 0xdce8ec, 0xe8f2f2));
   scene.rim[kPhaseDay] = hex(0xf5f0dc);
@@ -462,29 +463,85 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   std::uniform_real_distribution<float> unit(0.f, 1.f);
   scatterGrass(scene, GroundIndex(std::move(lawn), 1.f), options, patchiness, rng);
 
-  // Leaf clusters cover every crown at about one per 0.3 m², lit at their
-  // root like grass, so the crown's band edges and silhouette go leafy.
+  // Leaves grow in clumps, as in the video: clump centres are scattered over
+  // every crown, and leaves gather around them with gaps between where the
+  // darker crown body shows. A clump shares a tilt, so its leaves tend to
+  // light together and the crown breaks into patches; each leaf adds its
+  // own tilt on top so patch edges stay leafy. Some leaves stand proud of
+  // the surface, which rags the crown's outline.
   float total = 0.f;
   std::vector<float> cdf;
   for (float a : leafArea) cdf.push_back(total += a);
-  const int leafCount = static_cast<int>(total * options.leafDensity);
-  for (int i = 0; i < leafCount && !cdf.empty(); ++i) {
+  auto samplePoint = [&](glm::vec3& p, glm::vec3& n) {
     const auto it = std::lower_bound(cdf.begin(), cdf.end(), unit(rng) * total);
-    const Triangle& t = leaves[static_cast<std::size_t>(std::min<std::ptrdiff_t>(it - cdf.begin(), static_cast<std::ptrdiff_t>(cdf.size()) - 1))];
+    const Triangle& t = leaves[static_cast<std::size_t>(
+        std::min<std::ptrdiff_t>(it - cdf.begin(), static_cast<std::ptrdiff_t>(cdf.size()) - 1))];
     float u = unit(rng), v = unit(rng);
     if (u + v > 1.f) {
       u = 1.f - u;
       v = 1.f - v;
     }
     const float w = 1.f - u - v;
-    const glm::vec3 p = t.p[0] * w + t.p[1] * u + t.p[2] * v;
-    // Each cluster tilts its own way, so where the crown's light turns the
-    // clusters on either side mix into a dappled edge instead of a clean one.
-    const glm::vec3 jitter{unit(rng) - 0.5f, unit(rng) - 0.5f, unit(rng) - 0.5f};
-    const glm::vec3 n = glm::normalize(glm::normalize(t.n[0] * w + t.n[1] * u + t.n[2] * v) + 0.9f * jitter);
-    const float kind = unit(rng) < 0.12f ? 3.f : 2.f;
-    scene.grass.push_back({p.x, p.y, p.z, n.x, n.y, n.z, kind, unit(rng), 0.85f + 0.3f * unit(rng),
-                           static_cast<float>(pxe::kSurfLeaf)});
+    p = t.p[0] * w + t.p[1] * u + t.p[2] * v;
+    n = glm::normalize(t.n[0] * w + t.n[1] * u + t.n[2] * v);
+  };
+  auto randomTilt = [&]() { return glm::vec3{unit(rng) - 0.5f, unit(rng) - 0.5f, unit(rng) - 0.5f}; };
+
+  struct Clump {
+    glm::vec3 centre;
+    glm::vec3 tilt;
+  };
+  std::vector<Clump> clumps;
+  const int clumpCount = cdf.empty() ? 0 : static_cast<int>(total * 0.7f);
+  for (int i = 0; i < clumpCount; ++i) {
+    glm::vec3 p, n;
+    samplePoint(p, n);
+    clumps.push_back({p, randomTilt()});
+  }
+  // Bucket clumps on a 1 m grid so each leaf only checks its neighbours.
+  const float kClumpRadius = 0.55f;
+  std::unordered_map<std::int64_t, std::vector<int>> clumpGrid;
+  auto cellKey = [](glm::vec3 p) {
+    const auto ix = static_cast<std::int64_t>(std::floor(p.x)) & 0xfffff;
+    const auto iy = static_cast<std::int64_t>(std::floor(p.y)) & 0xfffff;
+    const auto iz = static_cast<std::int64_t>(std::floor(p.z)) & 0xfffff;
+    return (ix << 40) | (iy << 20) | iz;
+  };
+  for (int i = 0; i < static_cast<int>(clumps.size()); ++i) clumpGrid[cellKey(clumps[static_cast<std::size_t>(i)].centre)].push_back(i);
+
+  const int candidates = cdf.empty() ? 0 : static_cast<int>(total * options.leafDensity * 1.6f);
+  int leafCount = 0;
+  for (int i = 0; i < candidates; ++i) {
+    glm::vec3 p, n;
+    samplePoint(p, n);
+    // Nearest clump within reach decides whether the leaf grows here.
+    float best = 1e9f;
+    const Clump* near = nullptr;
+    for (int dz = -1; dz <= 1; ++dz)
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+          const auto found = clumpGrid.find(cellKey(p + glm::vec3(dx, dy, dz)));
+          if (found == clumpGrid.end()) continue;
+          for (int ci : found->second) {
+            const float d2 = glm::dot(clumps[static_cast<std::size_t>(ci)].centre - p, clumps[static_cast<std::size_t>(ci)].centre - p);
+            if (d2 < best) {
+              best = d2;
+              near = &clumps[static_cast<std::size_t>(ci)];
+            }
+          }
+        }
+    const float keep = near ? std::exp(-best / (2.f * kClumpRadius * kClumpRadius)) : 0.f;
+    if (unit(rng) > 0.12f + 0.88f * keep) continue;
+    const glm::vec3 clumpTilt = near ? near->tilt : glm::vec3{0.f};
+    const glm::vec3 tilt = glm::normalize(n + 0.7f * clumpTilt + 0.8f * randomTilt());
+    // Leaves near a clump's edge stand out from the surface a little.
+    const glm::vec3 root = p + n * (unit(rng) < 0.3f ? 0.35f * unit(rng) : 0.f);
+    // About one leaf in six takes the lighter detail shade, so even the
+    // shadowed side of a crown shows separate leaves.
+    const float kind = unit(rng) < 0.17f ? 3.f : 2.f;
+    scene.grass.push_back({root.x, root.y, root.z, tilt.x, tilt.y, tilt.z, kind, unit(rng),
+                           0.85f + 0.3f * unit(rng), static_cast<float>(pxe::kSurfLeaf)});
+    ++leafCount;
   }
   std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters\n", prims.size(), leafCount);
   return scene;

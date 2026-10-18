@@ -20,7 +20,7 @@ layout(location = 3) in vec4 iParams;  // kind, seed, height scale, surface
 // widest lean plus sway so nothing clips.
 const vec2 kClumpBox = vec2(13.0, 12.0);
 const vec2 kTuftBox = vec2(17.0, 10.0);
-const vec2 kLeafBox = vec2(9.0, 9.0);  // centred on the root, not grown up from it
+const vec2 kLeafBox = vec2(21.0, 21.0);  // centred on the root, not grown up from it
 
 out vec2 vLocal;          // pixel offset from the root pixel's corner
 flat out vec3 vCol;
@@ -29,6 +29,7 @@ flat out float vKind;
 flat out float vSeed;
 flat out float vScale;
 flat out float vSway;
+flat out float vFlutter;  // leaves: extra spin, radians
 
 // Two travelling sine gusts across the field. Low frequency so neighbouring
 // tufts move together and the motion reads as waves rather than jitter.
@@ -65,12 +66,29 @@ void main() {
     // invisible inside a band and only shows where it overhangs the next one.
     int surface = int(iParams.w + 0.5);
     float tone = toonTone(iRoot, iNormal);
-    bool detail = (vKind > 0.5 && vKind < 1.5) || vKind > 2.5;
-    vCol = detail ? toneDetail(surface, tone) : toneColour(surface, tone);
+    if (leaf) {
+        // Leaves take whole bands from their own tilted normals, so the
+        // crown's light breaks up leaf by leaf instead of in a smooth band,
+        // and the leaves turned straight at the sun catch a highlight.
+        tone = floor(tone + 0.5);
+        bool facing = dot(normalize(iNormal), uSunDir) > uTLit + 0.22;
+        bool speckle = vKind > 2.5;
+        vCol = ((tone > 1.5 && facing) || speckle) ? toneDetail(surface, tone) : toneColour(surface, tone);
+    } else {
+        bool tuft = vKind > 0.5;
+        vCol = tuft ? toneDetail(surface, tone) : toneColour(surface, tone);
+    }
     int i = surface * 3;
     vTip = rampColour(uTip[i], uTip[i + 1], uTip[i + 2], tone);
     float shade = cloudShade(iRoot);
     vCol = clouded(vCol, surface, shade);
     vTip = clouded(vTip, surface, shade);
-    if (leaf) vSway *= 0.5;
+    vFlutter = 0.0;
+    if (leaf) {
+        // Leaves ride the same gusts as the grass, bobbing a pixel or two,
+        // and each cluster flutters on its own beat as the gusts pass.
+        float gust = wind(iRoot.xz);
+        vSway = uWindPx * (uWindLean * (0.4 + 0.8 * gust) + 0.7 * sin(uTime * 2.3 + vSeed * 6.2831 + iRoot.y));
+        vFlutter = (0.25 + 0.2 * gust) * sin(uTime * 3.4 + vSeed * 31.0);
+    }
 }

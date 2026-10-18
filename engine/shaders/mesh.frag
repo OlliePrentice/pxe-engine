@@ -23,9 +23,13 @@ void main() {
         oColor = vec4(bandColour(kSurfFoam, 2), 1.0);
         return;
     }
-    // Water only takes cast shadow, never N·L: it is a flat mirror.
+    // Water only takes cast shadow, never N·L: it is a flat mirror. A crown's
+    // body sits a band darker than its leaves, so gaps between leaves read as
+    // depth inside the foliage.
     float tone = (vSurface == kSurfWater) ? 2.0 * sunLit(vWorld, n, 1.0) * horizonLight(vWorld)
                : (vSurface == kSurfStone) ? toonToneFlat(vWorld, n)
+               : (vSurface == kSurfBark)  ? barkTone(vWorld, n)
+               : (vSurface == kSurfLeaf)  ? max(floor(toonTone(vWorld, n) + 0.5) - 1.0, 0.0)
                                           : toonTone(vWorld, n);
     vec3 col = toneColour(vSurface, tone);
     if (vSurface == kSurfWater) {
