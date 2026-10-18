@@ -189,6 +189,8 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
       ImGui::Checkbox("Grass and leaves  (F2)", &view.grass);
       ImGui::SameLine();
       ImGui::Checkbox("Stone edges", &view.edges);
+      ImGui::SameLine();
+      ImGui::Checkbox("Campfire", &view.fire);
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms), capped by vsync; --bench measures uncapped", fps, 1000.f / fps);
       else

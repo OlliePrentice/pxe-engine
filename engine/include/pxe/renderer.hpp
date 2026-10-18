@@ -2,6 +2,7 @@
 
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
+#include "pxe/fire.hpp"
 #include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 
@@ -25,6 +26,8 @@ struct FrameParams {
   float time = 0.f;
   // Light rims and dark outlines on stone and bark.
   bool edges = true;
+  // Campfire flames and their light.
+  bool fire = true;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
 };
@@ -88,6 +91,15 @@ class Renderer {
   unsigned depth_ = 0;
   unsigned shadow_ = 0;
   unsigned flashShadow_ = 0;  // lightning's shadow map, redrawn per strike
+  unsigned heat_ = 0;         // fire heat (r), embers (g) and smoke (b), quantised by the edge pass
+  unsigned fboHeat_ = 0;
+  // The fire's shadow map: distance to the nearest surface on each face of a
+  // cube round the fire. The scene does not move, so it is drawn once.
+  unsigned fireCube_ = 0;
+  unsigned fireCubeDepth_ = 0;
+  unsigned fboFireCube_ = 0;
+  const Scene* fireShadowScene_ = nullptr;
+  glm::vec3 fireShadowPos_{0.f};
   unsigned fboFlash_ = 0;
 
   unsigned progMesh_ = 0;
@@ -96,6 +108,11 @@ class Renderer {
   unsigned progPresent_ = 0;
   unsigned progEdge_ = 0;
   unsigned progWater_ = 0;
+  unsigned progFire_ = 0;
+  unsigned progFireShadow_ = 0;
+  unsigned fireVao_ = 0;
+  unsigned fireVbo_ = 0;
+  std::vector<Fire> fires_;
 
   unsigned grassVao_ = 0;
   unsigned grassCorner_ = 0;

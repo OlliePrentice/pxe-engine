@@ -26,5 +26,7 @@ void main() {
                : (vSurface == kSurfLeaf)  ? max(floor(toonTone(vWorld, n) + 0.5) - 1.0, 0.0)
                                           : toonTone(vWorld, n);
     vec3 col = toneColour(vSurface, tone);
-    oColor = vec4(clouded(col, vSurface, cloudShade(vWorld)), 1.0);
+    float shade = cloudShade(vWorld);
+    col = clouded(col, vSurface, shade);
+    oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), 1.0);
 }

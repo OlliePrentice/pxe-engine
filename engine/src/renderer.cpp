@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
+#include <iterator>
 #include <string>
 
 namespace pxe {
@@ -18,6 +19,13 @@ namespace {
 
 constexpr float kGrassBiasMetres = 0.6f;
 constexpr float kWindPx = 1.6f;
+// Fire is drawn this far toward the camera, so the logs in front of it hide
+// only the bottom of the flames.
+constexpr float kFireBiasMetres = 0.25f;
+// The firelight shines from above the logs, so they shadow only the ground
+// inside the ring of stones.
+constexpr float kFireLightHeight = 0.62f;
+constexpr int kFireShadow = 512;  // per cube face
 
 int uloc(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
 
@@ -89,8 +97,9 @@ std::vector<float> ramp(const Lighting& lighting, glm::vec3 (Palette::*field)[3]
   return out;
 }
 
+// `fire`: the firelight's position (xyz) and strength with its flicker (w).
 void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP, const glm::mat4& flashVP,
-              float normalBias, bool testColours) {
+              const glm::vec4& fire, float normalBias, bool testColours) {
   u1f(prog, "uTLit", lighting.tLit);
   u1f(prog, "uTMid", lighting.tMid);
   const glm::vec3 light = glm::normalize(lighting.lightDir);
@@ -111,6 +120,14 @@ void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP,
   u3f(prog, "uFlashDir", flash.x, flash.y, flash.z);
   umat(prog, "uFlashViewProj", flashVP);
   u1i(prog, "uFlashShadowMap", 6);
+  u1i(prog, "uFireShadow", 7);
+  u3f(prog, "uFirePos", fire.x, fire.y, fire.z);
+  u1f(prog, "uFireLight", fire.w);
+  u1f(prog, "uFireReach", lighting.fireReach);
+  u1f(prog, "uFireDim", lighting.fireDim);
+  std::vector<float> fireBand;
+  for (int s = 0; s < kSurfCount; ++s) fireBand.insert(fireBand.end(), {lighting.fireBand[s].x, lighting.fireBand[s].y, lighting.fireBand[s].z});
+  u3fv(prog, "uFireBand", kSurfCount, fireBand.data());
   glUniform4f(uloc(prog, "uHorizon"), lighting.horizon.x, lighting.horizon.y, lighting.horizon.z, lighting.horizon.w);
   u1f(prog, "uHorizonRelief", lighting.horizonRelief);
 }
@@ -130,13 +147,24 @@ Renderer::~Renderer() {
   if (progPresent_) glDeleteProgram(progPresent_);
   if (progEdge_) glDeleteProgram(progEdge_);
   if (progWater_) glDeleteProgram(progWater_);
+  if (progFire_) glDeleteProgram(progFire_);
+  if (progFireShadow_) glDeleteProgram(progFireShadow_);
+  if (fireVbo_) glDeleteBuffers(1, &fireVbo_);
+  if (fireVao_) glDeleteVertexArrays(1, &fireVao_);
   destroyTargets();
 }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, flashShadow_, refl_, reflDepth_, bed_, bedDepth_};
-  glDeleteTextures(10, textures);
-  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = flashShadow_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
+  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, flashShadow_, heat_, refl_, reflDepth_, bed_, bedDepth_};
+  glDeleteTextures(static_cast<GLsizei>(std::size(textures)), textures);
+  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = flashShadow_ = heat_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
+  if (fboHeat_) glDeleteFramebuffers(1, &fboHeat_);
+  fboHeat_ = 0;
+  if (fireCube_) glDeleteTextures(1, &fireCube_);
+  if (fireCubeDepth_) glDeleteTextures(1, &fireCubeDepth_);
+  if (fboFireCube_) glDeleteFramebuffers(1, &fboFireCube_);
+  fireCube_ = fireCubeDepth_ = fboFireCube_ = 0;
+  fireShadowScene_ = nullptr;
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
   if (fboFinal_) glDeleteFramebuffers(1, &fboFinal_);
   if (fboRefl_) glDeleteFramebuffers(1, &fboRefl_);
@@ -195,6 +223,13 @@ void Renderer::createTargets() {
   bedDepth_ = makeDepth(rtW(), rtH(), false);
   shadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
   flashShadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
+  glGenTextures(1, &heat_);
+  glBindTexture(GL_TEXTURE_2D, heat_);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, rtW(), rtH(), 0, GL_RGBA, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
   glGenFramebuffers(1, &fbo_);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
@@ -213,6 +248,33 @@ void Renderer::createTargets() {
   const unsigned reflDraw = GL_COLOR_ATTACHMENT0;
   glDrawBuffers(1, &reflDraw);
   requireFbo("reflection");
+
+  glGenTextures(1, &fireCube_);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, fireCube_);
+  for (int i = 0; i < 6; ++i)
+    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_R32F, kFireShadow, kFireShadow, 0, GL_RED, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+  fireCubeDepth_ = makeDepth(kFireShadow, kFireShadow, false);
+  glGenFramebuffers(1, &fboFireCube_);
+  glBindFramebuffer(GL_FRAMEBUFFER, fboFireCube_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X, fireCube_, 0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, fireCubeDepth_, 0);
+  const unsigned cubeDraw = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &cubeDraw);
+  requireFbo("fire shadow");
+
+  // Fire heat, depth-tested against the finished scene without writing it.
+  glGenFramebuffers(1, &fboHeat_);
+  glBindFramebuffer(GL_FRAMEBUFFER, fboHeat_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, heat_, 0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_, 0);
+  const unsigned heatDraw = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &heatDraw);
+  requireFbo("heat");
 
   glGenFramebuffers(1, &fboFinal_);
   glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
@@ -258,6 +320,17 @@ void Renderer::createQuads() {
   glVertexAttribDivisor(3, 1);
   glBindVertexArray(0);
 
+  glGenVertexArrays(1, &fireVao_);
+  glGenBuffers(1, &fireVbo_);
+  glBindVertexArray(fireVao_);
+  glBindBuffer(GL_ARRAY_BUFFER, fireVbo_);
+  glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void*>(0));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void*>(sizeof(float) * 4));
+  glBindVertexArray(0);
+
   glGenVertexArrays(1, &presentVao_);
   glGenBuffers(1, &presentVbo_);
   glBindVertexArray(presentVao_);
@@ -280,6 +353,8 @@ void Renderer::init() {
   progPresent_ = linkProgram(dir + "/present.vert", dir + "/present.frag");
   progEdge_ = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
   progWater_ = linkProgram(dir + "/water.vert", dir + "/water.frag", dir + "/common.glsl");
+  progFire_ = linkProgram(dir + "/fire.vert", dir + "/fire.frag");
+  progFireShadow_ = linkProgram(dir + "/fireshadow.vert", dir + "/fireshadow.frag");
   createTargets();
   createQuads();
 
@@ -287,6 +362,7 @@ void Renderer::init() {
   glDisable(GL_MULTISAMPLE);
   glDisable(GL_FRAMEBUFFER_SRGB);
   glDisable(GL_BLEND);
+  glEnable(GL_PROGRAM_POINT_SIZE);
   ready_ = true;
 
   const unsigned char* vendor = glGetString(GL_RENDERER);
@@ -299,6 +375,9 @@ void Renderer::init() {
 
 void Renderer::upload(const Scene& scene) {
   shadowScene_ = nullptr;
+  fires_.clear();
+  for (std::size_t i = 0; i < scene.fires.size(); ++i)
+    fires_.emplace_back(scene.fires[i], 0x9e3779b9u + 7919u * static_cast<std::uint32_t>(i));
   grassCount_ = static_cast<int>(scene.grass.size());
   glBindBuffer(GL_ARRAY_BUFFER, grassInst_);
   glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(scene.grass.size() * sizeof(GrassInstance)),
@@ -405,6 +484,16 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   const Lighting& lighting = params.lighting;
   const LightFit light = fitLight(scene, lighting.lightDir);
   const LightFit flash = fitLight(scene, lighting.flashDir);
+  // Fires burn on real time and lean with the wind; the first one lights
+  // the scene around it, flickering with its flames.
+  glm::vec4 fireLight{0.f};
+  if (params.fire) {
+    const glm::vec2 wind = (glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{0.f}) *
+                           0.6f * lighting.windStrength;
+    for (Fire& f : fires_) f.advanceTo(params.time, wind);
+    if (!fires_.empty() && lighting.fireLight > 0.f)
+      fireLight = glm::vec4{fires_[0].base() + glm::vec3{0.f, kFireLightHeight, 0.f}, lighting.fireLight * fires_[0].flicker()};
+  }
   const float normalBias = 3.f * light.texel;
   const glm::mat4 viewProj = camera.proj * camera.view;
   const float biasNdc = kGrassBiasMetres * 2.f / (camera.farPlane - camera.nearPlane);
@@ -449,6 +538,28 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   endPass();
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
+  // The fire's shadow cube: six 90-degree views from the firelight, each
+  // storing the distance to the nearest surface.
+  const glm::vec3 firePos{fireLight};
+  if (fireLight.w > 0.f && (fireShadowScene_ != &scene || fireShadowPos_ != firePos)) {
+    static const glm::vec3 dirs[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    static const glm::vec3 ups[6] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
+    const glm::mat4 proj = glm::perspective(glm::radians(90.f), 1.f, 0.05f, 40.f);
+    glBindFramebuffer(GL_FRAMEBUFFER, fboFireCube_);
+    glViewport(0, 0, kFireShadow, kFireShadow);
+    glUseProgram(progFireShadow_);
+    u3f(progFireShadow_, "uLightPos", firePos.x, firePos.y, firePos.z);
+    glClearColor(1e4f, 1e4f, 1e4f, 1e4f);
+    for (int i = 0; i < 6; ++i) {
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, fireCube_, 0);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      umat(progFireShadow_, "uLightViewProj", proj * glm::lookAt(firePos, firePos + dirs[i], ups[i]));
+      for (const Mesh& m : scene.meshes) m.draw();
+    }
+    fireShadowScene_ = &scene;
+    fireShadowPos_ = firePos;
+  }
+
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glViewport(0, 0, rtW(), rtH());
   glClearColor(0.f, 0.f, 0.f, 1.f);
@@ -458,18 +569,20 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindTexture(GL_TEXTURE_2D, shadow_);
   glActiveTexture(GL_TEXTURE6);
   glBindTexture(GL_TEXTURE_2D, flashShadow_);
+  glActiveTexture(GL_TEXTURE7);
+  glBindTexture(GL_TEXTURE_CUBE_MAP, fireCube_);
   const glm::mat4 identity{1.f};
 
   // Program state shared by every mesh and sprite draw this frame.
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
   u1f(progMesh_, "uTime", params.time);
-  bindToon(progMesh_, lighting, light.viewProj, flash.viewProj, normalBias, params.testColours);
+  bindToon(progMesh_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
   if (params.showGrass && grassCount_ > 0) {
     glUseProgram(progGrass_);
     u2f(progGrass_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
     u1f(progGrass_, "uDepthBiasNdc", biasNdc);
-    bindToon(progGrass_, lighting, light.viewProj, flash.viewProj, normalBias, params.testColours);
+    bindToon(progGrass_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
     u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
     // Bound before any sprite draw: the reflection pass draws sprites before
@@ -547,7 +660,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glBindTexture(GL_TEXTURE_2D, refl_);
     glUseProgram(progWater_);
     umat(progWater_, "uViewProj", viewProj);
-    bindToon(progWater_, lighting, light.viewProj, flash.viewProj, normalBias, params.testColours);
+    bindToon(progWater_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
     u1i(progWater_, "uBed", 3);
     u1i(progWater_, "uBedDepth", 4);
     u1i(progWater_, "uReflection", 5);
@@ -567,6 +680,37 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   }
   endPass();
 
+  // Fire: particles summed into the heat buffer against the scene's depth,
+  // for the edge pass to cut into flame colours.
+  glBindFramebuffer(GL_FRAMEBUFFER, fboHeat_);
+  const float clearHeat[4] = {0.f, 0.f, 0.f, 0.f};
+  glClearBufferfv(GL_COLOR, 0, clearHeat);
+  int fireCount = 0;
+  if (params.fire && !fires_.empty()) {
+    std::vector<FireParticle> parts;
+    for (const Fire& f : fires_) parts.insert(parts.end(), f.particles().begin(), f.particles().end());
+    fireCount = static_cast<int>(parts.size());
+    glBindBuffer(GL_ARRAY_BUFFER, fireVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(parts.size() * sizeof(FireParticle)), parts.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glViewport(0, 0, rtW(), rtH());
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glUseProgram(progFire_);
+    umat(progFire_, "uViewProj", viewProj);
+    u2f(progFire_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
+    u1f(progFire_, "uPxPerMetre", 1.f / camera.texelWorld);
+    u1f(progFire_, "uDepthBiasNdc", kFireBiasMetres * 2.f / (camera.farPlane - camera.nearPlane));
+    glBindVertexArray(fireVao_);
+    glDrawArrays(GL_POINTS, 0, fireCount);
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+  }
+
   // Edge pass into final_, which is what gets presented and captured.
   beginPass(PassTimes::kEdge);
   glBindFramebuffer(GL_FRAMEBUFFER, fboFinal_);
@@ -582,6 +726,10 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u1i(progEdge_, "uColor", 0);
   u1i(progEdge_, "uNormal", 1);
   u1i(progEdge_, "uDepth", 2);
+  glActiveTexture(GL_TEXTURE3);
+  glBindTexture(GL_TEXTURE_2D, heat_);
+  u1i(progEdge_, "uHeat", 3);
+  u1i(progEdge_, "uFire", fireCount > 0 ? 1 : 0);
   u1f(progEdge_, "uDepthMetres", camera.farPlane - camera.nearPlane);
   u1i(progEdge_, "uEnabled", params.edges ? 1 : 0);
   u3f(progEdge_, "uRim", lighting.rim.x, lighting.rim.y, lighting.rim.z);

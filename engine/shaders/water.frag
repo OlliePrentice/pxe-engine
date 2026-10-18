@@ -61,7 +61,7 @@ void main() {
     float shade = cloudShade(vWorld);
 
     if (depth < kContact) {
-        oColor = vec4(clouded(toneColour(kSurfFoam, tone), kSurfFoam, shade), 1.0);
+        oColor = vec4(fireLit(clouded(toneColour(kSurfFoam, tone), kSurfFoam, shade), kSurfFoam, vWorld, n, lit * (1.0 - shade)), 1.0);
         return;
     }
 
@@ -90,5 +90,5 @@ void main() {
     float edge = depth / kClear + (cloudNoise(vWorld.xz * 1.4) - 0.5) * 0.7;
     vec3 col = edge > 0.45 ? mirror : bed;
     col = mix(col, toneColour(kSurfFoam, tone), ring);
-    oColor = vec4(clouded(col, kSurfWater, shade), 1.0);
+    oColor = vec4(fireLit(clouded(col, kSurfWater, shade), kSurfWater, vWorld, n, lit * (1.0 - shade)), 1.0);
 }
