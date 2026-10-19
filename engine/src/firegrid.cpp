@@ -14,6 +14,7 @@ namespace pxe {
 namespace {
 
 constexpr int kIgniteMax = 8;
+constexpr int kStrokeMax = 8;
 // Per cell the flame shader draws a glow, two flames, a puff of smoke and an ember.
 constexpr int kParts = 5;
 // The light from a patch of burning cells: it shines from this high, and
@@ -53,7 +54,7 @@ unsigned makeFbo(unsigned tex) {
 
 FireGrid::~FireGrid() {
   destroy();
-  for (unsigned prog : {progStep_, progBurn_, progSum_, progFlame_})
+  for (unsigned prog : {progStep_, progBurn_, progSum_, progFlame_, progGlow_})
     if (prog) glDeleteProgram(prog);
   if (vao_) glDeleteVertexArrays(1, &vao_);
   if (flameVao_) glDeleteVertexArrays(1, &flameVao_);
@@ -64,6 +65,7 @@ void FireGrid::init(const std::string& dir) {
   progStep_ = linkProgram(dir + "/edge.vert", dir + "/gridstep.frag");
   progBurn_ = linkProgram(dir + "/edge.vert", dir + "/gridburn.frag");
   progSum_ = linkProgram(dir + "/edge.vert", dir + "/gridsum.frag");
+  progGlow_ = linkProgram(dir + "/edge.vert", dir + "/gridglow.frag");
   progFlame_ = linkProgram(dir + "/gridflame.vert", dir + "/fire.frag");
   glGenVertexArrays(1, &vao_);
   glGenVertexArrays(1, &flameVao_);
@@ -79,13 +81,13 @@ void FireGrid::init(const std::string& dir) {
 }
 
 void FireGrid::destroy() {
-  unsigned textures[] = {ground_, state_[0], state_[1], burn_, patches_};
-  glDeleteTextures(5, textures);
-  unsigned fbos[] = {fbo_[0], fbo_[1], fboBurn_, fboPatches_};
-  glDeleteFramebuffers(4, fbos);
+  unsigned textures[] = {ground_, state_[0], state_[1], burn_, patches_, glow_[0], glow_[1]};
+  glDeleteTextures(7, textures);
+  unsigned fbos[] = {fbo_[0], fbo_[1], fboBurn_, fboPatches_, fboGlow_[0], fboGlow_[1]};
+  glDeleteFramebuffers(6, fbos);
   if (pbo_[0]) glDeleteBuffers(2, pbo_);
-  ground_ = state_[0] = state_[1] = burn_ = patches_ = 0;
-  fbo_[0] = fbo_[1] = fboBurn_ = fboPatches_ = 0;
+  ground_ = state_[0] = state_[1] = burn_ = patches_ = glow_[0] = glow_[1] = 0;
+  fbo_[0] = fbo_[1] = fboBurn_ = fboPatches_ = fboGlow_[0] = fboGlow_[1] = 0;
   pbo_[0] = pbo_[1] = 0;
 }
 
@@ -164,6 +166,14 @@ void FireGrid::build(const Scene& scene, float rain) {
     state_[i] = makeTexture(w_, h_, GL_RGBA16F, GL_RGBA, GL_FLOAT, state.data(), GL_NEAREST);
     fbo_[i] = makeFbo(state_[i]);
   }
+  const std::vector<float> dark(cells * 4, 0.f);
+  for (int i = 0; i < 2; ++i) {
+    glow_[i] = makeTexture(w_, h_, GL_RGBA16F, GL_RGBA, GL_FLOAT, dark.data(), GL_LINEAR);
+    fboGlow_[i] = makeFbo(glow_[i]);
+    glowBox_[i][0] = pw_;
+    glowBox_[i][1] = ph_;
+    glowBox_[i][2] = glowBox_[i][3] = -1;
+  }
   std::vector<std::uint8_t> clear(cells * kBurnScale * kBurnScale, 0);
   burn_ = makeTexture(w_ * kBurnScale, h_ * kBurnScale, GL_R8, GL_RED, GL_UNSIGNED_BYTE, clear.data(), GL_LINEAR);
   fboBurn_ = makeFbo(burn_);
@@ -189,12 +199,14 @@ void FireGrid::build(const Scene& scene, float rain) {
   patchCur_ = patchPrev_;
   active_.clear();
   ignite_.clear();
+  strokes_.clear();
 }
 
-void FireGrid::advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite, float rain,
-                       glm::vec2 wind) {
+void FireGrid::advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite,
+                       const std::vector<Stroke>& strokes, float rain, glm::vec2 wind) {
   if (scene_ != &scene) build(scene, rain);
   ignite_.insert(ignite_.end(), ignite.begin(), ignite.end());
+  strokes_.insert(strokes_.end(), strokes.begin(), strokes.end());
   // Steps run ahead of the frame: the latest is at or just after `time`,
   // and what is drawn is blended from the one before it. A first frame, or
   // a jump in time, takes one step now.
@@ -225,6 +237,9 @@ void FireGrid::advance(const Scene& scene, float time, const std::vector<glm::ve
     const int pz = static_cast<int>((p.y - min_.y) / (kCell * kPatch));
     if (px >= 0 && pz >= 0 && px < pw_ && pz < ph_) want[static_cast<std::size_t>(pz * pw_ + px)] = 1;
   }
+  for (const glm::ivec4& b : recentStrokes_)
+    for (int pz = std::max(b.y, 0); pz <= std::min(b.w, ph_ - 1); ++pz)
+      for (int px = std::max(b.x, 0); px <= std::min(b.z, pw_ - 1); ++px) want[static_cast<std::size_t>(pz * pw_ + px)] = 1;
   active_.clear();
   for (int i = 0; i < pw_ * ph_; ++i)
     if (want[static_cast<std::size_t>(i)]) active_.push_back(i);
@@ -236,6 +251,23 @@ void FireGrid::step(float rain, glm::vec2 wind) {
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   glBindVertexArray(vao_);
+
+  // This step's brush strokes, in cell units: from, to, then radius, kind.
+  const std::size_t strokeCount = std::min<std::size_t>(strokes_.size(), kStrokeMax);
+  std::vector<Stroke> strokes(strokes_.begin(), strokes_.begin() + static_cast<std::ptrdiff_t>(strokeCount));
+  strokes_.erase(strokes_.begin(), strokes_.begin() + static_cast<std::ptrdiff_t>(strokeCount));
+  std::vector<float> ends, shapes;
+  for (const Stroke& k : strokes) {
+    ends.insert(ends.end(), {(k.from.x - min_.x) / kCell, (k.from.y - min_.y) / kCell, (k.to.x - min_.x) / kCell,
+                             (k.to.y - min_.y) / kCell});
+    shapes.insert(shapes.end(), {k.radius / kCell, static_cast<float>(k.kind)});
+  }
+  auto bindStrokes = [&](unsigned prog) {
+    glUniform1i(uloc(prog, "uStrokeCount"), static_cast<int>(strokes.size()));
+    if (strokes.empty()) return;
+    glUniform4fv(uloc(prog, "uStroke"), static_cast<GLsizei>(strokes.size()), ends.data());
+    glUniform2fv(uloc(prog, "uStrokeShape"), static_cast<GLsizei>(strokes.size()), shapes.data());
+  };
 
   // The automaton: the latest state in, the next one out.
   const int next = 1 - cur_;
@@ -260,10 +292,11 @@ void FireGrid::step(float rain, glm::vec2 wind) {
   }
   glUniform1i(uloc(progStep_, "uIgniteCount"), static_cast<int>(cells.size() / 2));
   if (!cells.empty()) glUniform2fv(uloc(progStep_, "uIgnite"), static_cast<GLsizei>(cells.size() / 2), cells.data());
+  bindStrokes(progStep_);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   // Grass burns only in the patches near the fire, so only those can need
   // painting: the ones burning at the last readback and round them, and any
-  // being set alight.
+  // being set alight or brushed.
   int lo[2] = {pw_, ph_}, hi[2] = {-1, -1};
   auto take = [&](int px, int pz) {
     lo[0] = std::min(lo[0], px - 1);
@@ -274,10 +307,35 @@ void FireGrid::step(float rain, glm::vec2 wind) {
   for (int i : active_) take(i % pw_, i / pw_);
   for (const glm::vec2& p : ignite_)
     take(static_cast<int>((p.x - min_.x) / (kCell * kPatch)), static_cast<int>((p.y - min_.y) / (kCell * kPatch)));
+  recentStrokes_.clear();
+  int regrowLo[2] = {pw_, ph_}, regrowHi[2] = {-1, -1};
+  for (const Stroke& k : strokes) {
+    const glm::vec2 a = (glm::min(k.from, k.to) - k.radius - min_) / (kCell * kPatch);
+    const glm::vec2 b = (glm::max(k.from, k.to) + k.radius - min_) / (kCell * kPatch);
+    const glm::ivec4 box{static_cast<int>(std::floor(a.x)), static_cast<int>(std::floor(a.y)),
+                         static_cast<int>(std::floor(b.x)), static_cast<int>(std::floor(b.y))};
+    take(box.x, box.y);
+    take(box.z, box.w);
+    if (k.kind == Stroke::kFire) recentStrokes_.push_back(box);
+    if (k.kind == Stroke::kRegrow) {
+      regrowLo[0] = std::min(regrowLo[0], box.x);
+      regrowLo[1] = std::min(regrowLo[1], box.y);
+      regrowHi[0] = std::max(regrowHi[0], box.z);
+      regrowHi[1] = std::max(regrowHi[1], box.w);
+    }
+  }
   recentIgnite_ = ignite_;
   ignite_.clear();
   cur_ = next;
   ++tick_;
+  auto scissorPatches = [&](const int* l, const int* h, int texels) {
+    const int x0 = std::max(l[0], 0), z0 = std::max(l[1], 0);
+    const int x1 = std::min(h[0], pw_ - 1), z1 = std::min(h[1], ph_ - 1);
+    if (x1 < x0 || z1 < z0) return false;
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(x0 * texels, z0 * texels, (x1 - x0 + 1) * texels, (z1 - z0 + 1) * texels);
+    return true;
+  };
 
   // Burning cells paint the burn texture; it keeps the darkest it has seen.
   glBindFramebuffer(GL_FRAMEBUFFER, fboBurn_);
@@ -290,17 +348,47 @@ void FireGrid::step(float rain, glm::vec2 wind) {
   glUniform2f(uloc(progBurn_, "uMin"), min_.x, min_.y);
   glUniform1f(uloc(progBurn_, "uTexel"), kCell / kBurnScale);
   glUniform1f(uloc(progBurn_, "uScale"), static_cast<float>(kBurnScale));
-  if (hi[0] >= lo[0]) {
-    const int texels = kPatch * kBurnScale;
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(lo[0] * texels, lo[1] * texels, (hi[0] - lo[0] + 1) * texels, (hi[1] - lo[1] + 1) * texels);
+  glUniform1i(uloc(progBurn_, "uRegrow"), 0);
+  glUniform1i(uloc(progBurn_, "uStrokeCount"), 0);
+  if (scissorPatches(lo, hi, kPatch * kBurnScale)) {
     glEnable(GL_BLEND);
     glBlendEquation(GL_MAX);
     glBlendFunc(GL_ONE, GL_ONE);
     glDrawArrays(GL_TRIANGLES, 0, 3);
-    glBlendEquation(GL_FUNC_ADD);
-    glDisable(GL_BLEND);
-    glDisable(GL_SCISSOR_TEST);
+  }
+  // Under a regrowth brush the grass comes back, so there the burn texture
+  // is redrawn from the grass left and keeps the lightest it has seen.
+  if (scissorPatches(regrowLo, regrowHi, kPatch * kBurnScale)) {
+    glUniform1i(uloc(progBurn_, "uRegrow"), 1);
+    bindStrokes(progBurn_);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_MIN);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+  }
+  glBlendEquation(GL_FUNC_ADD);
+  glDisable(GL_BLEND);
+  glDisable(GL_SCISSOR_TEST);
+
+  // The blurred grid for the glow, over the patches that can glow now and
+  // those that could when this texture was last drawn, which clears them.
+  {
+    int* last = glowBox_[cur_];
+    const int l[2] = {std::min(lo[0], last[0]), std::min(lo[1], last[1])};
+    const int h[2] = {std::max(hi[0], last[2]), std::max(hi[1], last[3])};
+    last[0] = lo[0];
+    last[1] = lo[1];
+    last[2] = hi[0];
+    last[3] = hi[1];
+    glBindFramebuffer(GL_FRAMEBUFFER, fboGlow_[cur_]);
+    glViewport(0, 0, w_, h_);
+    if (scissorPatches(l, h, kPatch)) {
+      glUseProgram(progGlow_);
+      glUniform1i(uloc(progGlow_, "uState"), 11);
+      glUniform1i(uloc(progGlow_, "uGround"), 12);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glDisable(GL_SCISSOR_TEST);
+    }
   }
 
   // Each patch's fire summed, for its light.
@@ -412,6 +500,12 @@ void FireGrid::drawFlames(const glm::mat4& viewProj, glm::vec2 target, float pxP
   glBindTexture(GL_TEXTURE_2D, ground_);
   glActiveTexture(GL_TEXTURE13);
   glBindTexture(GL_TEXTURE_2D, state_[1 - cur_]);
+  glActiveTexture(GL_TEXTURE14);
+  glBindTexture(GL_TEXTURE_2D, glow_[cur_]);
+  glActiveTexture(GL_TEXTURE15);
+  glBindTexture(GL_TEXTURE_2D, glow_[1 - cur_]);
+  glUniform1i(uloc(progFlame_, "uGlow"), 14);
+  glUniform1i(uloc(progFlame_, "uGlowPrev"), 15);
   glUniform1i(uloc(progFlame_, "uState"), 11);
   glUniform1i(uloc(progFlame_, "uGround"), 12);
   glUniform1i(uloc(progFlame_, "uPrev"), 13);

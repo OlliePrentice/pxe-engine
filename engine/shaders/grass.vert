@@ -111,8 +111,10 @@ void main() {
     // Grass the fire has passed over: scorched brown, then charred black and
     // burnt down to stubble. Each blade turns at its own point, so the edge
     // of the burn is ragged.
+    float charred = 0.0;
     if (!leaf) {
         float burn = burnAt(iRoot);
+        charred = smoothstep(0.3, 0.75, burn);
         float own = fract(vSeed * 7.31);
         int level = burn > 0.72 + 0.2 * own ? 2 : (burn > 0.3 + 0.2 * own ? 1 : 0);
         if (level > 0) {
@@ -126,8 +128,13 @@ void main() {
     vCol = clouded(vCol, surface, shade);
     vTip = clouded(vTip, surface, shade);
     float sunlight = 0.5 * tone * (1.0 - shade);
+#ifdef FIRE_GRID
+    vCol = charLit(vCol, fireLit(vCol, surface, iRoot, iNormal, sunlight), charred);
+    vTip = charLit(vTip, fireLit(vTip, surface, iRoot, iNormal, sunlight), charred);
+#else
     vCol = fireLit(vCol, surface, iRoot, iNormal, sunlight);
     vTip = fireLit(vTip, surface, iRoot, iNormal, sunlight);
+#endif
     vFlutter = 0.0;
     if (leaf) {
         // Leaves ride the same gusts as the grass, bobbing a pixel or two,

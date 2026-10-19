@@ -71,9 +71,10 @@ struct FrameParams {
   // every frame - spreading, burning the grass, put out by rain - and the
   // grass, the lawn and the fire's flames and light draw from it. Off, none
   // of it is touched. `igniteGrass` sets the grass alight round each world
-  // xz point this frame.
+  // xz point this frame, and `gridStrokes` paints brush strokes into it.
   bool grassFire = false;
   std::vector<glm::vec2> igniteGrass;
+  std::vector<FireGrid::Stroke> gridStrokes;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
 };
@@ -101,6 +102,12 @@ class Renderer {
   int rtW() const { return RenderConfig::kViewW + 2 * RenderConfig::kPad; }
   int rtH() const { return RenderConfig::kViewH + 2 * RenderConfig::kPad; }
   void upload(const Scene& scene);
+  // A point of the window (framebuffer pixels from its top left, `fbW` x
+  // `fbH`) as presented for `camera`: the view ray through it starts at the
+  // returned point on the camera's plane and runs along camera.forward.
+  glm::vec3 rayThrough(const CameraFrame& camera, int fbW, int fbH, glm::vec2 px) const;
+  // And back: where a world point shows in the window.
+  glm::vec2 windowPoint(const CameraFrame& camera, int fbW, int fbH, glm::vec3 world) const;
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
 
   // Centre 640×360 of the low-res target, bottom-up RGBA8. This is the
@@ -206,7 +213,10 @@ class Renderer {
   unsigned progGrass_ = 0;
   unsigned progShadow_ = 0;
   unsigned progPresent_ = 0;
-  unsigned progEdge_ = 0;
+  unsigned progEdge_ = 0;      // this frame's: one of edge_
+  // [grass fire]: [1] adds the grid's glow and darkens charred ground in
+  // the firelight; [0] is the edge pass as it always was.
+  unsigned edge_[2] = {};
   unsigned progWater_ = 0;
   struct ToonPrograms {
     unsigned mesh = 0, grass = 0, water = 0;

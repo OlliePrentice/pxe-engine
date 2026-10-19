@@ -11,6 +11,12 @@ uniform sampler2D uGround;
 uniform vec2 uMin;      // world xz of the grid's corner
 uniform float uTexel;   // metres per burn texel
 uniform float uScale;   // burn texels per cell
+// Regrowth: redrawn only under these strokes (as in gridstep.frag), with a
+// min blend, so the burn lightens where the grass has come back.
+uniform int uRegrow;
+uniform int uStrokeCount;
+uniform vec4 uStroke[8];
+uniform vec2 uStrokeShape[8];
 
 out vec4 oBurn;
 
@@ -35,13 +41,28 @@ float burntCell(ivec2 c) {
     return fuel > 0.0 ? clamp((1.0 - texelFetch(uState, c, 0).g / fuel - 0.01) / 0.99, 0.0, 1.0) : 0.0;
 }
 
+bool regrowing(vec2 cell) {
+    for (int i = 0; i < uStrokeCount; ++i) {
+        if (uStrokeShape[i].y < 1.5) continue;
+        vec2 a = uStroke[i].xy, ab = uStroke[i].zw - uStroke[i].xy;
+        float t = clamp(dot(cell - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+        if (distance(cell, a + ab * t) < uStrokeShape[i].x) return true;
+    }
+    return false;
+}
+
 void main() {
+    if (uRegrow == 1 && !regrowing(gl_FragCoord.xy / uScale)) discard;
     vec2 cell = gl_FragCoord.xy / uScale - 0.5;
     ivec2 i = ivec2(floor(cell));
     vec2 f = cell - vec2(i);
     float b = mix(mix(burntCell(i), burntCell(i + ivec2(1, 0)), f.x),
                   mix(burntCell(i + ivec2(0, 1)), burntCell(i + ivec2(1, 1)), f.x), f.y);
-    if (b <= 0.0) discard;
+    if (b <= 0.0) {
+        if (uRegrow == 0) discard;
+        oBurn = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
     vec2 world = uMin + gl_FragCoord.xy * uTexel;
     float n = 0.65 * noise(world * 2.2) + 0.35 * noise(world * 5.3 + 7.7);
     oBurn = vec4(clamp(b * 1.3 + (n - 0.5) * 0.7 * smoothstep(0.0, 0.3, b), 0.0, 1.0), 0.0, 0.0, 1.0);

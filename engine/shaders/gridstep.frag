@@ -12,6 +12,9 @@ uniform vec2 uWind;         // world xz the wind blows toward, times its strengt
 uniform float uTick;        // steps so far, for the dice
 uniform int uIgniteCount;
 uniform vec2 uIgnite[8];    // cells to set alight, in cell units
+uniform int uStrokeCount;
+uniform vec4 uStroke[8];       // brush strokes, from xy to zw, in cell units
+uniform vec2 uStrokeShape[8];  // radius in cells, kind: 0 fire, 1 water, 2 regrowth
 
 out vec4 oState;
 
@@ -21,6 +24,13 @@ float dice(vec2 c, float t) {
     vec3 p = fract(vec3(c, t) * vec3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yzx + 33.33);
     return fract((p.x + p.y) * p.z);
+}
+
+// How much of a brush stroke covers a point: 1 inside, easing to 0 at its rim.
+float strokeCover(vec2 p, vec4 stroke, float radius) {
+    vec2 a = stroke.xy, ab = stroke.zw - stroke.xy;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    return 1.0 - smoothstep(0.6 * radius, radius, distance(p, a + ab * t));
 }
 
 void main() {
@@ -58,6 +68,28 @@ void main() {
     if (fire <= 0.0 && fuel > 0.1 && dice(vec2(c), uTick) < heat * 0.25 * uDt * dry * g.r) fire = 0.12;
     for (int i = 0; i < uIgniteCount; ++i)
         if (distance(vec2(c) + 0.5, uIgnite[i]) < 2.0 && fuel > 0.1 && wet < 0.5) fire = max(fire, 0.5);
+
+    // Brushes: fire dries the grass and sets it alight in scattered cells
+    // that soon join up; water soaks it and puts fire and embers out;
+    // regrowth brings the grass back and smothers what burns there.
+    for (int i = 0; i < uStrokeCount; ++i) {
+        float w = strokeCover(vec2(c) + 0.5, uStroke[i], uStrokeShape[i].x);
+        if (w <= 0.0) continue;
+        int kind = int(uStrokeShape[i].y + 0.5);
+        if (kind == 0) {
+            wet = max(0.0, wet - w * uDt * 2.0);
+            if (fire <= 0.0 && fuel > 0.1 && wet < 0.5 && dice(vec2(c), uTick + 19.0 + float(i)) < w * 0.6)
+                fire = 0.5;
+        } else if (kind == 1) {
+            wet = max(wet, w);
+            fire = max(0.0, fire - w * uDt * 6.0);
+            ember = max(0.0, ember - w * uDt * 3.0);
+        } else {
+            fuel = min(g.r, fuel + w * uDt * 1.2 * g.r);
+            fire = max(0.0, fire - w * uDt * 6.0);
+            ember = max(0.0, ember - w * uDt * 6.0);
+        }
+    }
 
     // A burning cell flares up, eats its grass and dies down as the grass
     // runs out; rain and wet ground put it out.
