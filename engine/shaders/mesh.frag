@@ -27,12 +27,18 @@ void main() {
                                           : toonTone(vWorld, n);
     vec3 col = toneColour(vSurface, tone);
 #ifdef FIRE_GRID
-    // The lawn under burnt grass is scorched, then charred.
+    // The lawn under burnt grass is scorched, then charred. A burning crown
+    // chars and burns away in holes, and the trunk under it blackens.
     float charred = 0.0;
     if (vSurface == 0) {
         float burn = burnAt(vWorld);
         if (burn > 0.3) col = burntColour(tone, burn > 0.62 ? 2 : 1);
         charred = smoothstep(0.3, 0.75, burn);
+    } else if (vSurface == kSurfLeaf || vSurface == kSurfBark) {
+        float burnt = crownBurnAt(vWorld);
+        if (vSurface == kSurfLeaf && crownGone(burnt, vWorld)) discard;
+        charred = smoothstep(0.15, 0.6, burnt);
+        if (charred > 0.0) col = mix(col, burntColour(tone, 2) * (vSurface == kSurfBark ? 0.8 : 1.0), charred);
     }
     float shade = cloudShade(vWorld);
     col = clouded(col, vSurface, shade);

@@ -171,6 +171,7 @@ Renderer::~Renderer() {
       for (unsigned prog : {t.mesh, t.grass, t.water})
         if (prog) glDeleteProgram(prog);
   if (progShadow_) glDeleteProgram(progShadow_);
+  if (progShadowGrid_) glDeleteProgram(progShadowGrid_);
   if (progPresent_) glDeleteProgram(progPresent_);
   for (unsigned prog : edge_)
     if (prog) glDeleteProgram(prog);
@@ -444,6 +445,7 @@ void Renderer::init() {
     }
   grid_.init(dir);
   progShadow_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag");
+  progShadowGrid_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag", {}, "#define FIRE_GRID\n");
   progPresent_ = linkProgram(dir + "/present.vert", dir + "/present.frag");
   edge_[0] = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
   edge_[1] = linkProgram(dir + "/edge.vert", dir + "/edge.frag", {}, "#define FIRE_GRID\n");
@@ -871,24 +873,35 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glPolygonOffset(2.f, 4.f);
   beginPass(PassTimes::kShadow);
   // Nothing in the scene moves but the light, so while the time of day is
-  // paused (or has not ticked) last frame's shadow map is still right.
-  if (shadowScene_ != &scene || shadowLight_ != lighting.lightDir) {
+  // paused (or has not ticked) last frame's shadow map is still right -
+  // unless a grass fire runs, when crowns may be burning away.
+  const bool crownShadows = params.grassFire && grid_.running();
+  const unsigned progShadow = crownShadows ? progShadowGrid_ : progShadow_;
+  if (crownShadows) {
+    glActiveTexture(GL_TEXTURE10);
+    glBindTexture(GL_TEXTURE_2D, grid_.burnTexture());
+    glUseProgram(progShadow);
+    u1i(progShadow, "uBurn", 10);
+    const glm::vec4 d = grid_.burnDomain();
+    glUniform4f(uloc(progShadow, "uBurnDomain"), d.x, d.y, d.z, d.w);
+  }
+  if (shadowScene_ != &scene || shadowLight_ != lighting.lightDir || crownShadows) {
     glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
     glClear(GL_DEPTH_BUFFER_BIT);
-    glUseProgram(progShadow_);
-    umat(progShadow_, "uLightViewProj", light.viewProj);
+    glUseProgram(progShadow);
+    umat(progShadow, "uLightViewProj", light.viewProj);
     for (const Mesh& m : scene.meshes) m.draw();
     shadowScene_ = &scene;
     shadowLight_ = lighting.lightDir;
   }
   // Lightning's map: drawn once when a flash strikes from a new direction.
-  if (lighting.flash > 0.f && (flashScene_ != &scene || flashLight_ != lighting.flashDir)) {
+  if (lighting.flash > 0.f && (flashScene_ != &scene || flashLight_ != lighting.flashDir || crownShadows)) {
     glBindFramebuffer(GL_FRAMEBUFFER, fboFlash_);
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
     glClear(GL_DEPTH_BUFFER_BIT);
-    glUseProgram(progShadow_);
-    umat(progShadow_, "uLightViewProj", flash.viewProj);
+    glUseProgram(progShadow);
+    umat(progShadow, "uLightViewProj", flash.viewProj);
     for (const Mesh& m : scene.meshes) m.draw();
     flashScene_ = &scene;
     flashLight_ = lighting.flashDir;

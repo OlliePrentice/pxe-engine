@@ -216,6 +216,7 @@ class Renderer {
   unsigned progMesh_ = 0;
   unsigned progGrass_ = 0;
   unsigned progShadow_ = 0;
+  unsigned progShadowGrid_ = 0;  // crowns burning away: reads the grass fire's burn texture
   unsigned progPresent_ = 0;
   unsigned progEdge_ = 0;      // this frame's: one of edge_
   // [grass fire]: [1] adds the grid's glow and darkens charred ground in
