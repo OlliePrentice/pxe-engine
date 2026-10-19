@@ -530,7 +530,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   if (params.fire) {
     const glm::vec2 wind = (glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{0.f}) *
                            0.6f * lighting.windStrength;
-    for (Fire& f : fires_) f.advanceTo(params.time, wind);
+    for (Fire& f : fires_) f.advanceTo(params.time, wind, params.fireLevel, params.fireSmoke);
     if (!fires_.empty() && lighting.fireLight > 0.f)
       fireLight = glm::vec4{fires_[0].base() + glm::vec3{0.f, kFireLightHeight, 0.f}, lighting.fireLight * fires_[0].flicker()};
   }

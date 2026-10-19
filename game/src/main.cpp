@@ -51,6 +51,8 @@ struct Options {
   bool tufts = true;
   bool edges = true;
   bool fire = true;
+  float fireLevel = 1.f;  // captures: how well the campfire burns, and its smoke once out
+  float fireSmoke = 0.f;
   bool rays = true;
   bool fireflies = false;
   float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
@@ -88,6 +90,7 @@ void printUsage() {
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
                "  --no-fire                campfire unlit\n"
+               "  --fire-level L,S         captures: campfire burning at L (0 out .. 1), smoke S once out\n"
                "  --no-rays                no god rays\n"
                "  --fireflies              fireflies out\n"
                "  --no-lightning           no lightning flashes in rain and downpour\n"
@@ -180,6 +183,8 @@ Options parseArgs(int argc, char** argv) {
       opt.rain = std::atof(need("--rain"));
     } else if (a == "--no-fire") {
       opt.fire = false;
+    } else if (a == "--fire-level") {
+      std::sscanf(need("--fire-level"), "%f,%f", &opt.fireLevel, &opt.fireSmoke);
     } else if (a == "--no-rays") {
       opt.rays = false;
     } else if (a == "--fireflies") {
@@ -367,7 +372,7 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
   // full firelight is its midday lit colour pulled toward a golden orange.
   {
     const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
-    lighting.fireLight = 1.5f;
+    lighting.fireLight = 1.5f * clock.fireLevel;
     lighting.fireDim = 0.9f * (1.f - dark);
     lighting.fireReach = 6.f + 3.5f * dark;
     const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
@@ -632,6 +637,9 @@ int main(int argc, char** argv) {
         clock.cloudCover = opt.clouds;
         clock.rain = opt.rain;
         clock.lightning = opt.lightning;
+        clock.fireLevel = opt.fireLevel;
+        clock.fireSmoke = opt.fireSmoke;
+        clock.fireLit = opt.fireLevel > 0.f;
         if (opt.flash > 0.f) {
           // Compass bearing, like the wind: 0 north (-z), 90 east (+x).
           const float az = opt.flashAz * 3.14159265f / 180.f, el = opt.flashEl * 3.14159265f / 180.f;
@@ -643,6 +651,8 @@ int main(int argc, char** argv) {
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
+        params.fireLevel = clock.fireLevel;
+        params.fireSmoke = clock.fireSmoke;
         params.lighting = lightingFor(scene, clock);
         const pxe::CameraFrame frame = draw(params);
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
@@ -734,6 +744,8 @@ int main(int argc, char** argv) {
           params.fire = view.fire;
           params.rays = view.rays;
           params.fireflies = view.fireflies;
+          params.fireLevel = clock.fireLevel;
+          params.fireSmoke = clock.fireSmoke;
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);

@@ -20,6 +20,12 @@ struct WorldClock {
   float windDegrees = 20.f;      // direction the wind blows toward, compass-style
   float rain = 0.f;              // 0 dry, 0.2 drizzle, 0.55 rain, 1 downpour
   bool lightning = true;         // flashes now and then in rain and downpour
+  // The campfire: lit until Rain or Downpour puts it out, then out until
+  // relit from the menu. Its level eases between out (0) and burning (1),
+  // and once out it smokes on for a while (fireSmoke 1 just out .. 0).
+  bool fireLit = true;
+  float fireLevel = 1.f;
+  float fireSmoke = 0.f;
   glm::vec2 cloudOffset{0.f};
 
   // The flash now lighting the scene, 0 none .. 1 at its peak, and the
@@ -32,6 +38,8 @@ struct WorldClock {
   void advance(float dt);
   // A lightning flash now, lighting the scene from a random direction.
   void strike();
+  // Rain at or above this puts the campfire out (and stops it relighting).
+  static constexpr float kRainPutsOutFire = 0.45f;
   // Unit vector, world XZ, the wind blows toward.
   glm::vec2 windDir() const;
 
