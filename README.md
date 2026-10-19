@@ -26,6 +26,10 @@ A small campfire burns on the lawn left of the pond: a scorched dirt patch, a ri
 
 Small lights without shadows (fireflies, candles, and campfires beyond the sixteen brightest) are point lights lit in the post pass, like the firefly light: the CPU cuts the screen into 16-pixel tiles and lists, per tile, the lights whose reach touches it, and each pixel tries only its tile's lights, so hundreds cost little. A campfire that loses its firelight slot to a brighter one fades over a third of a second into a point light (and the other way), so no light jumps. A candle is a fire of a fifth the size: the same flames scaled down, plus a point light that carries about half as far. Rain puts out candles open to the sky in about two seconds; those under a roof burn on. `--candles` stands candles on stone ledges and the lawn of the ruins, and with `--shelter-test` two more under its roof.
 
+Grass fire follows t3ssel8r's fire, rain and grass: the lawn is a grid of quarter-metre cells kept in render textures on the GPU, stepped twenty times a second by fragment-shader passes that ping-pong between two textures. Each cell knows how hard it burns, how much dry grass it has left and how wet it is. A burning cell sets the dry cells round it alight at random, sooner the more fire is near and faster downwind, flares up, eats its grass in a few seconds and dies down, so the fire runs outward as a ragged ring with burnt ground behind it. Burning cells paint a burn texture that only ever darkens, pushed about by a fixed noise so the burnt edge is ragged; the grass and the lawn read it, so blades go a scorched brown and then char black and burn down to stubble, each at its own point. The flames are drawn straight from the grid into the campfire's heat buffer and cut into the same flame colours: per burning cell a low glow and two short tongues that step at 12 fps, now and then a puff of smoke, sparks flying up, and a few red embers glowing on the burnt ground after. Each burning patch of two metres lights the scene through a point light of its own, set at the middle of its fire, which glides as the fire moves; the grid is read back a step late without stalling, and everything drawn from it is blended between its last two steps, so the light changes smoothly every frame. Rain soaks every cell open to the sky and puts the fire out in three or four seconds; wet grass will not catch, and cells under a roof stay dry. `--grass-fire X,Z` sets the lawn alight at a point (it can be given more than once; the ruins' campfire lawn is at about -6,-2), G does it at the middle of the view, and `--rain-from S` keeps a `--settle` run dry for S seconds before the `--rain` starts. Without a grass fire none of it runs and the scene is drawn by the same shaders as before.
+
+A fireball, like the one t3ssel8r rolls through his grass, spreads the fire wherever you take it. F sets one rolling from the middle of the view, away up the screen; I, J, K and L push it up, left, down and right on screen, and the view follows it (C toggles that; panning stops it). It rolls over the ground and down slopes of its own accord, slides along and bounces off anything standing more than a step high, and sets the grass alight along its track. It is a small fire whose base moves with it, so its flames trail behind and its light moves smoothly with it. Rain puts it out in about two seconds, and rolling into the pond at once; it rolls to a stop, smokes and is gone. `--fireball X,Z,DEG[,TURN]` rolls one for captures and the bench, from X,Z pushed toward compass bearing DEG and turning TURN degrees a second (`-6,-1,90,-50` loops round the campfire).
+
 No lightning or god rays.
 
 ## The Blender scene
@@ -81,6 +85,10 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 | R | Cycle rain: none, drizzle, rain, downpour |
 | L | Lightning strike now |
 | M | Sound on/off |
+| G | Set the grass alight at the middle of the view |
+| F | Roll a fireball from the middle of the view |
+| I / J / K / L | Push the fireball up, left, down, right on screen |
+| C | Follow the fireball with the view, or stop |
 | [ / ] | Halve or double the speed of time |
 | WASD or arrows | Pan along the ground |
 | Shift | Pan faster |
@@ -94,6 +102,7 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 ```text
 pxe [--capture out.png] [--window-png out.png]
     [--scene ruins|hills] [--hour H] [--clouds C] [--rain R] [--no-fire] [--fire-level L,S] [--no-rays] [--fireflies] [--no-lightning] [--flash AZ,EL[,LEVEL]] [--mute] [--audio-wav out.wav] [--wind DEG] [--wind-strength S]
+    [--shelter-test] [--extra-fires N] [--candles] [--grass-fire X,Z] [--fireball X,Z,DEG[,TURN]] [--settle S] [--rain-from S]
     [--menu] [--ui-shot out.png]
     [--bench N] [--bench-paused]
     [--yaw degrees] [--slide metres] [--target x,y,z]

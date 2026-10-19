@@ -36,6 +36,8 @@ class Camera {
   Camera();
 
   void setTarget(glm::vec3 target);
+  // Ease toward `target`, as a pan does, rather than jump there.
+  void follow(glm::vec3 target) { rawPos_ = target; }
   void nudgeImmediate(glm::vec3 delta);
   void setYawRadians(float yaw);
 

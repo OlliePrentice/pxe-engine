@@ -7,8 +7,10 @@ add_library(pxe_engine
   src/gltf.cpp
   src/lighting.cpp
   src/fire.cpp
+  src/firegrid.cpp
   src/fireflies.cpp
   src/shelter.cpp
+  src/heightmap.cpp
 )
 
 target_include_directories(pxe_engine

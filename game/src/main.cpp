@@ -1,4 +1,5 @@
 #include "audio.hpp"
+#include "fireball.hpp"
 #include "scene.hpp"
 #include "settings.hpp"
 
@@ -56,6 +57,12 @@ struct Options {
   bool shelterTest = false;
   int extraFires = 0;
   bool candles = false;
+  std::vector<glm::vec2> grassFires;  // world xz to set the lawn alight at the start
+  // A fireball rolled from x,z (y), pushed toward compass heading z degrees,
+  // turning w degrees a second.
+  bool haveFireball = false;
+  glm::vec4 fireball{0.f};
+  float rainFrom = -1.f;  // captures with --settle: dry until this many seconds in, then --rain
   float settle = 0.f;  // captures: seconds of weather run first, the hour held
   bool rays = true;
   bool fireflies = false;
@@ -99,6 +106,10 @@ void printUsage() {
                "  --extra-fires N          ruins: N bare flames over the lawn, to test many fires\n"
                "  --candles                ruins: candles on the stonework and the lawn (and under the --shelter-test roof)\n"
                "  --settle S               captures: run the weather S seconds first (rain puts fires out)\n"
+               "  --grass-fire X,Z         set the grass alight at world X,Z (repeatable; G does it at the view's centre)\n"
+               "  --rain-from S            with --settle: dry for S seconds, then --rain\n"
+               "  --fireball X,Z,DEG[,TURN]  roll a fireball from X,Z pushed toward compass DEG, turning TURN deg/s\n"
+               "                           (play: F launches one, I J K L steer, C follows it)\n"
                "  --no-rays                no god rays\n"
                "  --fireflies              fireflies out\n"
                "  --no-lightning           no lightning flashes in rain and downpour\n"
@@ -195,6 +206,22 @@ Options parseArgs(int argc, char** argv) {
       opt.settle = static_cast<float>(std::atof(need("--settle")));
     } else if (a == "--extra-fires") {
       opt.extraFires = std::atoi(need("--extra-fires"));
+    } else if (a == "--grass-fire") {
+      glm::vec2 p{0.f};
+      if (std::sscanf(need("--grass-fire"), "%f,%f", &p.x, &p.y) != 2) {
+        std::fprintf(stderr, "bad --grass-fire, expected x,z\n");
+        std::exit(1);
+      }
+      opt.grassFires.push_back(p);
+    } else if (a == "--fireball") {
+      if (std::sscanf(need("--fireball"), "%f,%f,%f,%f", &opt.fireball.x, &opt.fireball.y, &opt.fireball.z,
+                      &opt.fireball.w) < 3) {
+        std::fprintf(stderr, "bad --fireball, expected x,z,heading[,turn]\n");
+        std::exit(1);
+      }
+      opt.haveFireball = true;
+    } else if (a == "--rain-from") {
+      opt.rainFrom = static_cast<float>(std::atof(need("--rain-from")));
     } else if (a == "--candles") {
       opt.candles = true;
     } else if (a == "--shelter-test") {
@@ -264,6 +291,10 @@ struct Input {
   bool strike = false;
   bool toggleSound = false;
   bool togglePause = false;
+  bool igniteGrass = false;
+  bool launchFireball = false;
+  bool follow = false;
+  glm::vec2 steer{0.f};  // fireball push: x screen right, y screen up
   int speedSteps = 0;  // +1 doubles, -1 halves
   bool shot = false;
   bool quit = false;
@@ -299,6 +330,15 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken) {
   if (pressed(win, GLFW_KEY_L, lkey)) in.strike = true;
   static bool mkey = false;
   if (pressed(win, GLFW_KEY_M, mkey)) in.toggleSound = true;
+  static bool gkey = false;
+  if (pressed(win, GLFW_KEY_G, gkey)) in.igniteGrass = true;
+  static bool fkey = false, ckey = false;
+  if (pressed(win, GLFW_KEY_F, fkey)) in.launchFireball = true;
+  if (pressed(win, GLFW_KEY_C, ckey)) in.follow = true;
+  if (down(GLFW_KEY_L)) in.steer.x += 1.f;
+  if (down(GLFW_KEY_J)) in.steer.x -= 1.f;
+  if (down(GLFW_KEY_I)) in.steer.y += 1.f;
+  if (down(GLFW_KEY_K)) in.steer.y -= 1.f;
   if (pressed(win, GLFW_KEY_LEFT_BRACKET, slower)) in.speedSteps -= 1;
   if (pressed(win, GLFW_KEY_RIGHT_BRACKET, faster)) in.speedSteps += 1;
   if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
@@ -432,6 +472,21 @@ std::vector<pxe::FireDraw> fireDraws(const game::WorldClock& clock) {
   return draws;
 }
 
+// Compass degrees (0 north, -z; 90 east, +x) to a world xz direction.
+glm::vec2 compass(float degrees) {
+  const float a = degrees * 3.14159265f / 180.f;
+  return {std::sin(a), -std::cos(a)};
+}
+
+// The --fireball roll for captures and the bench: launched on the first
+// frame, then pushed along its heading as it turns.
+void scriptFireball(const Options& opt, game::Fireball& ball, game::WorldClock& clock, const pxe::Scene& scene,
+                    int frame, float dt, std::vector<glm::vec2>& ignite) {
+  if (!opt.haveFireball) return;
+  if (frame == 0) ball.launch(clock, scene, {opt.fireball.x, opt.fireball.y}, compass(opt.fireball.z));
+  ball.update(clock, scene, dt, compass(opt.fireball.z + opt.fireball.w * static_cast<float>(frame) * dt), ignite);
+}
+
 pxe::FrameParams makeParams(const Options& opt) {
   pxe::FrameParams params;
   params.framebufferW = opt.width;
@@ -446,6 +501,7 @@ pxe::FrameParams makeParams(const Options& opt) {
   params.fire = opt.fire;
   params.rays = opt.rays;
   params.fireflies = opt.fireflies;
+  params.grassFire = !opt.grassFires.empty() || opt.haveFireball;
   params.present = true;
   return params;
 }
@@ -627,6 +683,7 @@ int main(int argc, char** argv) {
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
         clock.placeFires(scene.fires);
+        game::Fireball ball;
         // Per-pass GPU timers block every frame and, on macOS's GL-on-Metal,
         // under-report; they are opt-in. The wall-clock figure is the one to trust.
         const bool passes = std::getenv("PXE_BENCH_PASSES") != nullptr;
@@ -644,6 +701,8 @@ int main(int argc, char** argv) {
           // Advance the day as the game does at default speed, so the sun
           // moves and the shadow map is redrawn every frame (unless paused).
           if (!opt.benchPaused) clock.advance(1.f / 60.f);
+          if (f == 0) params.igniteGrass = opt.grassFires;
+          scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
           params.fires = fireDraws(clock);
           params.lighting = lightingFor(scene, clock);
           draw(params);
@@ -668,6 +727,7 @@ int main(int argc, char** argv) {
         clock.rain = opt.rain;
         clock.lightning = opt.lightning;
         clock.placeFires(scene.fires);
+        game::Fireball ball;
         for (game::WorldClock::Fire& f : clock.fires) {
           f.level = opt.fireLevel;
           f.smoke = opt.fireSmoke;
@@ -682,11 +742,14 @@ int main(int argc, char** argv) {
           clock.lightning = false;
           const int frames = static_cast<int>(std::ceil(opt.settle * 60.f));
           for (int f = 0; f < frames; ++f) {
+            if (opt.rainFrom >= 0.f) clock.rain = static_cast<float>(f) / 60.f < opt.rainFrom ? 0.f : opt.rain;
             clock.advance(1.f / 60.f);
             pxe::FrameParams params = makeParams(opt);
             params.framebufferW = fbW;
             params.framebufferH = fbH;
             params.time = opt.time + static_cast<float>(f) / 60.f;
+            if (f == 0) params.igniteGrass = opt.grassFires;
+            scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
             params.fires = fireDraws(clock);
             params.lighting = lightingFor(scene, clock);
             draw(params);
@@ -695,6 +758,9 @@ int main(int argc, char** argv) {
           clock.lightning = lightning;
           for (const game::WorldClock::Fire& f : clock.fires)
             std::fprintf(stderr, "pxe: fire %s, level %.2f, smoke %.2f\n", f.lit ? "lit" : "out", f.level, f.smoke);
+          if (opt.haveFireball)
+            std::fprintf(stderr, "pxe: fireball %s at %.2f, %.2f, %.2f\n", ball.alive() ? "rolling" : "gone", ball.position().x,
+                         ball.position().y, ball.position().z);
         }
         if (opt.flash > 0.f) {
           // Compass bearing, like the wind: 0 north (-z), 90 east (+x).
@@ -707,8 +773,15 @@ int main(int argc, char** argv) {
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
+        if (opt.settle > 0.f) {
+          params.time = opt.time + std::ceil(opt.settle * 60.f) / 60.f;
+          scriptFireball(opt, ball, clock, scene, static_cast<int>(std::ceil(opt.settle * 60.f)), 1.f / 60.f,
+                         params.igniteGrass);
+        } else {
+          params.igniteGrass = opt.grassFires;
+          scriptFireball(opt, ball, clock, scene, 0, 1.f / 60.f, params.igniteGrass);
+        }
         params.fires = fireDraws(clock);
-        if (opt.settle > 0.f) params.time = opt.time + std::ceil(opt.settle * 60.f) / 60.f;
         params.lighting = lightingFor(scene, clock);
         const pxe::CameraFrame frame = draw(params);
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
@@ -759,6 +832,15 @@ int main(int argc, char** argv) {
         float fpsTime = 0.f;
         int fpsFrames = 0;
         int frameCount = 0;
+        bool grassFire = !opt.grassFires.empty() || opt.haveFireball;
+        std::vector<glm::vec2> ignite = opt.grassFires;
+        game::Fireball ball;
+        bool following = false;
+        pxe::CameraFrame lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
+        if (opt.haveFireball) {
+          ball.launch(clock, scene, {opt.fireball.x, opt.fireball.y}, compass(opt.fireball.z));
+          following = true;
+        }
         double previous = glfwGetTime();
         while (!glfwWindowShouldClose(window)) {
           const double now = glfwGetTime();
@@ -779,11 +861,32 @@ int main(int argc, char** argv) {
           if (input.togglePause) clock.paused = !clock.paused;
           if (input.strike) clock.strike();
           if (input.toggleSound) sound.on = !sound.on;
+          if (input.igniteGrass) {
+            grassFire = true;
+            ignite.push_back({camera.target().x, camera.target().z});
+          }
           if (input.cycleRain) clock.rain = clock.rain <= 0.f ? 0.2f : clock.rain < 0.5f ? 0.55f : clock.rain < 0.9f ? 1.f : 0.f;
           if (input.speedSteps)
             clock.hoursPerMinute = std::clamp(clock.hoursPerMinute * std::pow(2.f, static_cast<float>(input.speedSteps)),
                                               1.f / 60.f, 120.f);
           clock.advance(dt);
+          // The fireball: F sets one rolling from the middle of the view,
+          // away up the screen; I J K L push it up, left, down and right on
+          // screen; the view follows it (C toggles) until you pan away.
+          {
+            glm::vec2 right{lastFrame.right.x, lastFrame.right.z}, up{lastFrame.forward.x, lastFrame.forward.z};
+            if (glm::length(right) > 1e-4f) right = glm::normalize(right);
+            if (glm::length(up) > 1e-4f) up = glm::normalize(up);
+            if (input.launchFireball) {
+              ball.launch(clock, scene, {camera.target().x, camera.target().z}, up);
+              grassFire = true;
+              following = true;
+            }
+            if (input.follow) following = !following;
+            if (input.panX != 0.f || input.panY != 0.f) following = false;
+            ball.update(clock, scene, dt, right * input.steer.x + up * input.steer.y, ignite);
+            if (ball.alive() && following) camera.follow(ball.position());
+          }
           if (input.toggleGrass) view.grass = !view.grass;
           if (input.toggleMagenta) magenta = !magenta;
           if (input.toggleNdl) ndl = !ndl;
@@ -802,11 +905,15 @@ int main(int argc, char** argv) {
           params.rays = view.rays;
           params.fireflies = view.fireflies;
           params.fires = fireDraws(clock);
+          params.grassFire = grassFire;
+          params.igniteGrass = std::move(ignite);
+          ignite.clear();
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
           params.lighting = lightingFor(scene, clock);
           const pxe::CameraFrame frame = draw(params);
+          lastFrame = frame;
           // Weather sound follows the settings; each new flash queues its
           // thunder, panned toward the side of the screen it lit from.
           audio.setVolumes(sound);
@@ -829,7 +936,7 @@ int main(int argc, char** argv) {
           char title[200];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD pan   Q/E yaw   F4 capture",
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD pan   Q/E yaw   G grass fire   F fireball, IJKL roll   F4 capture",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
           (void)frame;

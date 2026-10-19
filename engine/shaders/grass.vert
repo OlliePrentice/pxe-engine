@@ -107,6 +107,21 @@ void main() {
     }
     int i = surface * 3;
     vTip = rampColour(uTip[i], uTip[i + 1], uTip[i + 2], tone);
+#ifdef FIRE_GRID
+    // Grass the fire has passed over: scorched brown, then charred black and
+    // burnt down to stubble. Each blade turns at its own point, so the edge
+    // of the burn is ragged.
+    if (!leaf) {
+        float burn = burnAt(iRoot);
+        float own = fract(vSeed * 7.31);
+        int level = burn > 0.72 + 0.2 * own ? 2 : (burn > 0.3 + 0.2 * own ? 1 : 0);
+        if (level > 0) {
+            vCol = burntColour(tone, level);
+            vTip = level == 2 ? vCol : burntColour(min(tone + 1.0, 2.0), 1);
+            vScale *= level == 2 ? 0.35 : 0.8;
+        }
+    }
+#endif
     float shade = cloudShade(iRoot);
     vCol = clouded(vCol, surface, shade);
     vTip = clouded(vTip, surface, shade);

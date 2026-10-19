@@ -1,0 +1,433 @@
+#include "pxe/firegrid.hpp"
+#include "pxe/renderer.hpp"
+
+#include "gl.hpp"
+#include "shader.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+namespace pxe {
+namespace {
+
+constexpr int kIgniteMax = 8;
+// Per cell the flame shader draws a glow, two flames, a puff of smoke and an ember.
+constexpr int kParts = 5;
+// The light from a patch of burning cells: it shines from this high, and
+// at full strength once this many cells burn fully in it. Patches' lights
+// overlap several deep, so each is a share of a campfire's.
+constexpr float kLightHeight = 0.45f;
+constexpr float kFullPatch = 16.f;
+constexpr float kPatchLight = 0.3f;
+
+int uloc(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
+
+unsigned makeTexture(int w, int h, int internal, int format, int type, const void* data, int filter) {
+  unsigned tex = 0;
+  glGenTextures(1, &tex);
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glTexImage2D(GL_TEXTURE_2D, 0, internal, w, h, 0, static_cast<GLenum>(format), static_cast<GLenum>(type), data);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  return tex;
+}
+
+unsigned makeFbo(unsigned tex) {
+  unsigned fbo = 0;
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+  const unsigned draw = GL_COLOR_ATTACHMENT0;
+  glDrawBuffers(1, &draw);
+  return fbo;
+}
+
+}  // namespace
+
+FireGrid::~FireGrid() {
+  destroy();
+  for (unsigned prog : {progStep_, progBurn_, progSum_, progFlame_})
+    if (prog) glDeleteProgram(prog);
+  if (vao_) glDeleteVertexArrays(1, &vao_);
+  if (flameVao_) glDeleteVertexArrays(1, &flameVao_);
+  if (flameVbo_) glDeleteBuffers(1, &flameVbo_);
+}
+
+void FireGrid::init(const std::string& dir) {
+  progStep_ = linkProgram(dir + "/edge.vert", dir + "/gridstep.frag");
+  progBurn_ = linkProgram(dir + "/edge.vert", dir + "/gridburn.frag");
+  progSum_ = linkProgram(dir + "/edge.vert", dir + "/gridsum.frag");
+  progFlame_ = linkProgram(dir + "/gridflame.vert", dir + "/fire.frag");
+  glGenVertexArrays(1, &vao_);
+  glGenVertexArrays(1, &flameVao_);
+  glGenBuffers(1, &flameVbo_);
+  glBindVertexArray(flameVao_);
+  glBindBuffer(GL_ARRAY_BUFFER, flameVbo_);
+  glBufferData(GL_ARRAY_BUFFER, 0, nullptr, GL_DYNAMIC_DRAW);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 2, reinterpret_cast<void*>(0));
+  glVertexAttribDivisor(0, 1);
+  glBindVertexArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void FireGrid::destroy() {
+  unsigned textures[] = {ground_, state_[0], state_[1], burn_, patches_};
+  glDeleteTextures(5, textures);
+  unsigned fbos[] = {fbo_[0], fbo_[1], fboBurn_, fboPatches_};
+  glDeleteFramebuffers(4, fbos);
+  if (pbo_[0]) glDeleteBuffers(2, pbo_);
+  ground_ = state_[0] = state_[1] = burn_ = patches_ = 0;
+  fbo_[0] = fbo_[1] = fboBurn_ = fboPatches_ = 0;
+  pbo_[0] = pbo_[1] = 0;
+}
+
+void FireGrid::build(const Scene& scene, float rain) {
+  destroy();
+  // The grid covers the lawn: every blade clump and tuft, a metre round.
+  glm::vec2 lo{1e9f}, hi{-1e9f};
+  for (const GrassInstance& g : scene.grass) {
+    if (g.kind > 1.5f) continue;
+    lo = glm::min(lo, glm::vec2{g.px, g.pz});
+    hi = glm::max(hi, glm::vec2{g.px, g.pz});
+  }
+  if (lo.x > hi.x) lo = hi = glm::vec2{0.f};
+  min_ = lo - 1.f;
+  w_ = std::max(1, static_cast<int>(std::ceil((hi.x + 1.f - min_.x) / kCell)));
+  h_ = std::max(1, static_cast<int>(std::ceil((hi.y + 1.f - min_.y) / kCell)));
+  pw_ = (w_ + kPatch - 1) / kPatch;
+  ph_ = (h_ + kPatch - 1) / kPatch;
+
+  // A cell with grass rooted in it has fuel. Cells the scatter happened to
+  // miss inside a lawn are filled in from their neighbours, so a fire does
+  // not stop at a gap a blade wide.
+  const auto cells = static_cast<std::size_t>(w_ * h_);
+  std::vector<int> count(cells, 0);
+  std::vector<float> sumY(cells, 0.f);
+  for (const GrassInstance& g : scene.grass) {
+    if (g.kind > 1.5f) continue;
+    const int x = std::clamp(static_cast<int>((g.px - min_.x) / kCell), 0, w_ - 1);
+    const int z = std::clamp(static_cast<int>((g.pz - min_.y) / kCell), 0, h_ - 1);
+    ++count[static_cast<std::size_t>(z * w_ + x)];
+    sumY[static_cast<std::size_t>(z * w_ + x)] += g.py;
+  }
+  std::vector<float> fuel(cells, 0.f);
+  height_.assign(cells, 0.f);
+  for (int z = 0; z < h_; ++z)
+    for (int x = 0; x < w_; ++x) {
+      const auto i = static_cast<std::size_t>(z * w_ + x);
+      if (count[i] > 0) {
+        fuel[i] = 1.f;
+        height_[i] = sumY[i] / static_cast<float>(count[i]);
+        continue;
+      }
+      int around = 0;
+      float y = 0.f;
+      for (int dz = -1; dz <= 1; ++dz)
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int qx = x + dx, qz = z + dz;
+          if (qx < 0 || qz < 0 || qx >= w_ || qz >= h_) continue;
+          const auto q = static_cast<std::size_t>(qz * w_ + qx);
+          if (count[q] == 0) continue;
+          ++around;
+          y += sumY[q] / static_cast<float>(count[q]);
+        }
+      if (around >= 4) {
+        fuel[i] = 0.7f;
+        height_[i] = y / static_cast<float>(around);
+      }
+    }
+  // Ground: fuel, whether a roof keeps the rain off, ground height. State:
+  // fire, fuel left, wetness, embers. Ground already soaked if it is raining.
+  std::vector<float> ground(cells * 4, 0.f), state(cells * 4, 0.f);
+  for (int z = 0; z < h_; ++z)
+    for (int x = 0; x < w_; ++x) {
+      const auto i = static_cast<std::size_t>(z * w_ + x);
+      const glm::vec3 p{min_.x + (static_cast<float>(x) + 0.5f) * kCell, height_[i],
+                        min_.y + (static_cast<float>(z) + 0.5f) * kCell};
+      const bool roofed = fuel[i] > 0.f && scene.shelter.sheltered(p);
+      ground[i * 4 + 0] = fuel[i];
+      ground[i * 4 + 1] = roofed ? 1.f : 0.f;
+      ground[i * 4 + 2] = height_[i];
+      state[i * 4 + 1] = fuel[i];
+      state[i * 4 + 2] = roofed ? 0.f : std::clamp(2.f * rain, 0.f, 1.f);
+    }
+  ground_ = makeTexture(w_, h_, GL_RGBA32F, GL_RGBA, GL_FLOAT, ground.data(), GL_NEAREST);
+  for (int i = 0; i < 2; ++i) {
+    state_[i] = makeTexture(w_, h_, GL_RGBA16F, GL_RGBA, GL_FLOAT, state.data(), GL_NEAREST);
+    fbo_[i] = makeFbo(state_[i]);
+  }
+  std::vector<std::uint8_t> clear(cells * kBurnScale * kBurnScale, 0);
+  burn_ = makeTexture(w_ * kBurnScale, h_ * kBurnScale, GL_R8, GL_RED, GL_UNSIGNED_BYTE, clear.data(), GL_LINEAR);
+  fboBurn_ = makeFbo(burn_);
+  patches_ = makeTexture(pw_, ph_, GL_RGBA32F, GL_RGBA, GL_FLOAT, nullptr, GL_NEAREST);
+  fboPatches_ = makeFbo(patches_);
+  glGenBuffers(2, pbo_);
+  for (unsigned pbo : pbo_) {
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo);
+    glBufferData(GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(pw_ * ph_ * 4 * sizeof(float)), nullptr, GL_STREAM_READ);
+  }
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  if (std::getenv("PXE_FIRE_DEBUG"))
+    std::fprintf(stderr, "pxe: grass fire grid %dx%d cells from (%.1f, %.1f), %dx%d patches\n", w_, h_, min_.x, min_.y, pw_,
+                 ph_);
+  scene_ = &scene;
+  cur_ = 0;
+  tick_ = 0;
+  reads_ = 0;
+  lastTime_ = -1.f;
+  patchPrev_.assign(static_cast<std::size_t>(pw_ * ph_ * 4), 0.f);
+  patchCur_ = patchPrev_;
+  active_.clear();
+  ignite_.clear();
+}
+
+void FireGrid::advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite, float rain,
+                       glm::vec2 wind) {
+  if (scene_ != &scene) build(scene, rain);
+  ignite_.insert(ignite_.end(), ignite.begin(), ignite.end());
+  // Steps run ahead of the frame: the latest is at or just after `time`,
+  // and what is drawn is blended from the one before it. A first frame, or
+  // a jump in time, takes one step now.
+  if (lastTime_ < 0.f || time < lastTime_ || time - lastTime_ > 0.5f) stepTime_ = time - kStep;
+  lastTime_ = time;
+  for (int n = 0; stepTime_ < time && n < 4; ++n) {
+    step(rain, wind);
+    stepTime_ += kStep;
+  }
+  if (stepTime_ < time) stepTime_ = time;  // fell behind: carry on from here
+
+  // Patches to draw flames over: those burning or glowing at the last
+  // readback, their neighbours (fire may have crossed since), and any just
+  // set alight.
+  std::vector<char> want(static_cast<std::size_t>(pw_ * ph_), 0);
+  for (int pz = 0; pz < ph_; ++pz)
+    for (int px = 0; px < pw_; ++px) {
+      const auto i = static_cast<std::size_t>((pz * pw_ + px) * 4);
+      if (patchCur_[i] <= 0.f && patchCur_[i + 3] <= 0.f) continue;
+      for (int dz = -1; dz <= 1; ++dz)
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int qx = px + dx, qz = pz + dz;
+          if (qx >= 0 && qz >= 0 && qx < pw_ && qz < ph_) want[static_cast<std::size_t>(qz * pw_ + qx)] = 1;
+        }
+    }
+  for (const glm::vec2& p : recentIgnite_) {
+    const int px = static_cast<int>((p.x - min_.x) / (kCell * kPatch));
+    const int pz = static_cast<int>((p.y - min_.y) / (kCell * kPatch));
+    if (px >= 0 && pz >= 0 && px < pw_ && pz < ph_) want[static_cast<std::size_t>(pz * pw_ + px)] = 1;
+  }
+  active_.clear();
+  for (int i = 0; i < pw_ * ph_; ++i)
+    if (want[static_cast<std::size_t>(i)]) active_.push_back(i);
+  blend_ = std::clamp(1.f - (stepTime_ - time) / kStep, 0.f, 1.f);
+}
+
+void FireGrid::step(float rain, glm::vec2 wind) {
+  glDisable(GL_BLEND);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+  glBindVertexArray(vao_);
+
+  // The automaton: the latest state in, the next one out.
+  const int next = 1 - cur_;
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo_[next]);
+  glViewport(0, 0, w_, h_);
+  glUseProgram(progStep_);
+  glActiveTexture(GL_TEXTURE11);
+  glBindTexture(GL_TEXTURE_2D, state_[cur_]);
+  glActiveTexture(GL_TEXTURE12);
+  glBindTexture(GL_TEXTURE_2D, ground_);
+  glUniform1i(uloc(progStep_, "uState"), 11);
+  glUniform1i(uloc(progStep_, "uGround"), 12);
+  glUniform1f(uloc(progStep_, "uDt"), kStep);
+  glUniform1f(uloc(progStep_, "uRain"), rain);
+  glUniform2f(uloc(progStep_, "uWind"), wind.x, wind.y);
+  glUniform1f(uloc(progStep_, "uTick"), static_cast<float>(tick_ % 4096));
+  std::vector<float> cells;
+  for (const glm::vec2& p : ignite_) {
+    if (static_cast<int>(cells.size()) >= 2 * kIgniteMax) break;
+    cells.push_back((p.x - min_.x) / kCell);
+    cells.push_back((p.y - min_.y) / kCell);
+  }
+  glUniform1i(uloc(progStep_, "uIgniteCount"), static_cast<int>(cells.size() / 2));
+  if (!cells.empty()) glUniform2fv(uloc(progStep_, "uIgnite"), static_cast<GLsizei>(cells.size() / 2), cells.data());
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  // Grass burns only in the patches near the fire, so only those can need
+  // painting: the ones burning at the last readback and round them, and any
+  // being set alight.
+  int lo[2] = {pw_, ph_}, hi[2] = {-1, -1};
+  auto take = [&](int px, int pz) {
+    lo[0] = std::min(lo[0], px - 1);
+    lo[1] = std::min(lo[1], pz - 1);
+    hi[0] = std::max(hi[0], px + 1);
+    hi[1] = std::max(hi[1], pz + 1);
+  };
+  for (int i : active_) take(i % pw_, i / pw_);
+  for (const glm::vec2& p : ignite_)
+    take(static_cast<int>((p.x - min_.x) / (kCell * kPatch)), static_cast<int>((p.y - min_.y) / (kCell * kPatch)));
+  recentIgnite_ = ignite_;
+  ignite_.clear();
+  cur_ = next;
+  ++tick_;
+
+  // Burning cells paint the burn texture; it keeps the darkest it has seen.
+  glBindFramebuffer(GL_FRAMEBUFFER, fboBurn_);
+  glViewport(0, 0, w_ * kBurnScale, h_ * kBurnScale);
+  glUseProgram(progBurn_);
+  glActiveTexture(GL_TEXTURE11);
+  glBindTexture(GL_TEXTURE_2D, state_[cur_]);
+  glUniform1i(uloc(progBurn_, "uState"), 11);
+  glUniform1i(uloc(progBurn_, "uGround"), 12);
+  glUniform2f(uloc(progBurn_, "uMin"), min_.x, min_.y);
+  glUniform1f(uloc(progBurn_, "uTexel"), kCell / kBurnScale);
+  glUniform1f(uloc(progBurn_, "uScale"), static_cast<float>(kBurnScale));
+  if (hi[0] >= lo[0]) {
+    const int texels = kPatch * kBurnScale;
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(lo[0] * texels, lo[1] * texels, (hi[0] - lo[0] + 1) * texels, (hi[1] - lo[1] + 1) * texels);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_MAX);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBlendEquation(GL_FUNC_ADD);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+  }
+
+  // Each patch's fire summed, for its light.
+  glBindFramebuffer(GL_FRAMEBUFFER, fboPatches_);
+  glViewport(0, 0, pw_, ph_);
+  glUseProgram(progSum_);
+  glUniform1i(uloc(progSum_, "uState"), 11);
+  glUniform2f(uloc(progSum_, "uMin"), min_.x, min_.y);
+  glUniform1f(uloc(progSum_, "uCell"), kCell);
+  glUniform1i(uloc(progSum_, "uPatch"), kPatch);
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+  readPatches();
+
+  glBindVertexArray(0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glEnable(GL_DEPTH_TEST);
+}
+
+void FireGrid::readPatches() {
+  // Read back a step late through a pixel buffer, so the CPU never waits on
+  // the GPU. The first readback waits, so a fire lights up at once.
+  const auto n = static_cast<std::size_t>(pw_ * ph_ * 4);
+  patchPrev_ = patchCur_;
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  if (reads_ == 0) {
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadPixels(0, 0, pw_, ph_, GL_RGBA, GL_FLOAT, patchCur_.data());
+    std::fill(patchPrev_.begin(), patchPrev_.end(), 0.f);
+  } else {
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_[(reads_ - 1) % 2]);
+    if (const void* mapped = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, static_cast<GLsizeiptr>(n * sizeof(float)),
+                                              GL_MAP_READ_BIT)) {
+      std::memcpy(patchCur_.data(), mapped, n * sizeof(float));
+      glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    }
+  }
+  if (std::getenv("PXE_FIRE_DEBUG") && tick_ % 20 == 0) {
+    float fire = 0.f, embers = 0.f;
+    int burning = 0;
+    for (std::size_t i = 0; i < n; i += 4) {
+      fire += patchCur_[i];
+      embers += patchCur_[i + 3];
+      burning += patchCur_[i] > 0.f;
+    }
+    std::fprintf(stderr, "pxe: grass fire step %lld, %d patches burning, fire %.1f cells, embers %.1f\n", tick_, burning,
+                 fire, embers);
+  }
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo_[reads_ % 2]);
+  glReadPixels(0, 0, pw_, ph_, GL_RGBA, GL_FLOAT, nullptr);
+  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  ++reads_;
+}
+
+void FireGrid::addLights(std::vector<PointLight>& out, float fireLight, float fireReach, float time) const {
+  if (!running()) return;
+  const std::size_t first = out.size();
+  for (int i = 0; i < pw_ * ph_; ++i) {
+    const float* a = &patchPrev_[static_cast<std::size_t>(i * 4)];
+    const float* b = &patchCur_[static_cast<std::size_t>(i * 4)];
+    const float sum = a[0] + (b[0] - a[0]) * blend_;
+    if (sum < 0.02f) continue;
+    // The patch's fire-weighted middle, which glides as the fire moves.
+    const glm::vec2 ca = a[0] > 1e-4f ? glm::vec2{a[1], a[2]} / a[0] : glm::vec2{b[1], b[2]} / b[0];
+    const glm::vec2 cb = b[0] > 1e-4f ? glm::vec2{b[1], b[2]} / b[0] : ca;
+    const glm::vec2 c = ca + (cb - ca) * blend_;
+    const int x = std::clamp(static_cast<int>((c.x - min_.x) / kCell), 0, w_ - 1);
+    const int z = std::clamp(static_cast<int>((c.y - min_.y) / kCell), 0, h_ - 1);
+    const float full = std::min(sum / kFullPatch, 1.f);
+    // A slow, smooth breathing of its own, like a campfire's.
+    const float k = static_cast<float>(i);
+    const float flicker = 0.9f + 0.06f * std::sin(time * 6.3f + k * 1.7f) + 0.04f * std::sin(time * 11.1f + k * 0.6f);
+    out.push_back({{c.x, height_[static_cast<std::size_t>(z * w_ + x)] + kLightHeight, c.y},
+                   fireReach * (0.45f + 0.25f * full), kPatchLight * fireLight * full * flicker, PointLight::kFire});
+  }
+  if (const char* debug = std::getenv("PXE_FIRE_DEBUG"); debug && debug[0] == '2') {
+    float sum = 0.f, unflickered = 0.f;
+    glm::vec3 mid{0.f};
+    for (std::size_t i = first; i < out.size(); ++i) {
+      sum += out[i].strength;
+      mid += out[i].pos * out[i].strength;
+    }
+    for (int i = 0; i < pw_ * ph_; ++i) {
+      const float* a = &patchPrev_[static_cast<std::size_t>(i * 4)];
+      const float* b = &patchCur_[static_cast<std::size_t>(i * 4)];
+      unflickered += a[0] + (b[0] - a[0]) * blend_;
+    }
+    if (sum > 0.f) mid /= sum;
+    std::fprintf(stderr, "pxe: grass fire light t %.4f blend %.3f lights %zu strength %.4f fire %.3f at %.3f %.3f\n", time,
+                 blend_, out.size() - first, sum, unflickered, mid.x, mid.z);
+  }
+}
+
+void FireGrid::drawFlames(const glm::mat4& viewProj, glm::vec2 target, float pxPerMetre, float depthBiasNdc,
+                          float time, glm::vec2 wind) const {
+  if (!running() || active_.empty()) return;
+  std::vector<float> starts;
+  starts.reserve(active_.size() * 2);
+  for (int i : active_) {
+    starts.push_back(static_cast<float>((i % pw_) * kPatch));
+    starts.push_back(static_cast<float>((i / pw_) * kPatch));
+  }
+  glBindBuffer(GL_ARRAY_BUFFER, flameVbo_);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(starts.size() * sizeof(float)), starts.data(), GL_DYNAMIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glUseProgram(progFlame_);
+  glActiveTexture(GL_TEXTURE11);
+  glBindTexture(GL_TEXTURE_2D, state_[cur_]);
+  glActiveTexture(GL_TEXTURE12);
+  glBindTexture(GL_TEXTURE_2D, ground_);
+  glActiveTexture(GL_TEXTURE13);
+  glBindTexture(GL_TEXTURE_2D, state_[1 - cur_]);
+  glUniform1i(uloc(progFlame_, "uState"), 11);
+  glUniform1i(uloc(progFlame_, "uGround"), 12);
+  glUniform1i(uloc(progFlame_, "uPrev"), 13);
+  glUniform1f(uloc(progFlame_, "uBlend"), blend_);
+  glUniform2f(uloc(progFlame_, "uMin"), min_.x, min_.y);
+  glUniform1f(uloc(progFlame_, "uCell"), kCell);
+  glUniform1i(uloc(progFlame_, "uPatch"), kPatch);
+  glUniformMatrix4fv(uloc(progFlame_, "uViewProj"), 1, GL_FALSE, &viewProj[0][0]);
+  glUniform2f(uloc(progFlame_, "uTarget"), target.x, target.y);
+  glUniform1f(uloc(progFlame_, "uPxPerMetre"), pxPerMetre);
+  glUniform1f(uloc(progFlame_, "uDepthBiasNdc"), depthBiasNdc);
+  glUniform1f(uloc(progFlame_, "uTime"), time);
+  glUniform2f(uloc(progFlame_, "uWind"), wind.x, wind.y);
+  glBindVertexArray(flameVao_);
+  glDrawArraysInstanced(GL_POINTS, 0, kPatch * kPatch * kParts, static_cast<GLsizei>(active_.size()));
+  glBindVertexArray(0);
+}
+
+}  // namespace pxe

@@ -29,6 +29,10 @@
   M(PFNGLDEPTHFUNCPROC, glDepthFunc)                \
   M(PFNGLDEPTHMASKPROC, glDepthMask)                \
   M(PFNGLBLENDFUNCPROC, glBlendFunc)                \
+  M(PFNGLBLENDEQUATIONPROC, glBlendEquation)        \
+  M(PFNGLMAPBUFFERRANGEPROC, glMapBufferRange)      \
+  M(PFNGLUNMAPBUFFERPROC, glUnmapBuffer)            \
+  M(PFNGLUNIFORM2FVPROC, glUniform2fv)              \
   M(PFNGLCOLORMASKPROC, glColorMask)                \
   M(PFNGLPOLYGONOFFSETPROC, glPolygonOffset)        \
   M(PFNGLGETERRORPROC, glGetError)                  \

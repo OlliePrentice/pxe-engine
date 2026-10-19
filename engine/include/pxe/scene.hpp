@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pxe/heightmap.hpp"
 #include "pxe/mesh.hpp"
 #include "pxe/shelter.hpp"
 
@@ -64,6 +65,10 @@ struct Scene {
   std::vector<FireSite> fires;
   // Built structure overhead, for keeping rain off fires.
   ShelterMap shelter;
+  // The top of the ground and everything standing on it (not tree crowns),
+  // and of the water, for things that roll over the scene.
+  HeightMap ground;
+  HeightMap waterTop;
   // Where each firefly wanders round, when they are out.
   std::vector<glm::vec3> fireflyHomes;
   Palette palette[kPhaseCount][kSurfCount];

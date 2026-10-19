@@ -3,6 +3,7 @@
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
 #include "pxe/fire.hpp"
+#include "pxe/firegrid.hpp"
 #include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 
@@ -66,6 +67,13 @@ struct FrameParams {
   // Point lights the game adds this frame, besides those the renderer makes
   // for fireflies and small fires.
   std::vector<PointLight> lights;
+  // Grass fire (see FireGrid): once on, the fire grid over the lawn runs
+  // every frame - spreading, burning the grass, put out by rain - and the
+  // grass, the lawn and the fire's flames and light draw from it. Off, none
+  // of it is touched. `igniteGrass` sets the grass alight round each world
+  // xz point this frame.
+  bool grassFire = false;
+  std::vector<glm::vec2> igniteGrass;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
 };
@@ -203,7 +211,10 @@ class Renderer {
   struct ToonPrograms {
     unsigned mesh = 0, grass = 0, water = 0;
   };
-  ToonPrograms toon_[2];  // [0] at most one firelight, [1] any number
+  // [grass fire][firelights]: [0][..] without the fire grid, [1][..] reading
+  // its burn texture; [..][0] at most one firelight, [..][1] any number.
+  ToonPrograms toon_[2][2];
+  FireGrid grid_;
   unsigned progFire_ = 0;
   unsigned progFireShadow_ = 0;
   unsigned fireVao_ = 0;
