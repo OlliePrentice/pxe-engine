@@ -2,6 +2,7 @@ add_executable(pxe
   src/main.cpp
   src/scene.cpp
   src/settings.cpp
+  src/fireball.cpp
   src/audio.cpp
   src/miniaudio.cpp
 )

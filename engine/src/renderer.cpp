@@ -160,9 +160,10 @@ Renderer::~Renderer() {
   if (grassInst_) glDeleteBuffers(1, &grassInst_);
   if (presentVao_) glDeleteVertexArrays(1, &presentVao_);
   if (presentVbo_) glDeleteBuffers(1, &presentVbo_);
-  for (const ToonPrograms& t : toon_)
-    for (unsigned prog : {t.mesh, t.grass, t.water})
-      if (prog) glDeleteProgram(prog);
+  for (const auto& row : toon_)
+    for (const ToonPrograms& t : row)
+      for (unsigned prog : {t.mesh, t.grass, t.water})
+        if (prog) glDeleteProgram(prog);
   if (progShadow_) glDeleteProgram(progShadow_);
   if (progPresent_) glDeleteProgram(progPresent_);
   if (progEdge_) glDeleteProgram(progEdge_);
@@ -426,12 +427,15 @@ void Renderer::createQuads() {
 
 void Renderer::init() {
   const std::string dir = shaderDir();
-  for (int many = 0; many < 2; ++many) {
-    const std::string defines = many ? "" : "#define ONE_FIRE_LIGHT\n";
-    toon_[many].mesh = linkProgram(dir + "/mesh.vert", dir + "/mesh.frag", dir + "/common.glsl", defines);
-    toon_[many].grass = linkProgram(dir + "/grass.vert", dir + "/grass.frag", dir + "/common.glsl", defines);
-    toon_[many].water = linkProgram(dir + "/water.vert", dir + "/water.frag", dir + "/common.glsl", defines);
-  }
+  for (int grid = 0; grid < 2; ++grid)
+    for (int many = 0; many < 2; ++many) {
+      const std::string defines = std::string(many ? "" : "#define ONE_FIRE_LIGHT\n") + (grid ? "#define FIRE_GRID\n" : "");
+      ToonPrograms& t = toon_[grid][many];
+      t.mesh = linkProgram(dir + "/mesh.vert", dir + "/mesh.frag", dir + "/common.glsl", defines);
+      t.grass = linkProgram(dir + "/grass.vert", dir + "/grass.frag", dir + "/common.glsl", defines);
+      t.water = linkProgram(dir + "/water.vert", dir + "/water.frag", dir + "/common.glsl", defines);
+    }
+  grid_.init(dir);
   progShadow_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag");
   progPresent_ = linkProgram(dir + "/present.vert", dir + "/present.frag");
   progEdge_ = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
@@ -457,6 +461,7 @@ void Renderer::init() {
 
 void Renderer::upload(const Scene& scene) {
   shadowScene_ = nullptr;
+  grid_.reset();
   fires_.clear();
   for (ShadowCube& cube : cubes_) cube = ShadowCube{};
   for (LightSlot& slot : slots_) slot = LightSlot{};
@@ -860,7 +865,11 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
   updateFires(scene, params);
-  const ToonPrograms& toon = toon_[fireLights_.size() > 1 ? 1 : 0];
+  // The grass fire steps on the GPU before anything reads it this frame.
+  const glm::vec2 windDir = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{0.f};
+  if (params.grassFire) grid_.advance(scene, params.time, params.igniteGrass, lighting.rain, windDir * lighting.windStrength);
+  const bool grassFire = params.grassFire && grid_.running();
+  const ToonPrograms& toon = toon_[grassFire ? 1 : 0][fireLights_.size() > 1 ? 1 : 0];
   progMesh_ = toon.mesh;
   progGrass_ = toon.grass;
   progWater_ = toon.water;
@@ -885,12 +894,24 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glActiveTexture(GL_TEXTURE7);
   glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, fireCubes_);
   const glm::mat4 identity{1.f};
+  // Burnt grass and lawn, on unit 10, for the programs that read it.
+  auto bindBurn = [&](unsigned prog) {
+    if (!grassFire) return;
+    u1i(prog, "uBurn", 10);
+    const glm::vec4 d = grid_.burnDomain();
+    glUniform4f(uloc(prog, "uBurnDomain"), d.x, d.y, d.z, d.w);
+  };
+  if (grassFire) {
+    glActiveTexture(GL_TEXTURE10);
+    glBindTexture(GL_TEXTURE_2D, grid_.burnTexture());
+  }
 
   // Program state shared by every mesh and sprite draw this frame.
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
   u1f(progMesh_, "uTime", params.time);
   bindToon(progMesh_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+  bindBurn(progMesh_);
   if (params.showGrass && grassCount_ > 0) {
     glUseProgram(progGrass_);
     u2f(progGrass_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
@@ -903,6 +924,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
       u1f(progGrass_, "uUprightNdcPerPx", std::tan(camera.pitchRadians) * camera.texelWorld * metresToNdc);
     }
     bindToon(progGrass_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+    bindBurn(progGrass_);
     u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
     // Bound before any sprite draw: the reflection pass draws sprites before
@@ -1043,6 +1065,21 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
   }
+  // The grass fire's flames, embers and smoke, drawn from the grid.
+  const bool gridFlames = grassFire && params.fire;
+  if (gridFlames) {
+    glViewport(0, 0, rtW(), rtH());
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    grid_.drawFlames(viewProj, {static_cast<float>(rtW()), static_cast<float>(rtH())}, 1.f / camera.texelWorld,
+                     kFireBiasMetres * 2.f / (camera.farPlane - camera.nearPlane), params.time,
+                     windDir * 0.6f * lighting.windStrength);
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+  }
 
   // Edge pass into final_, which is what gets presented and captured.
   beginPass(PassTimes::kEdge);
@@ -1062,13 +1099,15 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glActiveTexture(GL_TEXTURE3);
   glBindTexture(GL_TEXTURE_2D, heat_);
   u1i(progEdge_, "uHeat", 3);
-  u1i(progEdge_, "uFire", fireCount > 0 ? 1 : 0);
+  u1i(progEdge_, "uFire", fireCount > 0 || gridFlames ? 1 : 0);
   // Point lights - fireflies, small fires, campfires without a firelight
   // slot, and any the game adds - lit in this pass from the depth and
   // normals already drawn rather than in every shader: t3ssel8r's light
   // volumes, a lot of small lights for little cost.
   {
     pointLights_.insert(pointLights_.end(), params.lights.begin(), params.lights.end());
+    // Each burning patch of the grass fire, a light of its own.
+    if (gridFlames) grid_.addLights(pointLights_, lighting.fireLight, lighting.fireReach, params.time);
     if (lighting.fireflyLight > 0.f)
       for (const Firefly& f : flies)
         if (f.glow > 0.02f) pointLights_.push_back({f.pos, kFireflyReach, f.glow, PointLight::kFirefly});

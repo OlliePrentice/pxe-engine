@@ -368,6 +368,11 @@ pxe::Scene buildHills(const BuildOptions& options) {
     }
   }
   computeBounds(scene, verts);
+  {
+    std::vector<glm::vec3> corners;
+    for (const Triangle& t : tris) corners.insert(corners.end(), {t.p[0], t.p[1], t.p[2]});
+    scene.ground.build(corners);
+  }
   scene.meshes.emplace_back();
   scene.meshes.back().upload(verts, indices);
 
@@ -748,6 +753,15 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   // Only built structure keeps the rain off: the stone. A tree crown lets
   // it through.
   scene.shelter.build(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
+  {
+    std::vector<glm::vec3> solid;
+    for (int s : {pxe::kSurfGrass, pxe::kSurfDirt, pxe::kSurfStone, pxe::kSurfBark, pxe::kSurfFoam}) {
+      const std::vector<glm::vec3> c = cornersOf(verts[s], indices[s]);
+      solid.insert(solid.end(), c.begin(), c.end());
+    }
+    scene.ground.build(solid);
+    scene.waterTop.build(cornersOf(verts[pxe::kSurfWater], indices[pxe::kSurfWater]));
+  }
   for (pxe::FireSite& f : scene.fires) {
     f.sheltered = scene.shelter.sheltered(f.base);
     std::fprintf(stderr, "pxe: %s at %.1f, %.1f %s\n", f.size < 1.f ? "candle" : "fire", f.base.x, f.base.z,

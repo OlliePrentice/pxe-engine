@@ -26,6 +26,13 @@ void main() {
                : (vSurface == kSurfLeaf)  ? max(floor(toonTone(vWorld, n) + 0.5) - 1.0, 0.0)
                                           : toonTone(vWorld, n);
     vec3 col = toneColour(vSurface, tone);
+#ifdef FIRE_GRID
+    // The lawn under burnt grass is scorched, then charred.
+    if (vSurface == 0) {
+        float burn = burnAt(vWorld);
+        if (burn > 0.3) col = burntColour(tone, burn > 0.62 ? 2 : 1);
+    }
+#endif
     float shade = cloudShade(vWorld);
     col = clouded(col, vSurface, shade);
     oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), 1.0);

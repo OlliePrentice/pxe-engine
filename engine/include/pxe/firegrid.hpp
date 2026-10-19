@@ -1,0 +1,100 @@
+#pragma once
+
+#include "pxe/scene.hpp"
+
+#include <glm/mat4x4.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec4.hpp>
+
+#include <string>
+#include <vector>
+
+namespace pxe {
+
+struct PointLight;
+
+// Grass fire, after t3ssel8r's fire, rain and grass: a grid of cells over
+// the ground, kept in render textures and run by fragment-shader passes
+// that ping-pong between two of them, so the whole field burns on the GPU.
+// Each cell holds how hard it burns, how much dry grass it has left and how
+// wet it is. A burning cell sets its neighbours alight at random, faster
+// downwind; rain soaks the cells open to the sky, and a wet cell neither
+// catches nor keeps burning. Burning cells paint a burn texture (it only
+// ever darkens) that the grass and the ground read to char and shorten the
+// blades. Flames are drawn into the fire's heat buffer straight from the
+// grid, and each burning patch of a few metres lights the scene through a
+// point light of its own.
+class FireGrid {
+ public:
+  // Metres per cell; the burn texture is kBurnScale times finer.
+  static constexpr float kCell = 0.25f;
+  static constexpr int kBurnScale = 2;
+  // The grid steps this often; everything drawn from it is blended between
+  // the last two steps, so it changes smoothly every frame.
+  static constexpr float kStep = 1.f / 20.f;
+  // Cells per side of a patch that gets one point light.
+  static constexpr int kPatch = 8;
+
+  FireGrid() = default;
+  ~FireGrid();
+  FireGrid(const FireGrid&) = delete;
+  FireGrid& operator=(const FireGrid&) = delete;
+
+  void init(const std::string& shaderDir);
+  // Forget the last scene; the next advance builds the grid for its scene.
+  void reset() { scene_ = nullptr; }
+  bool running() const { return scene_ != nullptr; }
+
+  // Bring the grid to `time` seconds, first setting alight the cells near
+  // each of `ignite` (world xz). `rain` 0 dry .. 1 downpour; `wind` world xz
+  // the wind blows toward, scaled by its strength. Leaves GL state as the
+  // renderer expects (no blending, its framebuffer unbound).
+  void advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite, float rain, glm::vec2 wind);
+
+  // Point lights for the burning patches, blended between the last two
+  // readbacks of the grid.
+  void addLights(std::vector<PointLight>& out, float fireLight, float fireReach, float time) const;
+  // Flames, embers and smoke into the bound heat buffer (blending on).
+  void drawFlames(const glm::mat4& viewProj, glm::vec2 target, float pxPerMetre, float depthBiasNdc, float time,
+                  glm::vec2 wind) const;
+
+  // The burn texture (0 untouched .. 1 burnt out) and where it lies:
+  // xz of its corner, and 1 / its size in metres.
+  unsigned burnTexture() const { return burn_; }
+  glm::vec4 burnDomain() const { return {min_.x, min_.y, 1.f / (kCell * w_), 1.f / (kCell * h_)}; }
+
+ private:
+  void build(const Scene& scene, float rain);
+  void destroy();
+  void step(float rain, glm::vec2 wind);
+  void readPatches();
+
+  unsigned progStep_ = 0, progBurn_ = 0, progSum_ = 0, progFlame_ = 0;
+  unsigned vao_ = 0;
+  unsigned flameVao_ = 0, flameVbo_ = 0;  // per instance: a patch's first cell
+  unsigned ground_ = 0;    // fuel, roofed, ground height
+  unsigned state_[2] = {};  // fire, fuel left, wetness, embers
+  unsigned fbo_[2] = {};
+  unsigned burn_ = 0, fboBurn_ = 0;
+  unsigned patches_ = 0, fboPatches_ = 0;  // per patch: summed fire, fire-weighted x and z, summed embers
+  unsigned pbo_[2] = {};
+  const Scene* scene_ = nullptr;
+  glm::vec2 min_{0.f};
+  int w_ = 0, h_ = 0;    // cells
+  int pw_ = 0, ph_ = 0;  // patches
+  std::vector<float> height_;  // ground height per cell, for the lights
+  int cur_ = 0;               // state_[cur_] is the latest step
+  long long tick_ = 0;        // steps taken
+  float stepTime_ = 0.f;      // time of the latest step
+  float lastTime_ = -1.f;
+  float blend_ = 1.f;         // how far this frame is from the step before the latest to the latest
+  std::vector<glm::vec2> ignite_;        // waiting for the next step
+  std::vector<glm::vec2> recentIgnite_;  // set alight at the latest step
+  int reads_ = 0;  // readbacks issued
+  // The last two patch readbacks, and which patches burn (with their
+  // neighbours, which may catch before the next readback).
+  std::vector<float> patchPrev_, patchCur_;
+  std::vector<int> active_;
+};
+
+}  // namespace pxe

@@ -294,3 +294,26 @@ float toonToneFlat(vec3 wpos, vec3 n) {
     // crawl as the light moves.
     return litTone(wpos, n, 2.5);
 }
+
+#ifdef FIRE_GRID
+// Grass fire (see FireGrid): how burnt the ground is under a point, 0
+// untouched .. 1 burnt out, from the burn texture the burning cells paint.
+// Only the programs built with FIRE_GRID read it, so the scene without a
+// grass fire is drawn by exactly the shaders it always was.
+uniform sampler2D uBurn;
+uniform vec4 uBurnDomain;  // xz of its corner, 1 / its size in metres
+
+float burnAt(vec3 wpos) {
+    vec2 uv = (wpos.xz - uBurnDomain.xy) * uBurnDomain.zw;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+    return textureLod(uBurn, uv, 0.0).r;
+}
+
+// Burnt grass and the ground under it, at a tone: scorched (1) to a dry
+// brown between the grass and the bare dirt, then charred (2) near black.
+vec3 burntColour(float tone, int level) {
+    vec3 dirt = toneColour(1, tone);
+    if (level >= 2) return dirt * vec3(0.42, 0.4, 0.42);
+    return mix(toneColour(0, tone), dirt, 0.65) * vec3(1.04, 0.94, 0.74);
+}
+#endif
