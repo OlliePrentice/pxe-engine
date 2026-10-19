@@ -42,6 +42,7 @@
   M(PFNGLTEXPARAMETERFVPROC, glTexParameterfv)      \
   M(PFNGLTEXIMAGE2DPROC, glTexImage2D)              \
   M(PFNGLTEXIMAGE3DPROC, glTexImage3D)              \
+  M(PFNGLTEXBUFFERPROC, glTexBuffer)                \
   M(PFNGLFRAMEBUFFERTEXTURELAYERPROC, glFramebufferTextureLayer) \
   M(PFNGLCOPYTEXSUBIMAGE2DPROC, glCopyTexSubImage2D) \
   M(PFNGLBINDTEXTUREPROC, glBindTexture)            \

@@ -40,11 +40,13 @@ enum Phase : int {
   kPhaseCount = 4,
 };
 
-// A fire the scene starts with: where its flames rise from, and whether a
-// structure roofs it over (from `Scene::shelter`), so rain cannot reach it.
+// A fire the scene starts with: where its flames rise from, whether a
+// structure roofs it over (from `Scene::shelter`), so rain cannot reach it,
+// and how big it is (1 a campfire, about 0.2 a candle; see FireDraw).
 struct FireSite {
   glm::vec3 base{0.f};
   bool sheltered = false;
+  float size = 1.f;
 };
 
 struct Scene {

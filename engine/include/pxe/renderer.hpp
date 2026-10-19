@@ -16,12 +16,29 @@ namespace pxe {
 // each one's flames going from frame to frame by `id`, so fires can be
 // added, moved (a thrown torch) and removed as the game runs. `level` is
 // how well it burns (0 out .. 1) and `smoke` how much it still smokes once
-// out (1 just out .. 0).
+// out (1 just out .. 0). `size` scales the flames: 1 a campfire, about 0.2
+// a candle. A campfire lights the scene with the forward firelights (with
+// shadows, for the brightest); a smaller fire - a candle, a torch - lights
+// only through the point lights, without shadows.
 struct FireDraw {
   std::uint32_t id = 0;
   glm::vec3 base{0.f};
   float level = 1.f;
   float smoke = 0.f;
+  float size = 1.f;
+};
+
+// A small light without shadows, lit in the post pass from the depth and
+// normals already drawn, like t3ssel8r's light volumes: any number of them,
+// each costing only the screen tiles it reaches. A lit surface moves toward
+// its colour in full light of the light's kind (Lighting::fireflyBand or
+// fireBand), by `strength`, fading smoothly to nothing at `radius` metres.
+struct PointLight {
+  enum Kind : int { kFirefly = 0, kFire = 1 };
+  glm::vec3 pos{0.f};
+  float radius = 1.f;
+  float strength = 1.f;
+  Kind kind = kFire;
 };
 
 struct FrameParams {
@@ -46,6 +63,9 @@ struct FrameParams {
   bool rays = true;
   // Fireflies, and their light.
   bool fireflies = false;
+  // Point lights the game adds this frame, besides those the renderer makes
+  // for fireflies and small fires.
+  std::vector<PointLight> lights;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
 };
@@ -86,8 +106,12 @@ class Renderer {
   void createTargets();
   void createQuads();
   // Advance every fire this frame, choose which light the scene and which
-  // of those cast shadows, and draw any shadow cube that needs it.
+  // of those cast shadows, and draw any shadow cube that needs it. Fires
+  // that light only through the point lights go into pointLights_.
   void updateFires(const Scene& scene, const FrameParams& params);
+  // Cut the point lights into per-tile lists for the edge pass and upload
+  // them; returns how many lights there are.
+  int uploadPointLights(const CameraFrame& camera);
   void drawPresent(const CameraFrame& camera, const FrameParams& params);
   // Draw the scene's meshes (and sprites, if shown) with the given mirror.
   void drawMeshes(const Scene& scene, const glm::mat4& viewProj, const glm::mat4& mirror, float clipBelow);
@@ -115,15 +139,20 @@ class Renderer {
   unsigned heat_ = 0;         // fire heat (r), embers (g) and smoke (b), quantised by the edge pass
   unsigned fboHeat_ = 0;
   unsigned canopy_ = 0;  // tiling noise for the god rays' canopy gaps
-  // Firelight. The kFireLights brightest fires light the scene; of those,
-  // the kShadowCubes brightest also cast shadows, each from a cube of a
+  // Firelight. The kFireLights brightest campfires light the scene in the
+  // toon shaders. A fire holds one of the kFireLights slots while it is
+  // among the brightest; when the slots change hands, a fire's light fades
+  // out of its slot into the point lights, or in the other way, over
+  // kShadowFade seconds, so no light jumps. Fires without a slot light
+  // through the point lights, without shadows. Of the slotted fires, the
+  // kShadowCubes brightest also cast shadows, each from a cube of a
   // cube-map array - distance to the nearest surface on each face of a cube
   // round the fire. The scene does not move, so a cube is drawn when a fire
   // takes it and again only if the fire moves. A fire keeps its cube while
   // it stays among the brightest. When the cubes change hands, shadows fade
   // out on the fire giving one up and in on the fire taking it, over
   // kShadowFade seconds, so the light never jumps; a fire that is new this
-  // frame takes its shadows at once.
+  // frame takes its slot and its shadows at once.
   static constexpr int kFireLights = 16;
   static constexpr int kShadowCubes = 8;
   static constexpr float kShadowFade = 0.35f;
@@ -135,6 +164,13 @@ class Renderer {
     const Scene* drawnScene = nullptr;
     glm::vec3 drawnPos{0.f};
   };
+  struct LightSlot {
+    bool held = false;
+    std::uint32_t fire = 0;
+    float weight = 0.f;   // share of its light in the slot, the rest in the point lights
+    bool leaving = false;  // fading out before it is given up
+  };
+  LightSlot slots_[kFireLights];
   struct FireLight {
     glm::vec3 pos{0.f};
     float strength = 0.f;  // with the flicker
@@ -146,6 +182,14 @@ class Renderer {
   unsigned fboFireCube_ = 0;
   ShadowCube cubes_[kShadowCubes];
   std::vector<FireLight> fireLights_;  // this frame's
+  // This frame's point lights, cut into screen tiles of kTile pixels: a
+  // buffer texture of lights (two texels each) and one of tile lists (first
+  // index and count per tile, then the light indices).
+  static constexpr int kTile = 16;
+  std::vector<PointLight> pointLights_;
+  unsigned pointBuf_ = 0, pointTex_ = 0;
+  unsigned tileBuf_ = 0, tileTex_ = 0;
+  int tilesX_ = 0;
   float fireTime_ = -1.f;              // params.time of the last frame, < 0 none
   unsigned fboFlash_ = 0;
 

@@ -520,6 +520,70 @@ std::vector<glm::vec3> cornersOf(const std::vector<pxe::Vertex>& v, const std::v
   return out;
 }
 
+// The tops of the stonework, for standing candles on: per 0.5 m cell of the
+// ground plane, the stone triangles over it, so the highest stone face over
+// a point is quick to find.
+class StoneTops {
+ public:
+  explicit StoneTops(std::vector<glm::vec3> corners) : corners_(std::move(corners)) {
+    for (const glm::vec3& p : corners_) {
+      min_ = glm::min(min_, glm::vec2(p.x, p.z));
+      max_ = glm::max(max_, glm::vec2(p.x, p.z));
+    }
+    w_ = std::max(1, static_cast<int>(std::ceil((max_.x - min_.x) / kCell)) + 1);
+    h_ = std::max(1, static_cast<int>(std::ceil((max_.y - min_.y) / kCell)) + 1);
+    cells_.resize(static_cast<std::size_t>(w_ * h_));
+    for (std::size_t i = 0; i + 2 < corners_.size(); i += 3) {
+      glm::vec2 lo{1e9f}, hi{-1e9f};
+      for (std::size_t k = 0; k < 3; ++k) {
+        lo = glm::min(lo, glm::vec2(corners_[i + k].x, corners_[i + k].z));
+        hi = glm::max(hi, glm::vec2(corners_[i + k].x, corners_[i + k].z));
+      }
+      for (int z = cellZ(lo.y); z <= cellZ(hi.y); ++z)
+        for (int x = cellX(lo.x); x <= cellX(hi.x); ++x) cells_[static_cast<std::size_t>(z * w_ + x)].push_back(i);
+    }
+  }
+
+  // The highest stone face over (x, z): its height and normal.
+  std::optional<std::pair<float, glm::vec3>> at(float x, float z) const {
+    if (x < min_.x || z < min_.y || x > max_.x || z > max_.y) return std::nullopt;
+    std::optional<std::pair<float, glm::vec3>> best;
+    for (std::size_t i : cells_[static_cast<std::size_t>(cellZ(z) * w_ + cellX(x))]) {
+      const glm::vec3 &a = corners_[i], &b = corners_[i + 1], &c = corners_[i + 2];
+      const float d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+      if (std::fabs(d) < 1e-9f) continue;  // a wall seen edge-on from above
+      const float u = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / d;
+      const float v = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / d;
+      if (u < 0.f || v < 0.f || u + v > 1.f) continue;
+      const float y = a.y * u + b.y * v + c.y * (1.f - u - v);
+      if (best && best->first >= y) continue;
+      glm::vec3 n = glm::normalize(glm::cross(b - a, c - a));
+      if (n.y < 0.f) n = -n;
+      best = {y, n};
+    }
+    return best;
+  }
+
+ private:
+  static constexpr float kCell = 0.5f;
+  int cellX(float x) const { return std::clamp(static_cast<int>((x - min_.x) / kCell), 0, w_ - 1); }
+  int cellZ(float z) const { return std::clamp(static_cast<int>((z - min_.y) / kCell), 0, h_ - 1); }
+  std::vector<glm::vec3> corners_;
+  std::vector<std::vector<std::size_t>> cells_;
+  glm::vec2 min_{1e9f}, max_{-1e9f};
+  int w_ = 1, h_ = 1;
+};
+
+// A candle standing at `foot`: a stub of pale wax. Returns where its flame
+// rises from.
+constexpr float kCandleSize = 0.2f;  // its flame against a campfire's
+glm::vec3 addCandle(VertexLists verts, IndexLists indices, glm::vec3 foot) {
+  const glm::vec3 ax[3] = {{1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.f}};
+  const glm::vec3 half{0.04f, 0.07f, 0.04f};
+  addBox(verts, indices, pxe::kSurfFoam, foot + glm::vec3{0.f, half.y - 0.01f, 0.f}, half, ax);
+  return foot + glm::vec3{0.f, 2.f * half.y, 0.f};
+}
+
 // For the shelter test: a little stone shelter over (x, z) - four posts and
 // a two-tier slab roof - to build a campfire under.
 void addShelter(VertexLists verts, IndexLists indices, const GroundIndex& ground, float x, float z) {
@@ -632,12 +696,62 @@ pxe::Scene buildRuins(const BuildOptions& options) {
       }
     if (under) scene.fires.push_back({addCampfire(verts, indices, ground, under->x, under->z, fireRng)});
   }
+  if (options.candles) {
+    // Candles on flat stone tops - a ledge, a plinth, a fallen block, from
+    // knee height up - and a few on the open lawn, spread apart and clear of
+    // the campfires; and two under the shelter test's roof.
+    const StoneTops tops(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
+    std::vector<glm::vec3> feet;
+    auto clear = [&](float x, float z, float apart) {
+      for (const pxe::FireSite& f : scene.fires)
+        if (glm::length(glm::vec2{x - f.base.x, z - f.base.z}) < (f.size < 1.f ? apart : 1.6f)) return false;
+      for (const glm::vec3& f : feet)
+        if (glm::length(glm::vec2{x - f.x, z - f.z}) < apart) return false;
+      return true;
+    };
+    std::vector<glm::vec2> spots;
+    for (float z = scene.focus.z - 8.f; z <= scene.focus.z + 7.f; z += 0.25f)
+      for (float x = scene.focus.x - 12.f; x <= scene.focus.x + 12.f; x += 0.25f) spots.push_back({x, z});
+    std::mt19937 candleRng(41);
+    std::shuffle(spots.begin(), spots.end(), candleRng);
+    int onStone = 0, onLawn = 0;
+    for (const glm::vec2& at : spots) {
+      if (onStone >= 7 && onLawn >= 3) break;
+      const auto lawnHit = ground.at(at.x, at.y);
+      const auto top = tops.at(at.x, at.y);
+      const float lawnY = lawnHit ? lawnHit->pos.y : -1e9f;
+      if (top && top->first > lawnY + 0.3f && top->first < lawnY + 3.f && top->second.y > 0.97f) {
+        if (onStone >= 7) continue;
+        // Room for the candle: the same face all round it.
+        bool flat = true;
+        for (glm::vec2 o : {glm::vec2{0.1f, 0.f}, glm::vec2{-0.1f, 0.f}, glm::vec2{0.f, 0.1f}, glm::vec2{0.f, -0.1f}}) {
+          const auto t = tops.at(at.x + o.x, at.y + o.y);
+          flat = flat && t && std::fabs(t->first - top->first) < 0.02f;
+        }
+        if (!flat || !clear(at.x, at.y, 1.6f)) continue;
+        feet.push_back({at.x, top->first, at.y});
+        ++onStone;
+      } else if (lawnHit && (!top || top->first < lawnY + 0.03f) && lawnHit->normal.y > 0.9f) {
+        if (onLawn >= 3 || !clear(at.x, at.y, 2.5f)) continue;
+        feet.push_back(lawnHit->pos);
+        ++onLawn;
+      }
+    }
+    if (options.shelterTest)
+      for (float sx : {-0.7f, 0.7f}) {
+        const auto hit = ground.at(kShelterTestX + sx, kShelterTestZ + 0.7f);
+        if (hit) feet.push_back(hit->pos);
+      }
+    for (const glm::vec3& foot : feet) scene.fires.push_back({addCandle(verts, indices, foot), false, kCandleSize});
+    std::fprintf(stderr, "pxe: %zu candles, %d on stone, %d on the lawn\n", feet.size(), onStone, onLawn);
+  }
   // Only built structure keeps the rain off: the stone. A tree crown lets
   // it through.
   scene.shelter.build(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
   for (pxe::FireSite& f : scene.fires) {
     f.sheltered = scene.shelter.sheltered(f.base);
-    std::fprintf(stderr, "pxe: fire at %.1f, %.1f %s\n", f.base.x, f.base.z, f.sheltered ? "sheltered" : "open to the rain");
+    std::fprintf(stderr, "pxe: %s at %.1f, %.1f %s\n", f.size < 1.f ? "candle" : "fire", f.base.x, f.base.z,
+                 f.sheltered ? "sheltered" : "open to the rain");
   }
 
   for (int s = 0; s < pxe::kSurfCount; ++s) {
@@ -718,7 +832,7 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   // No grass in the fire pits.
   std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
     for (const pxe::FireSite& f : scene.fires)
-      if (glm::length(glm::vec2{g.px, g.pz} - glm::vec2{f.base.x, f.base.z}) < 1.05f) return true;
+      if (glm::length(glm::vec2{g.px, g.pz} - glm::vec2{f.base.x, f.base.z}) < (f.size < 1.f ? 0.3f : 1.05f)) return true;
     return false;
   });
 

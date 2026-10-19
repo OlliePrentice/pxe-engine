@@ -52,11 +52,16 @@ uniform sampler2D uCanopy;  // tiling noise for the gaps light falls through
 uniform float uCloudCover;  // cloud shadows, as in the toon shading: they block the rays
 uniform vec2 uCloudOffset;
 uniform float uCloudStrength;
-uniform int uFlyCount;           // fireflies lit this frame
-uniform vec4 uFly[48];           // position, glow
-uniform float uFlyLight;         // strength
-uniform float uFlyDim;           // how far direct sun or moon light drowns them out
+uniform int uPointCount;         // point lights this frame
+uniform samplerBuffer uPoints;   // per light two texels: position, reach; strength, kind
+uniform usamplerBuffer uTiles;   // per screen tile its first index and count, then the lists of lights
+uniform int uTileSize;           // pixels
+uniform int uTilesX;
+uniform float uFlyLight;         // firefly light: strength
+uniform float uFlyDim;           // how far direct sun or moon light drowns it out
 uniform vec3 uFlyBand[7];        // each surface's colour in full firefly light
+uniform float uFireDim;          // firelight, likewise
+uniform vec3 uFireBand[7];
 uniform sampler2D uHeat;    // fire: flame heat (r), ember glow (g), smoke (b)
 uniform int uFire;
 
@@ -254,38 +259,61 @@ vec3 godRays(ivec2 p, vec3 col) {
     return mix(col, uRayColour, a);
 }
 
-// Firefly light, deferred like t3ssel8r's light volumes: from this pixel's
-// position (rebuilt from depth) and normal, each lit firefly within reach
-// pulls the surface toward its colour in full firefly light, fading
-// smoothly with distance. Direct sun or moonlight drowns it out - N·L to
-// the sun, its shadow map and the cloud shadows say how much this pixel
-// already gets - so by day the glow shows only in the shade.
-vec3 fireflyLight(ivec2 p, vec3 col, vec4 np, int surface) {
-    if (uFlyCount <= 0 || texelFetch(uDepth, p, 0).r >= 0.9999) return col;
+// Point lights, deferred like t3ssel8r's light volumes: from this pixel's
+// position (rebuilt from depth) and normal, each light within reach pulls
+// the surface toward its colour in full light of the light's kind - a
+// firefly's or a fire's - fading smoothly with distance. Only the lights
+// listed for this pixel's screen tile are tried. Direct sun or moonlight
+// drowns them out - N·L to the sun, its shadow map and the cloud shadows
+// say how much this pixel already gets - so by day the glow shows only in
+// the shade.
+const int kFirefly = 0;
+vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
+    if (uPointCount <= 0 || texelFetch(uDepth, p, 0).r >= 0.9999) return col;
+    ivec2 tile = p / uTileSize;
+    int t = tile.y * uTilesX + tile.x;
+    int first = int(texelFetch(uTiles, 2 * t).r);
+    int count = int(texelFetch(uTiles, 2 * t + 1).r);
+    if (count == 0) return col;
     vec3 s = worldAt(p);
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
     int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, 6));
-    const float kReach = 2.3;
-    float k = 0.0;
-    for (int i = 0; i < 48; ++i) {
-        if (i >= uFlyCount) break;
-        vec3 d = uFly[i].xyz - s;
+    float k = 0.0;     // fireflies
+    float fire = 0.0;  // fires
+    for (int j = 0; j < count; ++j) {
+        int i = int(texelFetch(uTiles, first + j).r);
+        vec4 at = texelFetch(uPoints, 2 * i);
+        vec4 light = texelFetch(uPoints, 2 * i + 1);
+        vec3 d = at.xyz - s;
         float dist = length(d);
-        if (dist >= kReach) continue;
-        float ndl = clamp(dot(n, d / max(dist, 1e-3)) * 0.7 + 0.3, 0.0, 1.0);
-        float fall = 1.0 - dist / kReach;
-        k += fall * fall * ndl * uFly[i].w;
+        if (dist >= at.w) continue;
+        float fall = 1.0 - dist / at.w;
+        if (int(light.y) == kFirefly) {
+            float ndl = clamp(dot(n, d / max(dist, 1e-3)) * 0.7 + 0.3, 0.0, 1.0);
+            k += fall * fall * ndl * light.x;
+        } else {
+            // As the firelight in the toon shaders, without its shadows.
+            float ndl = clamp(dot(n, d / max(dist, 1e-3)) * 0.8 + 0.2, 0.0, 1.0);
+            fire += pow(fall, 1.4) * ndl * light.x;
+        }
     }
-    if (k <= 0.0) return col;
+    if (k <= 0.0 && fire <= 0.0) return col;
     float sun = 0.0;
-    if (uFlyDim > 0.0) {
+    if (uFlyDim > 0.0 || uFireDim > 0.0) {
         float ndl = clamp(dot(n, uLight) * 3.0, 0.0, 1.0);
         vec4 ls = uLightViewProj * vec4(s + n * 0.08, 1.0);
         vec3 l = ls.xyz / ls.w * 0.5 + 0.5;
         sun = ndl * texture(uShadowMap, vec3(l.xy, l.z - 0.002)) * (1.0 - cloudShadow(s)) * (1.0 - uRain);
     }
-    k *= uFlyLight * (1.0 - uFlyDim * sun);
-    return mix(col, max(col, uFlyBand[surf]), clamp(k, 0.0, 0.7));
+    if (k > 0.0) {
+        k *= uFlyLight * (1.0 - uFlyDim * sun);
+        col = mix(col, max(col, uFlyBand[surf]), clamp(k, 0.0, 0.7));
+    }
+    if (fire > 0.0) {
+        fire *= 1.0 - uFireDim * sun;
+        col = mix(col, max(col, uFireBand[surf]), clamp(fire, 0.0, 0.85));
+    }
+    return col;
 }
 
 vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
@@ -359,7 +387,7 @@ void main() {
     int surface = int(np.a * 8.0 + 0.5) - 1;
     col = edges(p, col, np, surface);
     col = godRays(p, col);
-    col = fireflyLight(p, col, np, surface);
+    col = pointLights(p, col, np, surface);
     col = rain(p, col, np, surface);
     if (uFire == 1) col = fire(p, col);
     oColor = vec4(col, 1.0);

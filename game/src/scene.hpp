@@ -26,6 +26,10 @@ struct BuildOptions {
   // Ruins only: this many bare flames scattered over the lawn, to test many
   // fires at once.
   int extraFires = 0;
+  // Ruins only: candles on flat stone tops and on the lawn, and, with the
+  // shelter test, under its roof - to check that they light their
+  // surroundings and that rain puts out only those open to it.
+  bool candles = false;
 };
 
 pxe::Scene buildScene(const BuildOptions& options = {});
