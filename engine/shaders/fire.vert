@@ -5,7 +5,7 @@
 // Embers are a single pixel.
 
 layout(location = 0) in vec4 aPart;  // world xyz, radius in metres
-layout(location = 1) in vec2 aHeat;  // heat or density, kind (0 core, 1 flame, 2 ember, 3 smoke)
+layout(location = 1) in vec2 aHeat;  // heat or density, kind (0 core, 1 flame, 2 ember, 3 smoke, 4 firefly)
 
 uniform mat4 uViewProj;
 uniform vec2 uTarget;           // render target size in pixels

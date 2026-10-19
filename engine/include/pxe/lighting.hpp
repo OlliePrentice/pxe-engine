@@ -40,6 +40,11 @@ struct Lighting {
   // camera angle) and their colour.
   float rays = 0.f;
   glm::vec3 rayColour{1.f};
+  // Firefly light: how strong, how far direct sun or moon light drowns it
+  // out (0..1), and each surface's colour in full firefly light.
+  float fireflyLight = 0.f;
+  float fireflyDim = 0.f;
+  glm::vec3 fireflyBand[kSurfCount]{};
   float fireLight = 0.f;
   float fireReach = 6.f;  // metres
   float fireDim = 0.f;    // how far direct sun or moon light drowns it out

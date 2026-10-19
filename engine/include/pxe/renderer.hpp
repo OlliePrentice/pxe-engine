@@ -30,6 +30,8 @@ struct FrameParams {
   bool fire = true;
   // Sunbeams through the trees.
   bool rays = true;
+  // Fireflies, and their light.
+  bool fireflies = false;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
 };
