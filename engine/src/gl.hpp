@@ -41,6 +41,8 @@
   M(PFNGLTEXPARAMETERIPROC, glTexParameteri)        \
   M(PFNGLTEXPARAMETERFVPROC, glTexParameterfv)      \
   M(PFNGLTEXIMAGE2DPROC, glTexImage2D)              \
+  M(PFNGLTEXIMAGE3DPROC, glTexImage3D)              \
+  M(PFNGLFRAMEBUFFERTEXTURELAYERPROC, glFramebufferTextureLayer) \
   M(PFNGLCOPYTEXSUBIMAGE2DPROC, glCopyTexSubImage2D) \
   M(PFNGLBINDTEXTUREPROC, glBindTexture)            \
   M(PFNGLGENTEXTURESPROC, glGenTextures)            \
@@ -72,6 +74,8 @@
   M(PFNGLUNIFORM3FPROC, glUniform3f)                \
   M(PFNGLUNIFORM4FPROC, glUniform4f)                \
   M(PFNGLUNIFORM1IPROC, glUniform1i)                \
+  M(PFNGLUNIFORM1IVPROC, glUniform1iv)              \
+  M(PFNGLUNIFORM1FVPROC, glUniform1fv)              \
   M(PFNGLUNIFORM3FVPROC, glUniform3fv)              \
   M(PFNGLUNIFORM4FVPROC, glUniform4fv)              \
   M(PFNGLUNIFORMMATRIX4FVPROC, glUniformMatrix4fv)  \

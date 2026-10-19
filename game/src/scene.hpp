@@ -20,6 +20,12 @@ struct BuildOptions {
   // Eight isolated sprites instead of the field, for the pixel-exact check
   // (hills only).
   bool stamps = false;
+  // Ruins only: add a campfire under a stone shelter and one under a tree
+  // crown, to check that rain puts out only the fires open to it.
+  bool shelterTest = false;
+  // Ruins only: this many bare flames scattered over the lawn, to test many
+  // fires at once.
+  int extraFires = 0;
 };
 
 pxe::Scene buildScene(const BuildOptions& options = {});

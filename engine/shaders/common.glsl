@@ -27,12 +27,16 @@ uniform float uFlash;          // lightning, 0 none .. 1 peak
 uniform vec3 uFlashDir;        // toward the flash
 uniform mat4 uFlashViewProj;
 uniform sampler2DShadow uFlashShadowMap;
-uniform vec3 uFirePos;          // the campfire's light
-uniform float uFireLight;       // 0 none; flickers with the flames
+const int kFireLights = 16;     // Renderer::kFireLights
+uniform int uFireCount;         // firelights this frame
+uniform vec3 uFirePos[kFireLights];
+uniform float uFireLight[kFireLights];     // strength, flickering with the flames
+uniform int uFireCube[kFireLights];        // its cube in uFireShadow, -1 none
+uniform float uFireShadowed[kFireLights];  // 0 no shadows .. 1 full, fading as cubes change hands
 uniform float uFireReach;       // metres the light carries
 uniform float uFireDim;         // how far direct sun or moon light drowns it out, 0..1
 uniform vec3 uFireBand[kSurfaces];  // each surface's colour in full firelight
-uniform samplerCube uFireShadow;    // distance from the fire to the nearest surface, per direction
+uniform samplerCubeArray uFireShadow;  // per cube, distance from its fire to the nearest surface, per direction
 
 vec3 bandColour(int surface, int band) {
     return uBand[surface * 3 + band];
@@ -168,9 +172,9 @@ float cloudShade(vec3 wpos) {
 
 // Whether the fire sees this point, from its cube of distances: a hard
 // shadow, so pillars, stones and logs throw crisp shadows away from it.
-float fireVisible(vec3 wpos, vec3 n) {
-    vec3 d = wpos + normalize(n) * 0.06 - uFirePos;
-    return length(d) - 0.08 < texture(uFireShadow, d).r ? 1.0 : 0.0;
+float fireVisible(vec3 wpos, vec3 n, vec3 firePos, int cube) {
+    vec3 d = wpos + normalize(n) * 0.06 - firePos;
+    return length(d) - 0.08 < texture(uFireShadow, vec4(d, float(cube))).r ? 1.0 : 0.0;
 }
 
 // Firelight, after the glow round t3ssel8r's fire: faces turned to the fire
@@ -181,17 +185,30 @@ float fireVisible(vec3 wpos, vec3 n) {
 // direct light the point already has: by day that drowns the fire out, so
 // the glow shows in the shadows round it - of a tree, a pillar, a cloud -
 // and not on the sunlit lawn.
-vec3 fireLit(vec3 col, int surface, vec3 wpos, vec3 n, float sunlight) {
-    if (uFireLight <= 0.0) return col;
-    vec3 d = uFirePos - wpos;
+vec3 fireLitBy(vec3 col, int surface, vec3 wpos, vec3 n, float sunlight, int i) {
+    vec3 d = uFirePos[i] - wpos;
     float dist = length(d);
     if (dist > uFireReach) return col;
     float fall = 1.0 - dist / uFireReach;
     float ndl = clamp(dot(normalize(n), d / max(dist, 1e-3)) * 0.8 + 0.2, 0.0, 1.0);
-    float k = pow(fall, 1.4) * ndl * uFireLight * (1.0 - uFireDim * clamp(sunlight, 0.0, 1.0));
+    float k = pow(fall, 1.4) * ndl * uFireLight[i] * (1.0 - uFireDim * clamp(sunlight, 0.0, 1.0));
     if (k <= 0.003) return col;
-    k *= fireVisible(wpos, n);
+    if (uFireCube[i] >= 0) k *= mix(1.0, fireVisible(wpos, n, uFirePos[i], uFireCube[i]), uFireShadowed[i]);
     return mix(col, max(col, uFireBand[surface]), clamp(k, 0.0, 0.85));
+}
+
+// Every firelight in turn. The renderer builds these shaders twice: with
+// ONE_FIRE_LIGHT for frames with at most one firelight, and without for the
+// rest. A loop here changes how the compiler rounds the first light's sums,
+// enough to move a hard firelight shadow edge by a pixel, so the one-light
+// build leaves it out and a single fire looks exactly as it always has.
+vec3 fireLit(vec3 col, int surface, vec3 wpos, vec3 n, float sunlight) {
+#ifdef ONE_FIRE_LIGHT
+    if (uFireCount > 0) col = fireLitBy(col, surface, wpos, n, sunlight, 0);
+#else
+    for (int i = 0; i < uFireCount; ++i) col = fireLitBy(col, surface, wpos, n, sunlight, i);
+#endif
+    return col;
 }
 
 // A colour under cloud: pulled toward the surface's own shadow colour.

@@ -21,6 +21,9 @@ namespace game {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
+// Where the shelter test (--shelter-test) builds its roofed campfire.
+constexpr float kShelterTestX = -8.5f;
+constexpr float kShelterTestZ = -9.f;
 
 glm::vec3 hex(std::uint32_t rgb) {
   return glm::vec3{static_cast<float>((rgb >> 16) & 0xff), static_cast<float>((rgb >> 8) & 0xff),
@@ -510,6 +513,33 @@ glm::vec3 addCampfire(VertexLists verts, IndexLists indices, const GroundIndex& 
   return centre + glm::vec3{0.f, 0.08f, 0.f};
 }
 
+std::vector<glm::vec3> cornersOf(const std::vector<pxe::Vertex>& v, const std::vector<std::uint32_t>& idx) {
+  std::vector<glm::vec3> out;
+  out.reserve(idx.size());
+  for (std::uint32_t i : idx) out.push_back({v[i].px, v[i].py, v[i].pz});
+  return out;
+}
+
+// For the shelter test: a little stone shelter over (x, z) - four posts and
+// a two-tier slab roof - to build a campfire under.
+void addShelter(VertexLists verts, IndexLists indices, const GroundIndex& ground, float x, float z) {
+  auto heightAt = [&](float px, float pz) {
+    const auto hit = ground.at(px, pz);
+    return hit ? hit->pos.y : 0.f;
+  };
+  const glm::vec3 ax[3] = {{1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.f}};
+  const float floor = heightAt(x, z);
+  const float eaves = floor + 1.75f;
+  for (float sx : {-1.f, 1.f})
+    for (float sz : {-1.f, 1.f}) {
+      const float px = x + 0.95f * sx, pz = z + 0.95f * sz;
+      const float foot = heightAt(px, pz) - 0.05f;
+      addBox(verts, indices, pxe::kSurfStone, {px, 0.5f * (foot + eaves), pz}, {0.13f, 0.5f * (eaves - foot), 0.13f}, ax);
+    }
+  addBox(verts, indices, pxe::kSurfStone, {x, eaves + 0.1f, z}, {1.3f, 0.1f, 1.3f}, ax);
+  addBox(verts, indices, pxe::kSurfStone, {x, eaves + 0.28f, z}, {0.95f, 0.08f, 0.95f}, ax);
+}
+
 // Ruins: the pond-and-pillars scene from tools/blender/build_ruins.py.
 
 pxe::Scene buildRuins(const BuildOptions& options) {
@@ -570,7 +600,45 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   const GroundIndex ground(std::move(lawn), 1.f);
   std::mt19937 fireRng(11);
   const glm::vec2 campfire{-5.f, -6.f};
-  scene.fires.push_back(addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng));
+  scene.fires.push_back({addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng)});
+  if (options.shelterTest) {
+    // A second fire under a stone shelter, and a third under a tree crown
+    // (the nearest bit of open lawn to the middle with a full crown over it
+    // and no trunk close by).
+    const glm::vec2 roofed{kShelterTestX, kShelterTestZ};
+    addShelter(verts, indices, ground, roofed.x, roofed.y);
+    scene.fires.push_back({addCampfire(verts, indices, ground, roofed.x, roofed.y, fireRng)});
+    std::vector<glm::vec3> crownCorners;
+    for (const Triangle& t : leaves) crownCorners.insert(crownCorners.end(), {t.p[0], t.p[1], t.p[2]});
+    pxe::ShelterMap crowns;
+    crowns.build(crownCorners);
+    const std::vector<glm::vec3> bark = cornersOf(verts[pxe::kSurfBark], indices[pxe::kSurfBark]);
+    std::optional<glm::vec3> under;
+    float best = 1e9f;
+    for (float z = scene.focus.z - 12.f; z <= scene.focus.z + 10.f; z += 0.5f)
+      for (float x = scene.focus.x - 14.f; x <= scene.focus.x + 14.f; x += 0.5f) {
+        const auto hit = ground.at(x, z);
+        if (!hit) continue;
+        const float d = glm::length(glm::vec2{x, z} - glm::vec2{scene.focus.x, scene.focus.z});
+        if (d >= best) continue;
+        bool clear = true;
+        for (const pxe::FireSite& f : scene.fires) clear = clear && glm::length(glm::vec2{x - f.base.x, z - f.base.z}) > 3.f;
+        for (const glm::vec3& p : bark)
+          clear = clear && (p.y > hit->pos.y + 2.5f || glm::length(glm::vec2{p.x - x, p.z - z}) > 1.2f);
+        if (clear && crowns.coveredLines(hit->pos) == 9) {
+          best = d;
+          under = hit->pos;
+        }
+      }
+    if (under) scene.fires.push_back({addCampfire(verts, indices, ground, under->x, under->z, fireRng)});
+  }
+  // Only built structure keeps the rain off: the stone. A tree crown lets
+  // it through.
+  scene.shelter.build(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
+  for (pxe::FireSite& f : scene.fires) {
+    f.sheltered = scene.shelter.sheltered(f.base);
+    std::fprintf(stderr, "pxe: fire at %.1f, %.1f %s\n", f.base.x, f.base.z, f.sheltered ? "sheltered" : "open to the rain");
+  }
 
   for (int s = 0; s < pxe::kSurfCount; ++s) {
     if (indices[s].empty()) continue;
@@ -647,9 +715,11 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     }
   }
 
-  // No grass in the fire pit.
+  // No grass in the fire pits.
   std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
-    return glm::length(glm::vec2{g.px, g.pz} - campfire) < 1.05f;
+    for (const pxe::FireSite& f : scene.fires)
+      if (glm::length(glm::vec2{g.px, g.pz} - glm::vec2{f.base.x, f.base.z}) < 1.05f) return true;
+    return false;
   });
 
   // Leaves grow in clumps, as in the video: clump centres are scattered over
@@ -731,6 +801,25 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     scene.grass.push_back({root.x, root.y, root.z, tilt.x, tilt.y, tilt.z, kind, unit(rng),
                            0.85f + 0.3f * unit(rng), static_cast<float>(pxe::kSurfLeaf)});
     ++leafCount;
+  }
+  // Bare flames for testing many fires at once, as spells or spreading fire
+  // would make: scattered over the open lawn, with no pit or logs.
+  if (options.extraFires > 0) {
+    std::mt19937 extraRng(31);
+    std::uniform_real_distribution<float> u(0.f, 1.f);
+    const std::size_t want = scene.fires.size() + static_cast<std::size_t>(options.extraFires);
+    for (int tries = 0; tries < 2000 && scene.fires.size() < want; ++tries) {
+      const float x = scene.focus.x - 12.f + 24.f * u(extraRng);
+      const float z = scene.focus.z - 9.f + 16.f * u(extraRng);
+      const auto hit = ground.at(x, z);
+      if (!hit) continue;
+      bool apart = true;
+      for (const pxe::FireSite& f : scene.fires) apart = apart && glm::length(glm::vec2{x - f.base.x, z - f.base.z}) > 1.5f;
+      if (!apart) continue;
+      const glm::vec3 base = hit->pos + glm::vec3{0.f, 0.08f, 0.f};
+      scene.fires.push_back({base, scene.shelter.sheltered(base)});
+    }
+    std::fprintf(stderr, "pxe: %d extra fires\n", options.extraFires);
   }
   std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters\n", prims.size(), leafCount);
   return scene;

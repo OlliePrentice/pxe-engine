@@ -66,19 +66,26 @@ void WorldClock::advance(float dt) {
       nextStrike_ = (16.f + (6.f - 16.f) * heavy) * (0.5f + random());
     }
   }
-  // The campfire: Rain or Downpour puts it out, over about eight seconds
-  // in rain and three and a half in a downpour, and it stays out until it
-  // is relit, catching again over a couple of seconds. It smokes harder as
-  // it dies and wisps on for about twenty seconds after the last flame.
-  if (fireLit && rain >= kRainPutsOutFire) fireLit = false;
-  if (fireLit) {
-    fireLevel = std::min(1.f, fireLevel + dt / 2.5f);
-    fireSmoke = std::max(0.f, fireSmoke - dt / 20.f);
-  } else {
-    const float heavy = std::clamp((rain - kRainPutsOutFire) / (1.f - kRainPutsOutFire), 0.f, 1.f);
-    fireLevel = std::max(0.f, fireLevel - dt / (8.f - 4.5f * heavy));
-    if (fireLevel > 0.f) fireSmoke = std::max(fireSmoke, 1.f - fireLevel);
-    else fireSmoke = std::max(0.f, fireSmoke - dt / 20.f);
+  // The campfires: Rain or Downpour puts out each one open to the sky, over
+  // about eight seconds in rain and three and a half in a downpour, and it
+  // stays out until it is relit, catching again over a couple of seconds.
+  // A fire under a roof burns on. A dying fire smokes harder and wisps on
+  // for about twenty seconds after the last flame. After the first, each
+  // fire takes a little longer to catch or die than the one before (up to
+  // about a third longer), so they do not all go in lockstep.
+  const float heavy = std::clamp((rain - kRainPutsOutFire) / (1.f - kRainPutsOutFire), 0.f, 1.f);
+  for (std::size_t i = 0; i < fires.size(); ++i) {
+    Fire& f = fires[i];
+    const float pace = 1.f + 0.35f * std::fmod(0.618034f * static_cast<float>(i), 1.f);
+    if (f.lit && !f.sheltered && rain >= kRainPutsOutFire) f.lit = false;
+    if (f.lit) {
+      f.level = std::min(1.f, f.level + dt / (2.5f * pace));
+      f.smoke = std::max(0.f, f.smoke - dt / 20.f);
+    } else {
+      f.level = std::max(0.f, f.level - dt / ((8.f - 4.5f * heavy) * pace));
+      if (f.level > 0.f) f.smoke = std::max(f.smoke, 1.f - f.level);
+      else f.smoke = std::max(0.f, f.smoke - dt / 20.f);
+    }
   }
 
   flash = 0.f;
@@ -94,6 +101,36 @@ void WorldClock::advance(float dt) {
   // The noise is sampled at position + offset, so moving the offset against
   // the wind carries the clouds with it.
   cloudOffset -= windDir() * kCloudDrift * dt * cloudSpeed;
+}
+
+void WorldClock::placeFires(const std::vector<pxe::FireSite>& sites) {
+  fires.clear();
+  nextFireId = 0;
+  for (const pxe::FireSite& site : sites) {
+    Fire f;
+    f.id = nextFireId++;
+    f.base = site.base;
+    f.sheltered = site.sheltered;
+    fires.push_back(f);
+  }
+}
+
+std::uint32_t WorldClock::addFire(glm::vec3 base, const pxe::ShelterMap& shelter) {
+  Fire f;
+  f.id = nextFireId++;
+  f.base = base;
+  f.sheltered = shelter.sheltered(base);
+  f.level = 0.f;  // it catches
+  fires.push_back(f);
+  return f.id;
+}
+
+void WorldClock::removeFire(std::uint32_t id) {
+  std::erase_if(fires, [&](const Fire& f) { return f.id == id; });
+}
+
+void WorldClock::relightFires() {
+  for (Fire& f : fires) f.lit = true;
 }
 
 glm::vec2 WorldClock::windDir() const {
@@ -211,16 +248,33 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
       ImGui::Checkbox("Fireflies", &view.fireflies);
 
       ImGui::SeparatorText("Campfire");
-      const char* state = clock.fireLit ? (clock.fireLevel < 1.f ? "Catching" : "Burning")
-                        : clock.fireLevel > 0.f ? "Going out in the rain"
-                        : clock.fireSmoke > 0.f ? "Out, still smoking" : "Out";
-      ImGui::Text("%s", state);
+      int burning = 0, dying = 0, smoking = 0, sheltered = 0;
+      for (const WorldClock::Fire& f : clock.fires) {
+        burning += f.lit;
+        dying += !f.lit && f.level > 0.f;
+        smoking += !f.lit && f.level <= 0.f && f.smoke > 0.f;
+        sheltered += f.sheltered;
+      }
+      const int out = static_cast<int>(clock.fires.size()) - burning;
+      if (clock.fires.size() == 1) {
+        const WorldClock::Fire& f = clock.fires[0];
+        ImGui::Text("%s", f.lit ? (f.level < 1.f ? "Catching" : "Burning")
+                          : f.level > 0.f ? "Going out in the rain"
+                          : f.smoke > 0.f ? "Out, still smoking" : "Out");
+      } else if (dying > 0) {
+        ImGui::Text("%d burning, %d going out in the rain", burning, dying);
+      } else {
+        ImGui::Text("%d burning, %d out%s", burning, out, smoking > 0 ? ", still smoking" : "");
+      }
       const bool tooWet = clock.rain >= WorldClock::kRainPutsOutFire;
-      ImGui::BeginDisabled(clock.fireLit || tooWet);
+      ImGui::BeginDisabled(out == 0 || tooWet);
       ImGui::SameLine();
-      if (ImGui::Button("Relight fire")) clock.fireLit = true;
+      if (ImGui::Button(out > 1 ? "Relight fires" : "Relight fire")) clock.relightFires();
       ImGui::EndDisabled();
-      ImGui::TextDisabled(tooWet ? "Too wet to relight; Rain and Downpour put it out" : "Rain and Downpour put it out");
+      const char* why = sheltered > 0 ? "Rain puts out fires open to the sky; roofed ones burn on"
+                                      : "Rain and Downpour put it out";
+      if (tooWet) ImGui::TextDisabled("Too wet to relight. %s", why);
+      else ImGui::TextDisabled("%s", why);
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms), capped by vsync; --bench measures uncapped", fps, 1000.f / fps);
       else

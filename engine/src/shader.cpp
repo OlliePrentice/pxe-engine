@@ -49,8 +49,8 @@ unsigned compile(unsigned type, const std::string& source, const std::string& la
 }  // namespace
 
 unsigned linkProgram(const std::string& vertPath, const std::string& fragPath,
-                     const std::string& commonPath) {
-  const std::string common = commonPath.empty() ? std::string{} : readAll(commonPath);
+                     const std::string& commonPath, const std::string& commonPrefix) {
+  const std::string common = commonPath.empty() ? std::string{} : commonPrefix + readAll(commonPath);
   const unsigned vs = compile(GL_VERTEX_SHADER, compose(readAll(vertPath), common), vertPath);
   const unsigned fs = compile(GL_FRAGMENT_SHADER, compose(readAll(fragPath), common), fragPath);
   const unsigned prog = glCreateProgram();

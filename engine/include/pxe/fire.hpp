@@ -38,6 +38,10 @@ class Fire {
   // `smoulder` (0..1) keeps smoke rising from the logs after it is out.
   void advanceTo(float time, glm::vec2 wind, float level = 1.f, float smoulder = 0.f);
 
+  // Carry the fire to `base`. Flames already risen stay where they are, so
+  // a moving fire trails them.
+  void moveTo(glm::vec3 base) { base_ = base; }
+
   const std::vector<FireParticle>& particles() const { return drawn_; }
   glm::vec3 base() const { return base_; }
   // About 0.88..1, a gentle smooth pulse: scales the firelight.

@@ -4,6 +4,10 @@
 #include <glm/vec3.hpp>
 
 #include "audio.hpp"
+#include "pxe/scene.hpp"
+
+#include <cstdint>
+#include <vector>
 
 struct GLFWwindow;
 
@@ -20,12 +24,21 @@ struct WorldClock {
   float windDegrees = 20.f;      // direction the wind blows toward, compass-style
   float rain = 0.f;              // 0 dry, 0.2 drizzle, 0.55 rain, 1 downpour
   bool lightning = true;         // flashes now and then in rain and downpour
-  // The campfire: lit until Rain or Downpour puts it out, then out until
-  // relit from the menu. Its level eases between out (0) and burning (1),
-  // and once out it smokes on for a while (fireSmoke 1 just out .. 0).
-  bool fireLit = true;
-  float fireLevel = 1.f;
-  float fireSmoke = 0.f;
+  // The fires: the scene's to begin with (see placeFires), and any the game
+  // adds as it runs. Each is lit until Rain or Downpour puts it out - unless
+  // a structure shelters it - then out until relit from the menu. Its level
+  // eases between out (0) and burning (1), and once out it smokes on for a
+  // while (smoke 1 just out .. 0).
+  struct Fire {
+    std::uint32_t id = 0;  // stays the fire's while it lives
+    glm::vec3 base{0.f};
+    bool sheltered = false;
+    bool lit = true;
+    float level = 1.f;
+    float smoke = 0.f;
+  };
+  std::vector<Fire> fires;
+  std::uint32_t nextFireId = 0;
   glm::vec2 cloudOffset{0.f};
 
   // The flash now lighting the scene, 0 none .. 1 at its peak, and the
@@ -34,11 +47,18 @@ struct WorldClock {
   glm::vec3 flashDir{0.f, 1.f, 0.f};
   int strikes = 0;  // counts flashes, so the game can follow each with thunder
 
+  // One burning fire per scene fire, sheltered as the scene says.
+  void placeFires(const std::vector<pxe::FireSite>& sites);
+  // Light a new fire at `base` (sheltered from `shelter`); returns its id.
+  std::uint32_t addFire(glm::vec3 base, const pxe::ShelterMap& shelter);
+  void removeFire(std::uint32_t id);
+  // Relight every fire that is out.
+  void relightFires();
   // Advance by `dt` real seconds.
   void advance(float dt);
   // A lightning flash now, lighting the scene from a random direction.
   void strike();
-  // Rain at or above this puts the campfire out (and stops it relighting).
+  // Rain at or above this puts open campfires out (and stops them relighting).
   static constexpr float kRainPutsOutFire = 0.45f;
   // Unit vector, world XZ, the wind blows toward.
   glm::vec2 windDir() const;

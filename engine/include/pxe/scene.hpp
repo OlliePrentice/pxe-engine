@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pxe/mesh.hpp"
+#include "pxe/shelter.hpp"
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -39,6 +40,13 @@ enum Phase : int {
   kPhaseCount = 4,
 };
 
+// A fire the scene starts with: where its flames rise from, and whether a
+// structure roofs it over (from `Scene::shelter`), so rain cannot reach it.
+struct FireSite {
+  glm::vec3 base{0.f};
+  bool sheltered = false;
+};
+
 struct Scene {
   std::vector<Mesh> meshes;  // opaque; all cast shadows
   // Water sheets, drawn after the opaque meshes with reflections. They do
@@ -49,9 +57,11 @@ struct Scene {
   glm::vec3 waterMin{0.f};
   glm::vec3 waterMax{0.f};
   std::vector<GrassInstance> grass;
-  // Campfires: where each fire's flames rise from. The first one also
-  // lights its surroundings.
-  std::vector<glm::vec3> fires;
+  // Fires the scene starts with. The game owns them from then on, and can
+  // add, move and remove fires as it runs (see FrameParams::fires).
+  std::vector<FireSite> fires;
+  // Built structure overhead, for keeping rain off fires.
+  ShelterMap shelter;
   // Where each firefly wanders round, when they are out.
   std::vector<glm::vec3> fireflyHomes;
   Palette palette[kPhaseCount][kSurfCount];
