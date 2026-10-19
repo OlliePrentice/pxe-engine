@@ -17,6 +17,9 @@ uniform sampler2D uBedDepth;    // and its depth
 uniform sampler2D uReflection;  // mirrored scene; alpha 0 where only sky
 uniform float uDepthMetres;     // far - near: the ortho depth buffer is linear
 uniform float uTime;
+uniform float uWindTime;    // the wind's phase
+uniform vec2 uWindDir;      // world XZ, unit
+uniform float uWindRipple;  // 0 calm .. 1 a strong wind ruffling the surface
 
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oNormal;
@@ -72,6 +75,11 @@ void main() {
     // ripple, and stays on whole pixels.
     float rip = sin(vWorld.z * 2.7 + vWorld.x * 0.6 + uTime * 1.3) + 0.5 * sin(vWorld.x * 4.1 - uTime * 1.9);
     ivec2 rp = p + ivec2(rip > 1.0 ? 1 : (rip < -1.0 ? -1 : 0), 0);
+    // A strong wind breaks the reflection up further, by up to two pixels.
+    if (uWindRipple > 0.0) {
+        float w = rip + uWindRipple * 1.2 * sin(dot(vWorld.xz, uWindDir) * 5.3 - uWindTime * 4.1);
+        rp = p + ivec2(int(clamp(floor(w * (0.7 + 0.5 * uWindRipple) + 0.5), -2.0, 2.0)), 0);
+    }
     vec4 refl = texelFetch(uReflection, rp, 0);
 
     // Sky: drifting blotches in three steps between the body colour and the
@@ -90,5 +98,18 @@ void main() {
     float edge = depth / kClear + (cloudNoise(vWorld.xz * 1.4) - 0.5) * 0.7;
     vec3 col = edge > 0.45 ? mirror : bed;
     col = mix(col, toneColour(kSurfFoam, tone), ring);
+    // Wind ripples: in a moderate breeze up, patches of fine wavelets
+    // (catspaws) drift downwind across the surface, each wavelet a short
+    // one-pixel light dash across the wind. The patches grow as it blows
+    // harder.
+    if (uWindRipple > 0.0) {
+        vec2 side = vec2(-uWindDir.y, uWindDir.x);
+        float along = dot(vWorld.xz, uWindDir), across = dot(vWorld.xz, side);
+        float gustPatch = cloudNoise(vec2(along * 0.35 - uWindTime * 0.6, across * 0.5));
+        float crest = fract(along * 2.6 - uWindTime * 1.4 + 0.35 * sin(across * 1.9));
+        float dash = fract(across * 1.1 + 0.6 * sin(along * 0.9) + floor(along * 2.6 - uWindTime * 1.4) * 0.37);
+        if (gustPatch > 0.85 - 0.35 * uWindRipple && dash < 0.45 && crest < fwidth(along * 2.6) * 1.1)
+            col = mix(col, glint, 0.4);
+    }
     oColor = vec4(fireLit(clouded(col, kSurfWater, shade), kSurfWater, vWorld, n, lit * (1.0 - shade)), 1.0);
 }

@@ -21,7 +21,13 @@ namespace {
 
 constexpr float kGrassBiasMetres = 0.6f;   // leaves, through their own crown
 constexpr float kBladeBiasMetres = 0.12f;  // grass, just clear of the ground
-constexpr float kWindPx = 1.6f;
+constexpr float kWindPx = 1.6f;  // peak sway at the default wind strength (1)
+
+// Wind strength (0 still, 1 default, up to 6) as how far sprites sway and how
+// fast the gusts roll, both 1 at the default so it looks as it always did:
+// near still in no wind, bending hard and quick in a gale.
+float windSway(float s) { return s <= 1.f ? 0.3f + 0.7f * s : 1.f + 0.3f * (s - 1.f); }
+float windRate(float s) { return s <= 1.f ? 0.35f + 0.65f * std::max(s, 0.f) : 1.f + 0.35f * (s - 1.f); }
 // Fire is drawn this far toward the camera, so the logs in front of it hide
 // only the bottom of the flames.
 constexpr float kFireBiasMetres = 0.25f;
@@ -606,8 +612,12 @@ void Renderer::updateFires(const Scene& scene, const FrameParams& params) {
   // Fires burn on real time and lean with the wind, each as well as it is
   // burning. A fire seen for the first time starts burning at once; one no
   // longer listed is dropped.
+  // Above the default strength the flames, sparks and smoke are pushed
+  // harder than in proportion, so a gale lays the fire over and streams its
+  // smoke away; at the default it leans as it always has.
+  const float gale = 1.f + 0.8f * std::max(lighting.windStrength - 1.f, 0.f);
   const glm::vec2 wind = (glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{0.f}) *
-                         0.6f * lighting.windStrength;
+                         std::min(0.6f * lighting.windStrength * gale, 6.f);
   struct Live {
     std::uint32_t id;
     const Fire* fire;
@@ -887,6 +897,13 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   endPass();
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
+  // The wind's phase, for the grass, leaves and water.
+  {
+    const float rate = windRate(lighting.windStrength);
+    if (windTime_ < 0.f || params.time < windTime_ || params.time - windTime_ > 0.5f) windPhase_ = params.time * rate;
+    else windPhase_ += (params.time - windTime_) * rate;
+    windTime_ = params.time;
+  }
   updateFires(scene, params);
   // The grass fire steps on the GPU before anything reads it this frame.
   const glm::vec2 windDir = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{0.f};
@@ -960,7 +977,12 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, ground_);
     u1f(progGrass_, "uTime", params.time);
-    u1f(progGrass_, "uWindPx", kWindPx);
+    const float sway = windSway(lighting.windStrength);
+    u1f(progGrass_, "uWindPx", kWindPx * sway);
+    u1f(progGrass_, "uWindTime", windPhase_);
+    u1f(progGrass_, "uWindRate", windRate(lighting.windStrength));
+    // Sprite boxes widen by however much further than usual the blades sway.
+    u1f(progGrass_, "uSwayPad", std::ceil(std::max(sway - 1.f, 0.f) * kWindPx * 1.9f));
     const glm::vec2 wd = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{1.f, 0.f};
     u2f(progGrass_, "uWindDir", wd.x, wd.y);
     // Wind blowing straight at or away from the camera barely leans the
@@ -1034,6 +1056,13 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     u1i(progWater_, "uReflection", 5);
     u1f(progWater_, "uDepthMetres", camera.farPlane - camera.nearPlane);
     u1f(progWater_, "uTime", params.time);
+    u1f(progWater_, "uWindTime", windPhase_);
+    {
+      const glm::vec2 wd = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{1.f, 0.f};
+      u2f(progWater_, "uWindDir", wd.x, wd.y);
+      // Wind ripples on the water from a moderate breeze up.
+      u1f(progWater_, "uWindRipple", std::clamp((lighting.windStrength - 1.3f) / 2.2f, 0.f, 1.f));
+    }
     glDisable(GL_CULL_FACE);
     for (const Mesh& m : scene.water) m.draw();
   }

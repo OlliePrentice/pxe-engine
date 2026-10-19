@@ -206,6 +206,10 @@ class Renderer {
   unsigned tileBuf_ = 0, tileTex_ = 0;
   int tilesX_ = 0;
   float fireTime_ = -1.f;              // params.time of the last frame, < 0 none
+  // The wind's phase: advances faster the stronger it blows, accumulated
+  // so a change of strength never makes the grass jump.
+  float windPhase_ = 0.f;
+  float windTime_ = -1.f;
   unsigned fboFlash_ = 0;
 
   // The toon programs this frame: one of toon_, by how many firelights.
