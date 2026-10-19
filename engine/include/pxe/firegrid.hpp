@@ -70,6 +70,9 @@ class FireGrid {
   // unbound).
   void advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite, const std::vector<Stroke>& strokes,
                float rain, glm::vec2 wind);
+  // How long a fire set alight by hand keeps spreading, in seconds of
+  // burning down the line of cells it spreads through; 0 for ever.
+  void setLifetime(float seconds) { lifetime_ = seconds; }
 
   // Point lights for the burning patches, blended between the last two
   // readbacks of the grid.
@@ -102,6 +105,8 @@ class FireGrid {
   unsigned state_[2] = {};  // fire, fuel left, wetness, embers
   unsigned canopyGround_ = 0;  // leaves, mean crown height, crown top
   unsigned canopy_[2] = {};    // crown fire, leaves left, warmth, embers; drawn with state_
+  unsigned life_[2] = {};      // grass and crown fire's life left; drawn with state_
+  float lifetime_ = 0.f;
   unsigned fbo_[2] = {};
   unsigned burn_ = 0, fboBurn_ = 0;
   unsigned glow_[2] = {}, fboGlow_[2] = {};  // blurred alongside state_

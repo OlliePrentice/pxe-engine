@@ -75,6 +75,9 @@ struct FrameParams {
   bool grassFire = false;
   std::vector<glm::vec2> igniteGrass;
   std::vector<FireGrid::Stroke> gridStrokes;
+  // Seconds a grass fire set alight keeps spreading before it dies out
+  // (FireGrid::setLifetime); 0 until there is nothing left to burn.
+  float grassFireLife = 0.f;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
 };

@@ -920,6 +920,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   updateFires(scene, params);
   // The grass fire steps on the GPU before anything reads it this frame.
   const glm::vec2 windDir = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{0.f};
+  grid_.setLifetime(params.grassFireLife);
   if (params.grassFire)
     grid_.advance(scene, params.time, params.igniteGrass, params.gridStrokes, lighting.rain,
                   windDir * lighting.windStrength);

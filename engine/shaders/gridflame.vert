@@ -84,14 +84,16 @@ void main() {
     if (part >= 5) {
         // A burning crown, up toward the top of its leaves (they hide
         // anything lower): a glow at 8 fps, a tall flame at 12 fps, and from
-        // some cells smoke at 6 fps or a spark at 10 fps.
+        // some cells smoke at 6 fps or a spark at 10 fps. A crown just
+        // catching burns in the middle of its leaves and climbs to the top
+        // as it takes hold.
         float crown = mix(texelFetch(uCanopyPrev, cell, 0).r, texelFetch(uCanopy, cell, 0).r, uBlend);
         if (crown < 0.03) {
             drop();
             return;
         }
         vec4 kg = texelFetch(uCanopyGround, cell, 0);
-        vec3 top = vec3(base.x, mix(kg.g, kg.b, 0.6), base.z) + jitter * 2.0;
+        vec3 top = vec3(base.x, mix(kg.g, kg.b, 0.6 * smoothstep(0.1, 0.6, crown)), base.z) + jitter * 2.0;
         if (part == 5) {
             float t = floor(uTime * 8.0) / 8.0;
             float swell = 0.85 + 0.15 * sin(t * 8.0 + h0 * 6.3);

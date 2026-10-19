@@ -4,12 +4,18 @@
 // r how hard it burns (0 not .. 1 full), g dry grass left, b wetness, a how
 // hot its embers still are once the flames have gone. Canopy, the tree
 // crowns over the cell: r how hard they burn, g leaves left, b how warm
-// the fire below has made them, a embers.
+// the fire below has made them, a embers. Life, while a cell burns: how
+// much longer its fire can spread, r the grass's and g the crown's, 1 when
+// set alight by hand or a spell down to 0. A cell catching from its
+// neighbours takes the most life of the fires that lit it, and life runs
+// down while it burns, so a fire dies out once its life is spent.
 
 uniform sampler2D uState;         // the latest step
 uniform sampler2D uGround;        // r fuel, g roofed, b ground height
 uniform sampler2D uCanopy;        // the latest step's crowns
 uniform sampler2D uCanopyGround;  // r leaves, g mean crown height, b crown top
+uniform sampler2D uLife;          // the latest step's
+uniform float uLifeStep;          // life lost per step of burning; 0 a fire spreads for ever
 uniform float uDt;
 uniform float uRain;        // 0 dry .. 1 downpour
 uniform vec2 uWind;         // world xz the wind blows toward, times its strength
@@ -22,6 +28,7 @@ uniform vec2 uStrokeShape[8];  // radius in cells, kind: 0 fire, 1 water, 2 regr
 
 layout(location = 0) out vec4 oState;
 layout(location = 1) out vec4 oCanopy;
+layout(location = 2) out vec4 oLife;
 
 // Grid x runs along world x and grid y along world z, so the wind is in
 // cell directions already.
@@ -47,34 +54,64 @@ void main() {
     vec4 kg = texelFetch(uCanopyGround, c, 0);
     float fire = s.r, fuel = s.g, wet = s.b, ember = s.a;
     float crown = k.r, leaves = k.g, warmth = k.b, crownEmber = k.a;
+    vec2 life = texelFetch(uLife, c, 0).rg;
     bool roofed = g.g > 0.5;
 
     // Heat reaching this cell from the burning cells round it, falling off
     // with distance, more from upwind and less from downwind: from the
     // grass to the grass and from crown to crown. A crown also feels the
     // grass burning under and round it, and the grass the embers falling
-    // from a crown burning over it.
+    // from a crown burning over it. Only fire with life left spreads; a
+    // cell keeps the most life of what reaches it, for when it catches.
+    // Warmth also spreads through a crown, so it goes up as a whole.
     float wl = length(uWind);
     vec2 wd = wl > 1e-4 ? uWind / wl : vec2(0.0);
+    float alive = step(1e-4, life.r), crownAlive = step(1e-4, life.g);
     float heat = 0.0, crownHeat = 0.0, below = fire;
+    float lit = fire > 0.0 ? life.r * alive : 0.0, litCrown = crown > 0.0 ? life.g * crownAlive : 0.0;
+    float warmSum = 0.0, warmCount = 0.0;
     for (int y = -2; y <= 2; ++y)
         for (int x = -2; x <= 2; ++x) {
             ivec2 q = c + ivec2(x, y);
             if ((x == 0 && y == 0) || any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, size))) continue;
-            float f = texelFetch(uState, q, 0).r;
-            float fc = texelFetch(uCanopy, q, 0).r;
-            if (f <= 0.0 && fc <= 0.0) continue;
             vec2 d = vec2(x, y);
             float r2 = dot(d, d);
-            float upwind = max(0.1, 1.0 + 1.2 * wl * -dot(d, wd) * inversesqrt(r2));
-            heat += f / r2 * upwind;
-            crownHeat += fc / r2 * upwind;
+            vec4 kq = texelFetch(uCanopy, q, 0);
+            if (r2 < 2.5 && kq.g > 0.05) {
+                warmSum += kq.b;
+                warmCount += 1.0;
+            }
+            float f = texelFetch(uState, q, 0).r;
+            float fc = kq.r;
+            if (f <= 0.0 && fc <= 0.0) continue;
+            vec2 lq = texelFetch(uLife, q, 0).rg;
+            float along = -dot(d, wd) * inversesqrt(r2);
+            float upwind = max(0.1, 1.0 + 1.2 * wl * along);
+            if (f > 0.0 && lq.r > 1e-4) {
+                heat += f / r2 * upwind;
+                lit = max(lit, lq.r);
+            }
+            if (fc > 0.0 && lq.g > 1e-4) {
+                // Flames leap between leaves in every direction, the wind
+                // only leaning them, so a crown goes up as a whole rather
+                // than in a line downwind.
+                crownHeat += fc / r2 * max(0.4, 1.0 + 0.4 * wl * along);
+                litCrown = max(litCrown, lq.g);
+            }
             if (r2 < 2.5) {
                 below += f;
-                heat += 0.35 * fc;
+                if (lq.g > 1e-4) {
+                    heat += 0.35 * fc;
+                    lit = max(lit, lq.g);
+                }
+                if (lq.r > 1e-4) litCrown = max(litCrown, lq.r);
             }
         }
-    heat += 0.6 * crown;
+    if (life.g > 1e-4) {
+        heat += 0.6 * crown;
+        lit = max(lit, life.g);
+    }
+    if (fire > 0.0 && life.r > 1e-4) litCrown = max(litCrown, life.r);
 
     // Rain soaks every cell open to the sky; once it stops they dry slowly,
     // faster beside a fire. The crowns share their cell's wetness.
@@ -83,17 +120,28 @@ void main() {
 
     // Dry grass catches at random, the more heat the sooner; wet grass not at all.
     float dry = clamp(1.0 - wet / 0.3, 0.0, 1.0);
-    if (fire <= 0.0 && fuel > 0.1 && dice(vec2(c), uTick) < heat * 0.25 * uDt * dry * g.r) fire = 0.12;
+    if (fire <= 0.0 && fuel > 0.1 && dice(vec2(c), uTick) < heat * 0.25 * uDt * dry * g.r) {
+        fire = 0.12;
+        life.r = lit;
+    }
     for (int i = 0; i < uIgniteCount; ++i)
-        if (distance(vec2(c) + 0.5, uIgnite[i]) < 2.0 && fuel > 0.1 && wet < 0.5) fire = max(fire, 0.5);
+        if (distance(vec2(c) + 0.5, uIgnite[i]) < 2.0 && fuel > 0.1 && wet < 0.5) {
+            fire = max(fire, 0.5);
+            life.r = 1.0;
+        }
 
-    // A crown warms while grass burns under it and cools once it stops;
-    // warm through, or next to a burning crown, it catches.
+    // A crown warms while grass burns under it or the crown round it
+    // burns, shares its warmth with the rest of the crown, and cools once
+    // the fire is gone; warm through, or next to a burning crown, it catches.
     bool tree = kg.r > 0.0;
     if (tree) {
-        warmth = clamp(warmth + uDt * (0.06 * below - 0.08), 0.0, 1.0);
-        float chance = crownHeat * 0.3 + (warmth > 0.5 ? 2.0 * (warmth - 0.5) : 0.0);
-        if (crown <= 0.0 && leaves > 0.1 && dice(vec2(c), uTick + 7.0) < chance * uDt * dry) crown = 0.15;
+        float shared = warmCount > 0.0 ? warmSum / warmCount - warmth : 0.0;
+        warmth = clamp(warmth + uDt * (0.08 * below + 0.5 * crownHeat - 0.08 + 0.6 * shared), 0.0, 1.0);
+        float chance = crownHeat * 0.9 + (warmth > 0.5 ? 2.0 * (warmth - 0.5) : 0.0);
+        if (crown <= 0.0 && leaves > 0.1 && litCrown > 0.0 && dice(vec2(c), uTick + 7.0) < chance * uDt * dry) {
+            crown = 0.15;
+            life.g = litCrown;
+        }
     }
 
     // Brushes: fire dries the grass and sets it alight in scattered cells
@@ -106,10 +154,14 @@ void main() {
         int kind = int(uStrokeShape[i].y + 0.5);
         if (kind == 0) {
             wet = max(0.0, wet - w * uDt * 2.0);
-            if (fire <= 0.0 && fuel > 0.1 && wet < 0.5 && dice(vec2(c), uTick + 19.0 + float(i)) < w * 0.6)
+            if (fire <= 0.0 && fuel > 0.1 && wet < 0.5 && dice(vec2(c), uTick + 19.0 + float(i)) < w * 0.6) {
                 fire = 0.5;
-            if (tree && crown <= 0.0 && leaves > 0.1 && wet < 0.5 && dice(vec2(c), uTick + 23.0 + float(i)) < w * 0.08)
+                life.r = 1.0;
+            }
+            if (tree && crown <= 0.0 && leaves > 0.1 && wet < 0.5 && dice(vec2(c), uTick + 23.0 + float(i)) < w * 0.08) {
                 crown = 0.3;
+                life.g = 1.0;
+            }
         } else if (kind == 1) {
             wet = max(wet, w);
             fire = max(0.0, fire - w * uDt * 6.0);
@@ -149,6 +201,10 @@ void main() {
         if (crown < 0.02) crown = 0.0;
     }
     crownEmber = max(0.0, crownEmber - uDt * (0.15 + 0.8 * wet));
+    // Life runs down while a fire burns.
+    if (fire > 0.0) life.r = max(0.0, life.r - uLifeStep);
+    if (crown > 0.0) life.g = max(0.0, life.g - uLifeStep);
     oState = vec4(fire, fuel, wet, ember);
     oCanopy = vec4(crown, leaves, warmth, crownEmber);
+    oLife = vec4(life, 0.0, 0.0);
 }

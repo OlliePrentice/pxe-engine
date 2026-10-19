@@ -4,6 +4,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <glm/geometric.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -80,7 +82,12 @@ void WorldClock::advance(float dt) {
     float pace = 1.f + 0.35f * std::fmod(0.618034f * static_cast<float>(i), 1.f);
     if (f.size < 1.f) pace *= 0.25f;
     if (f.lit && !f.sheltered && rain >= kRainPutsOutFire) f.lit = false;
-    if (f.lit) {
+    if (f.doused) {
+      // Doused: out in about half a second, in a burst of smoke.
+      f.level = std::max(0.f, f.level - dt / 0.5f);
+      if (f.level > 0.f) f.smoke = std::max(f.smoke, 1.f - 0.5f * f.level);
+      else f.smoke = std::max(0.f, f.smoke - dt / 20.f);
+    } else if (f.lit) {
       f.level = std::min(1.f, f.level + dt / (2.5f * pace));
       f.smoke = std::max(0.f, f.smoke - dt / 20.f);
     } else {
@@ -134,7 +141,23 @@ void WorldClock::removeFire(std::uint32_t id) {
 }
 
 void WorldClock::relightFires() {
-  for (Fire& f : fires) f.lit = true;
+  for (Fire& f : fires) {
+    f.lit = true;
+    f.doused = false;
+  }
+}
+
+void WorldClock::douse(glm::vec2 from, glm::vec2 to, float radius) {
+  const glm::vec2 along = to - from;
+  const float len2 = glm::dot(along, along);
+  for (Fire& f : fires) {
+    const glm::vec2 p{f.base.x, f.base.z};
+    const float t = len2 > 1e-8f ? std::clamp(glm::dot(p - from, along) / len2, 0.f, 1.f) : 0.f;
+    // A campfire's flames spread past its base, so water near it counts.
+    if (glm::distance(p, from + along * t) > radius + 0.4f * f.size) continue;
+    f.lit = false;
+    f.doused = true;
+  }
 }
 
 glm::vec2 WorldClock::windDir() const {
@@ -282,6 +305,16 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
                                       : "Rain and Downpour put it out";
       if (tooWet) ImGui::TextDisabled("Too wet to relight. %s", why);
       else ImGui::TextDisabled("%s", why);
+      ImGui::SeparatorText("Grass fire");
+      {
+        // The far end of the slider is "never dies out" (stored as 0).
+        constexpr float kForever = 125.f;
+        float life = clock.grassFireLife > 0.f ? clock.grassFireLife : kForever;
+        if (ImGui::SliderFloat("Spreads for", &life, 5.f, kForever, life >= kForever ? "until all is burnt" : "%.0f s"))
+          clock.grassFireLife = life >= kForever ? 0.f : life;
+        ImGui::TextDisabled("How long a fire keeps spreading before it dies out; G lights one");
+      }
+
       ImGui::SeparatorText("Spell brushes");
       ImGui::RadioButton("Off", &brush.kind, BrushSettings::kNone);
       ImGui::SameLine();

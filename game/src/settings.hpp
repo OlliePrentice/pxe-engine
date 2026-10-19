@@ -24,6 +24,9 @@ struct WorldClock {
   float windDegrees = 20.f;      // direction the wind blows toward, compass-style
   float rain = 0.f;              // 0 dry, 0.2 drizzle, 0.55 rain, 1 downpour
   bool lightning = true;         // flashes now and then in rain and downpour
+  // Grass fire: seconds a fire set alight keeps spreading before it dies
+  // out (pxe::FrameParams::grassFireLife); 0 until nothing is left to burn.
+  float grassFireLife = 30.f;
   // The fires: the scene's to begin with (see placeFires), and any the game
   // adds as it runs. Each is lit until Rain or Downpour puts it out - unless
   // a structure shelters it - then out until relit from the menu. Its level
@@ -39,6 +42,7 @@ struct WorldClock {
     float level = 1.f;
     float smoke = 0.f;
     float size = 1.f;
+    bool doused = false;  // put out with water: it dies in moments, not seconds
   };
   std::vector<Fire> fires;
   std::uint32_t nextFireId = 0;
@@ -57,6 +61,9 @@ struct WorldClock {
   void removeFire(std::uint32_t id);
   // Relight every fire that is out.
   void relightFires();
+  // Water over the stroke from `from` to `to` (world xz), `radius` metres
+  // wide: puts out every fire under it at once, roofed or not.
+  void douse(glm::vec2 from, glm::vec2 to, float radius);
   // Advance by `dt` real seconds.
   void advance(float dt);
   // A lightning flash now, lighting the scene from a random direction.
