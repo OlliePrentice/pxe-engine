@@ -52,6 +52,7 @@ struct Options {
   bool edges = true;
   bool fire = true;
   bool rays = true;
+  bool fireflies = false;
   float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
   float clouds = 0.35f;
   float rain = 0.f;
@@ -88,6 +89,7 @@ void printUsage() {
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
                "  --no-fire                campfire unlit\n"
                "  --no-rays                no god rays\n"
+               "  --fireflies              fireflies out\n"
                "  --no-lightning           no lightning flashes in rain and downpour\n"
                "  --mute                   start with sound off\n"
                "  --audio-wav path.wav     render 20 s of weather sound (--rain, --wind-strength) with two thunderclaps, exit\n"
@@ -180,6 +182,8 @@ Options parseArgs(int argc, char** argv) {
       opt.fire = false;
     } else if (a == "--no-rays") {
       opt.rays = false;
+    } else if (a == "--fireflies") {
+      opt.fireflies = true;
     } else if (a == "--no-lightning") {
       opt.lightning = false;
     } else if (a == "--mute") {
@@ -346,6 +350,17 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
     lighting.rayColour = glm::mix(glm::vec3{1.f, 0.97f, 0.86f}, glm::vec3{1.f, 0.8f, 0.56f}, 1.f - ramp(elev, 6.f, 24.f));
   }
 
+  // Firefly light, like the firelight: direct sun drowns it out, so by day
+  // it shows only in the shade, and at night it lights all round them.
+  {
+    const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
+    lighting.fireflyLight = 1.4f;
+    lighting.fireflyDim = 0.95f * (1.f - dark);
+    const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
+    for (int s = 0; s < pxe::kSurfCount; ++s)
+      lighting.fireflyBand[s] = glm::mix(noon.palette[s].band[2], glm::vec3{0.85f, 1.f, 0.5f}, 0.5f);
+  }
+
   // Firelight: a warm pool round the campfire. By day direct sun drowns it
   // out, so it shows only in the shade round the fire; once the sun is down
   // it lights everything near and carries farther. Each surface's colour in
@@ -402,6 +417,7 @@ pxe::FrameParams makeParams(const Options& opt) {
   params.edges = opt.edges;
   params.fire = opt.fire;
   params.rays = opt.rays;
+  params.fireflies = opt.fireflies;
   params.present = true;
   return params;
 }
@@ -652,6 +668,7 @@ int main(int argc, char** argv) {
         view.edges = opt.edges;
         view.fire = opt.fire;
         view.rays = opt.rays;
+        view.fireflies = opt.fireflies;
         bool magenta = opt.magenta;
         bool ndl = opt.ndl;
         game::WorldClock clock;
@@ -716,6 +733,7 @@ int main(int argc, char** argv) {
           params.edges = view.edges;
           params.fire = view.fire;
           params.rays = view.rays;
+          params.fireflies = view.fireflies;
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);

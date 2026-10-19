@@ -48,6 +48,7 @@ struct ViewToggles {
   bool edges = true;
   bool fire = true;
   bool rays = true;
+  bool fireflies = false;
 };
 
 // Dear ImGui panel toggled with Tab. Drawn at window resolution on top of

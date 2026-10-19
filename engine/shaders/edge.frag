@@ -52,6 +52,11 @@ uniform sampler2D uCanopy;  // tiling noise for the gaps light falls through
 uniform float uCloudCover;  // cloud shadows, as in the toon shading: they block the rays
 uniform vec2 uCloudOffset;
 uniform float uCloudStrength;
+uniform int uFlyCount;           // fireflies lit this frame
+uniform vec4 uFly[48];           // position, glow
+uniform float uFlyLight;         // strength
+uniform float uFlyDim;           // how far direct sun or moon light drowns them out
+uniform vec3 uFlyBand[7];        // each surface's colour in full firefly light
 uniform sampler2D uHeat;    // fire: flame heat (r), ember glow (g), smoke (b)
 uniform int uFire;
 
@@ -249,6 +254,40 @@ vec3 godRays(ivec2 p, vec3 col) {
     return mix(col, uRayColour, a);
 }
 
+// Firefly light, deferred like t3ssel8r's light volumes: from this pixel's
+// position (rebuilt from depth) and normal, each lit firefly within reach
+// pulls the surface toward its colour in full firefly light, fading
+// smoothly with distance. Direct sun or moonlight drowns it out - N·L to
+// the sun, its shadow map and the cloud shadows say how much this pixel
+// already gets - so by day the glow shows only in the shade.
+vec3 fireflyLight(ivec2 p, vec3 col, vec4 np, int surface) {
+    if (uFlyCount <= 0 || texelFetch(uDepth, p, 0).r >= 0.9999) return col;
+    vec3 s = worldAt(p);
+    vec3 n = normalize(np.xyz * 2.0 - 1.0);
+    int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, 6));
+    const float kReach = 2.3;
+    float k = 0.0;
+    for (int i = 0; i < 48; ++i) {
+        if (i >= uFlyCount) break;
+        vec3 d = uFly[i].xyz - s;
+        float dist = length(d);
+        if (dist >= kReach) continue;
+        float ndl = clamp(dot(n, d / max(dist, 1e-3)) * 0.7 + 0.3, 0.0, 1.0);
+        float fall = 1.0 - dist / kReach;
+        k += fall * fall * ndl * uFly[i].w;
+    }
+    if (k <= 0.0) return col;
+    float sun = 0.0;
+    if (uFlyDim > 0.0) {
+        float ndl = clamp(dot(n, uLight) * 3.0, 0.0, 1.0);
+        vec4 ls = uLightViewProj * vec4(s + n * 0.08, 1.0);
+        vec3 l = ls.xyz / ls.w * 0.5 + 0.5;
+        sun = ndl * texture(uShadowMap, vec3(l.xy, l.z - 0.002)) * (1.0 - cloudShadow(s)) * (1.0 - uRain);
+    }
+    k *= uFlyLight * (1.0 - uFlyDim * sun);
+    return mix(col, max(col, uFlyBand[surf]), clamp(k, 0.0, 0.7));
+}
+
 vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
     if (uRain <= 0.0) return col;
     vec2 w = vec2(p) + uCamTexel;  // pixel grid anchored to the focus
@@ -300,7 +339,11 @@ vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
 // rain's grade. Smoke goes under it: a very faint haze in two steps that
 // greys and lightens whatever is behind it.
 vec3 fire(ivec2 p, vec3 col) {
-    vec3 h = texelFetch(uHeat, p, 0).rgb;
+    vec4 heat = texelFetch(uHeat, p, 0);
+    vec3 h = heat.rgb;
+    // Fireflies: a pale yellow-green pixel or two inside a faint halo.
+    if (heat.a > 0.6) col = vec3(0.93, 1.0, 0.62);
+    else if (heat.a > 0.08) col = mix(col, vec3(0.8, 0.95, 0.45), 0.35);
     float smoke = h.b > 0.45 ? 0.2 : (h.b > 0.15 ? 0.11 : 0.0);
     float l = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(col, vec3(l * 1.2 + 0.05), smoke);
@@ -316,6 +359,7 @@ void main() {
     int surface = int(np.a * 8.0 + 0.5) - 1;
     col = edges(p, col, np, surface);
     col = godRays(p, col);
+    col = fireflyLight(p, col, np, surface);
     col = rain(p, col, np, surface);
     if (uFire == 1) col = fire(p, col);
     oColor = vec4(col, 1.0);

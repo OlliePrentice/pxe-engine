@@ -52,6 +52,8 @@ struct Scene {
   // Campfires: where each fire's flames rise from. The first one also
   // lights its surroundings.
   std::vector<glm::vec3> fires;
+  // Where each firefly wanders round, when they are out.
+  std::vector<glm::vec3> fireflyHomes;
   Palette palette[kPhaseCount][kSurfCount];
   // Edge-pass colours per phase: light rim on stone tops, dark outline.
   glm::vec3 rim[kPhaseCount]{};

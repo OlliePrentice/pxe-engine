@@ -1,6 +1,7 @@
 #include "pxe/renderer.hpp"
 
 #include "pxe/config.hpp"
+#include "pxe/fireflies.hpp"
 #include "shader.hpp"
 #include "gl.hpp"
 
@@ -732,9 +733,19 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   const float clearHeat[4] = {0.f, 0.f, 0.f, 0.f};
   glClearBufferfv(GL_COLOR, 0, clearHeat);
   int fireCount = 0;
-  if (params.fire && !fires_.empty()) {
-    std::vector<FireParticle> parts;
+  // Fireflies: each a lit pixel or two inside a faint halo, drawn into the
+  // same heat buffer (a channel of their own), and a light for the edge pass.
+  std::vector<Firefly> flies;
+  if (params.fireflies) flies = firefliesAt(scene.fireflyHomes, params.time);
+  std::vector<FireParticle> parts;
+  if (params.fire)
     for (const Fire& f : fires_) parts.insert(parts.end(), f.particles().begin(), f.particles().end());
+  for (const Firefly& f : flies) {
+    if (f.glow <= 0.02f) continue;
+    parts.push_back({f.pos, 0.09f, 0.3f * f.glow, 4.f});
+    parts.push_back({f.pos, 0.04f, f.glow, 4.f});
+  }
+  if (!parts.empty()) {
     fireCount = static_cast<int>(parts.size());
     glBindBuffer(GL_ARRAY_BUFFER, fireVbo_);
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(parts.size() * sizeof(FireParticle)), parts.data(), GL_DYNAMIC_DRAW);
@@ -776,6 +787,23 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindTexture(GL_TEXTURE_2D, heat_);
   u1i(progEdge_, "uHeat", 3);
   u1i(progEdge_, "uFire", fireCount > 0 ? 1 : 0);
+  // Firefly light, lit in this pass from the depth and normals already
+  // drawn rather than in every shader: t3ssel8r's light volumes, a lot of
+  // small lights for little cost.
+  {
+    constexpr int kMaxFlies = 48;
+    std::vector<float> fly;
+    for (const Firefly& f : flies)
+      if (f.glow > 0.02f && static_cast<int>(fly.size()) < kMaxFlies * 4) fly.insert(fly.end(), {f.pos.x, f.pos.y, f.pos.z, f.glow});
+    const int count = lighting.fireflyLight > 0.f ? static_cast<int>(fly.size() / 4) : 0;
+    u1i(progEdge_, "uFlyCount", count);
+    if (count > 0) glUniform4fv(uloc(progEdge_, "uFly"), count, fly.data());
+    u1f(progEdge_, "uFlyLight", lighting.fireflyLight);
+    u1f(progEdge_, "uFlyDim", lighting.fireflyDim);
+    std::vector<float> band;
+    for (int s = 0; s < kSurfCount; ++s) band.insert(band.end(), {lighting.fireflyBand[s].x, lighting.fireflyBand[s].y, lighting.fireflyBand[s].z});
+    u3fv(progEdge_, "uFlyBand", kSurfCount, band.data());
+  }
   // God rays sample the sun's shadow map through the air above each pixel.
   // They are strongest looking toward the sun, where the light scatters
   // forward into the view.

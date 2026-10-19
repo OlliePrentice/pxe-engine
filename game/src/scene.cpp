@@ -633,6 +633,20 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     });
     std::fprintf(stderr, "pxe: %zu grass sprites under stone or trunks dropped\n", before - scene.grass.size());
   }
+  // Firefly homes: scattered over the open lawn round the ruins, from knee
+  // to head height.
+  {
+    std::mt19937 flyRng(23);
+    std::uniform_real_distribution<float> u(0.f, 1.f);
+    for (int tries = 0; tries < 400 && scene.fireflyHomes.size() < 40; ++tries) {
+      const float x = scene.focus.x - 14.f + 28.f * u(flyRng);
+      const float z = scene.focus.z - 12.f + 22.f * u(flyRng);
+      const auto hit = ground.at(x, z);
+      if (!hit) continue;
+      scene.fireflyHomes.push_back(hit->pos + glm::vec3{0.f, 0.5f + 1.2f * u(flyRng), 0.f});
+    }
+  }
+
   // No grass in the fire pit.
   std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
     return glm::length(glm::vec2{g.px, g.pz} - campfire) < 1.05f;
