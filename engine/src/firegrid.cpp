@@ -45,14 +45,15 @@ unsigned makeTexture(int w, int h, int internal, int format, int type, const voi
   return tex;
 }
 
-unsigned makeFbo(unsigned tex, unsigned second = 0) {
+unsigned makeFbo(unsigned tex, unsigned second = 0, unsigned third = 0) {
   unsigned fbo = 0;
   glGenFramebuffers(1, &fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
   if (second) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, second, 0);
-  const unsigned draw[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
-  glDrawBuffers(second ? 2 : 1, draw);
+  if (third) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, third, 0);
+  const unsigned draw[3] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
+  glDrawBuffers(third ? 3 : second ? 2 : 1, draw);
   return fbo;
 }
 
@@ -88,14 +89,15 @@ void FireGrid::init(const std::string& dir) {
 
 void FireGrid::destroy() {
   unsigned textures[] = {ground_,  state_[0], state_[1], burn_,         patches_,
-                         glow_[0], glow_[1],  canopyGround_, canopy_[0], canopy_[1], crownPatches_};
-  glDeleteTextures(11, textures);
+                         glow_[0], glow_[1],  canopyGround_, canopy_[0], canopy_[1], crownPatches_,
+                         life_[0], life_[1]};
+  glDeleteTextures(13, textures);
   unsigned fbos[] = {fbo_[0], fbo_[1], fboBurn_, fboPatches_, fboGlow_[0], fboGlow_[1]};
   glDeleteFramebuffers(6, fbos);
   if (pbo_[0]) glDeleteBuffers(2, pbo_);
   if (crownPbo_[0]) glDeleteBuffers(2, crownPbo_);
   ground_ = state_[0] = state_[1] = burn_ = patches_ = glow_[0] = glow_[1] = 0;
-  canopyGround_ = canopy_[0] = canopy_[1] = crownPatches_ = 0;
+  canopyGround_ = canopy_[0] = canopy_[1] = crownPatches_ = life_[0] = life_[1] = 0;
   crownPbo_[0] = crownPbo_[1] = 0;
   fbo_[0] = fbo_[1] = fboBurn_ = fboPatches_ = fboGlow_[0] = fboGlow_[1] = 0;
   pbo_[0] = pbo_[1] = 0;
@@ -256,7 +258,12 @@ void FireGrid::build(const Scene& scene, float rain) {
   for (int i = 0; i < 2; ++i) {
     state_[i] = makeTexture(w_, h_, GL_RGBA16F, GL_RGBA, GL_FLOAT, state.data(), GL_NEAREST);
     canopy_[i] = makeTexture(w_, h_, GL_RGBA16F, GL_RGBA, GL_FLOAT, canopy.data(), GL_NEAREST);
-    fbo_[i] = makeFbo(state_[i], canopy_[i]);
+    // Full floats: a long life runs down by less per step than half
+    // precision can tell from 1.
+    life_[i] = makeTexture(w_, h_, GL_RG32F, GL_RG, GL_FLOAT, nullptr, GL_NEAREST);
+    fbo_[i] = makeFbo(state_[i], canopy_[i], life_[i]);
+    const float none[4] = {0.f, 0.f, 0.f, 0.f};
+    glClearBufferfv(GL_COLOR, 2, none);
   }
   const std::vector<float> dark(cells * 4, 0.f);
   for (int i = 0; i < 2; ++i) {
@@ -382,6 +389,10 @@ void FireGrid::step(float rain, glm::vec2 wind) {
   glUniform1i(uloc(progStep_, "uGround"), 12);
   glUniform1i(uloc(progStep_, "uCanopy"), 13);
   glUniform1i(uloc(progStep_, "uCanopyGround"), 14);
+  glActiveTexture(GL_TEXTURE15);
+  glBindTexture(GL_TEXTURE_2D, life_[cur_]);
+  glUniform1i(uloc(progStep_, "uLife"), 15);
+  glUniform1f(uloc(progStep_, "uLifeStep"), lifetime_ > 0.f ? kStep / lifetime_ : 0.f);
   glUniform1f(uloc(progStep_, "uDt"), kStep);
   glUniform1f(uloc(progStep_, "uRain"), rain);
   glUniform2f(uloc(progStep_, "uWind"), wind.x, wind.y);
