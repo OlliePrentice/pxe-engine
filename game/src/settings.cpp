@@ -72,11 +72,13 @@ void WorldClock::advance(float dt) {
   // A fire under a roof burns on. A dying fire smokes harder and wisps on
   // for about twenty seconds after the last flame. After the first, each
   // fire takes a little longer to catch or die than the one before (up to
-  // about a third longer), so they do not all go in lockstep.
+  // about a third longer), so they do not all go in lockstep. A small flame
+  // - a candle - catches and dies in about a quarter of the time.
   const float heavy = std::clamp((rain - kRainPutsOutFire) / (1.f - kRainPutsOutFire), 0.f, 1.f);
   for (std::size_t i = 0; i < fires.size(); ++i) {
     Fire& f = fires[i];
-    const float pace = 1.f + 0.35f * std::fmod(0.618034f * static_cast<float>(i), 1.f);
+    float pace = 1.f + 0.35f * std::fmod(0.618034f * static_cast<float>(i), 1.f);
+    if (f.size < 1.f) pace *= 0.25f;
     if (f.lit && !f.sheltered && rain >= kRainPutsOutFire) f.lit = false;
     if (f.lit) {
       f.level = std::min(1.f, f.level + dt / (2.5f * pace));
@@ -111,14 +113,16 @@ void WorldClock::placeFires(const std::vector<pxe::FireSite>& sites) {
     f.id = nextFireId++;
     f.base = site.base;
     f.sheltered = site.sheltered;
+    f.size = site.size;
     fires.push_back(f);
   }
 }
 
-std::uint32_t WorldClock::addFire(glm::vec3 base, const pxe::ShelterMap& shelter) {
+std::uint32_t WorldClock::addFire(glm::vec3 base, const pxe::ShelterMap& shelter, float size) {
   Fire f;
   f.id = nextFireId++;
   f.base = base;
+  f.size = size;
   f.sheltered = shelter.sheltered(base);
   f.level = 0.f;  // it catches
   fires.push_back(f);

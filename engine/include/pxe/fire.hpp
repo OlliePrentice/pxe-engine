@@ -41,6 +41,9 @@ class Fire {
   // Carry the fire to `base`. Flames already risen stay where they are, so
   // a moving fire trails them.
   void moveTo(glm::vec3 base) { base_ = base; }
+  // Scale the flames about the base: 1 a campfire, about 0.2 a candle. A
+  // smaller fire throws fewer embers.
+  void setSize(float size) { size_ = size; }
 
   const std::vector<FireParticle>& particles() const { return drawn_; }
   glm::vec3 base() const { return base_; }
@@ -78,6 +81,7 @@ class Fire {
   float flicker_ = 1.f;
   float level_ = 1.f;
   float smoulder_ = 0.f;
+  float size_ = 1.f;
 };
 
 }  // namespace pxe

@@ -29,6 +29,8 @@ constexpr float kFireBiasMetres = 0.25f;
 // inside the ring of stones.
 constexpr float kFireLightHeight = 0.62f;
 constexpr int kFireShadow = 512;  // per cube face
+// How far a firefly's light carries, metres.
+constexpr float kFireflyReach = 2.3f;
 
 int uloc(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
 
@@ -168,6 +170,10 @@ Renderer::~Renderer() {
   if (progFireShadow_) glDeleteProgram(progFireShadow_);
   if (fireVbo_) glDeleteBuffers(1, &fireVbo_);
   if (fireVao_) glDeleteVertexArrays(1, &fireVao_);
+  for (unsigned buf : {pointBuf_, tileBuf_})
+    if (buf) glDeleteBuffers(1, &buf);
+  for (unsigned tex : {pointTex_, tileTex_})
+    if (tex) glDeleteTextures(1, &tex);
   destroyTargets();
 }
 
@@ -386,6 +392,24 @@ void Renderer::createQuads() {
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void*>(sizeof(float) * 4));
   glBindVertexArray(0);
 
+  // Point lights and their tile lists, as buffer textures for the edge pass.
+  glGenBuffers(1, &pointBuf_);
+  glGenBuffers(1, &tileBuf_);
+  glGenTextures(1, &pointTex_);
+  glGenTextures(1, &tileTex_);
+  const float noLight[8] = {};
+  glBindBuffer(GL_TEXTURE_BUFFER, pointBuf_);
+  glBufferData(GL_TEXTURE_BUFFER, sizeof(noLight), noLight, GL_STREAM_DRAW);
+  glBindTexture(GL_TEXTURE_BUFFER, pointTex_);
+  glTexBuffer(GL_TEXTURE_BUFFER, GL_RGBA32F, pointBuf_);
+  const std::uint32_t noTile[2] = {};
+  glBindBuffer(GL_TEXTURE_BUFFER, tileBuf_);
+  glBufferData(GL_TEXTURE_BUFFER, sizeof(noTile), noTile, GL_STREAM_DRAW);
+  glBindTexture(GL_TEXTURE_BUFFER, tileTex_);
+  glTexBuffer(GL_TEXTURE_BUFFER, GL_R32UI, tileBuf_);
+  glBindTexture(GL_TEXTURE_BUFFER, 0);
+  glBindBuffer(GL_TEXTURE_BUFFER, 0);
+
   glGenVertexArrays(1, &presentVao_);
   glGenBuffers(1, &presentVbo_);
   glBindVertexArray(presentVao_);
@@ -435,6 +459,7 @@ void Renderer::upload(const Scene& scene) {
   shadowScene_ = nullptr;
   fires_.clear();
   for (ShadowCube& cube : cubes_) cube = ShadowCube{};
+  for (LightSlot& slot : slots_) slot = LightSlot{};
   fireLights_.clear();
   fireTime_ = -1.f;
   grassCount_ = static_cast<int>(scene.grass.size());
@@ -541,10 +566,11 @@ void Renderer::drawSprites(const Scene&, const CameraFrame&, const FrameParams& 
 
 void Renderer::updateFires(const Scene& scene, const FrameParams& params) {
   fireLights_.clear();
+  pointLights_.clear();
   if (!params.fire) return;
   const Lighting& lighting = params.lighting;
-  // Seconds since the last frame, for the shadow fades. A first frame, or a
-  // jump in time, settles them at once.
+  // Seconds since the last frame, for the fades. A first frame, or a jump
+  // in time, settles them at once.
   const float dt = (fireTime_ < 0.f || params.time < fireTime_ || params.time - fireTime_ > 0.5f) ? -1.f
                                                                                                  : params.time - fireTime_;
   fireTime_ = params.time;
@@ -559,6 +585,7 @@ void Renderer::updateFires(const Scene& scene, const FrameParams& params) {
     const Fire* fire;
     float strength;
     bool fresh;
+    float size;
   };
   std::vector<Live> live;
   live.reserve(params.fires.size());
@@ -567,80 +594,124 @@ void Renderer::updateFires(const Scene& scene, const FrameParams& params) {
     const bool fresh = it == fires_.end();
     if (fresh) it = fires_.emplace(d.id, Fire(d.base, 0x9e3779b9u + 7919u * d.id)).first;
     else it->second.moveTo(d.base);
+    it->second.setSize(d.size);
     it->second.advanceTo(params.time, wind, d.level, d.smoke);
-    live.push_back({d.id, &it->second, lighting.fireLight * d.level, fresh});
+    live.push_back({d.id, &it->second, lighting.fireLight * d.level, fresh, d.size});
   }
   std::erase_if(fires_, [&](const auto& entry) {
     return std::none_of(live.begin(), live.end(), [&](const Live& l) { return l.id == entry.first; });
   });
+
+  // A small fire - a candle, a torch - lights only through the point
+  // lights: a light without shadows, carrying and shining by the square
+  // root of its size.
+  for (const Live& l : live) {
+    if (l.size >= 1.f || l.strength <= 0.f) continue;
+    const float k = std::sqrt(std::max(l.size, 0.f));
+    pointLights_.push_back({l.fire->base() + glm::vec3{0.f, kFireLightHeight * l.size, 0.f}, lighting.fireReach * k,
+                            l.strength * l.fire->flicker() * k, PointLight::kFire});
+  }
+
   auto find = [&](std::uint32_t id) -> const Live* {
     for (const Live& l : live)
       if (l.id == id) return &l;
     return nullptr;
+  };
+  auto slotOf = [&](std::uint32_t id) {
+    for (int s = 0; s < kFireLights; ++s)
+      if (slots_[s].held && slots_[s].fire == id) return s;
+    return -1;
   };
   auto cubeOf = [&](std::uint32_t id) {
     for (int c = 0; c < kShadowCubes; ++c)
       if (cubes_[c].held && cubes_[c].fire == id) return c;
     return -1;
   };
+  // Hand a pool of slots (firelight slots or shadow cubes) to the fires that
+  // want them: a held slot fades its fire in, or out once its fire is no
+  // longer wanted, and is given up once faded, or at once if its fire is out
+  // or gone. A wanted fire takes a free slot, fully at once if it is new.
+  const float step = dt < 0.f ? 1.f : dt / kShadowFade;
+  auto share = [&](auto* pool, int count, auto amount, const std::vector<const Live*>& wanted,
+                   auto holderOf, const char* what) {
+    auto isWanted = [&](std::uint32_t id) {
+      return std::any_of(wanted.begin(), wanted.end(), [&](const Live* l) { return l->id == id; });
+    };
+    for (int i = 0; i < count; ++i) {
+      auto& slot = pool[i];
+      if (!slot.held) continue;
+      const Live* l = find(slot.fire);
+      if (!l || l->strength <= 0.f) {
+        slot.held = false;
+        continue;
+      }
+      slot.leaving = !isWanted(slot.fire);
+      float& a = amount(slot);
+      a = std::clamp(a + (slot.leaving ? -step : step), 0.f, 1.f);
+      if (slot.leaving && a <= 0.f) {
+        slot.held = false;
+        if (std::getenv("PXE_FIRE_DEBUG"))
+          std::fprintf(stderr, "pxe: t %.2f fire %u faded out of %s %d\n", params.time, slot.fire, what, i);
+      }
+    }
+    for (const Live* l : wanted) {
+      if (holderOf(l->id) >= 0) continue;
+      for (int i = 0; i < count; ++i) {
+        auto& slot = pool[i];
+        if (slot.held) continue;
+        slot.held = true;
+        slot.fire = l->id;
+        slot.leaving = false;
+        amount(slot) = (l->fresh || dt < 0.f) ? 1.f : 0.f;
+        if (std::getenv("PXE_FIRE_DEBUG"))
+          std::fprintf(stderr, "pxe: t %.2f fire %u takes %s %d%s\n", params.time, l->id, what, i,
+                       amount(slot) > 0.f ? "" : ", fading in");
+        break;
+      }
+    }
+  };
 
-  // The brightest fires light the scene; ties go to the earlier listed.
-  std::vector<const Live*> lit;
+  // The brightest campfires want a firelight slot; ties go to the earlier
+  // listed. A fire holding one counts half as bright again, so two fires of
+  // about the same brightness do not trade a slot back and forth.
+  std::vector<const Live*> campfires;
   for (const Live& l : live)
-    if (l.strength > 0.f) lit.push_back(&l);
-  std::stable_sort(lit.begin(), lit.end(), [](const Live* a, const Live* b) { return a->strength > b->strength; });
-  if (static_cast<int>(lit.size()) > kFireLights) lit.resize(kFireLights);
+    if (l.size >= 1.f && l.strength > 0.f) campfires.push_back(&l);
+  std::vector<const Live*> wantLight = campfires;
+  std::stable_sort(wantLight.begin(), wantLight.end(), [&](const Live* a, const Live* b) {
+    return a->strength * (slotOf(a->id) >= 0 ? 1.5f : 1.f) > b->strength * (slotOf(b->id) >= 0 ? 1.5f : 1.f);
+  });
+  if (static_cast<int>(wantLight.size()) > kFireLights) wantLight.resize(kFireLights);
+  share(slots_, kFireLights, [](LightSlot& s) -> float& { return s.weight; }, wantLight, slotOf, "light");
 
-  // The brightest of those want shadows. A fire holding a cube counts half
-  // as bright again, so two fires of about the same brightness do not trade
-  // a cube back and forth.
-  std::vector<const Live*> wanted = lit;
+  // The fires holding a slot light the scene, brightest first. Whatever
+  // share of a fire's light is not in a slot goes to the point lights.
+  std::vector<const Live*> lit;
+  for (const Live* l : campfires) {
+    const int s = slotOf(l->id);
+    const float weight = s >= 0 ? slots_[s].weight : 0.f;
+    if (s >= 0) lit.push_back(l);
+    if (weight < 1.f)
+      pointLights_.push_back({l->fire->base() + glm::vec3{0.f, kFireLightHeight, 0.f}, lighting.fireReach,
+                              l->strength * l->fire->flicker() * (1.f - weight), PointLight::kFire});
+  }
+  std::stable_sort(lit.begin(), lit.end(), [](const Live* a, const Live* b) { return a->strength > b->strength; });
+
+  // The brightest of those not fading out want shadows, with the same
+  // allowance for a fire already holding a cube.
+  std::vector<const Live*> wanted;
+  for (const Live* l : lit)
+    if (!slots_[slotOf(l->id)].leaving) wanted.push_back(l);
   std::stable_sort(wanted.begin(), wanted.end(), [&](const Live* a, const Live* b) {
     return a->strength * (cubeOf(a->id) >= 0 ? 1.5f : 1.f) > b->strength * (cubeOf(b->id) >= 0 ? 1.5f : 1.f);
   });
   if (static_cast<int>(wanted.size()) > kShadowCubes) wanted.resize(kShadowCubes);
-  auto isWanted = [&](std::uint32_t id) {
-    return std::any_of(wanted.begin(), wanted.end(), [&](const Live* l) { return l->id == id; });
-  };
-
-  // Cubes held by fires still wanted fade their shadows in; the rest fade
-  // out and are given up once faded, or at once if their fire is out or gone.
-  const float step = dt < 0.f ? 1.f : dt / kShadowFade;
-  for (ShadowCube& cube : cubes_) {
-    if (!cube.held) continue;
-    const Live* l = find(cube.fire);
-    if (!l || l->strength <= 0.f) {
-      cube.held = false;
-      continue;
-    }
-    cube.leaving = !isWanted(cube.fire);
-    cube.shadowed = std::clamp(cube.shadowed + (cube.leaving ? -step : step), 0.f, 1.f);
-    if (cube.leaving && cube.shadowed <= 0.f) {
-      cube.held = false;
-      if (std::getenv("PXE_FIRE_DEBUG"))
-        std::fprintf(stderr, "pxe: t %.2f fire %u faded out of cube %d\n", params.time, cube.fire,
-                     static_cast<int>(&cube - cubes_));
-    }
-  }
-  for (const Live* l : wanted) {
-    if (cubeOf(l->id) >= 0) continue;
-    for (ShadowCube& cube : cubes_) {
-      if (cube.held) continue;
-      cube.held = true;
-      cube.fire = l->id;
-      cube.leaving = false;
-      cube.shadowed = (l->fresh || dt < 0.f) ? 1.f : 0.f;
-      if (std::getenv("PXE_FIRE_DEBUG"))
-        std::fprintf(stderr, "pxe: t %.2f fire %u takes cube %d%s\n", params.time, l->id,
-                     static_cast<int>(&cube - cubes_), cube.shadowed > 0.f ? "" : ", fading in");
-      break;
-    }
-  }
+  share(cubes_, kShadowCubes, [](ShadowCube& c) -> float& { return c.shadowed; }, wanted, cubeOf, "cube");
 
   for (const Live* l : lit) {
     FireLight light;
     light.pos = l->fire->base() + glm::vec3{0.f, kFireLightHeight, 0.f};
-    light.strength = l->strength * l->fire->flicker();
+    light.strength = l->strength * l->fire->flicker() * slots_[slotOf(l->id)].weight;
     light.cube = cubeOf(l->id);
     light.shadowed = light.cube >= 0 ? cubes_[light.cube].shadowed : 0.f;
     fireLights_.push_back(light);
@@ -670,6 +741,74 @@ void Renderer::updateFires(const Scene& scene, const FrameParams& params) {
     cube.drawnScene = &scene;
     cube.drawnPos = firePos;
   }
+}
+
+int Renderer::uploadPointLights(const CameraFrame& camera) {
+  // Each light reaches the pixels inside a circle on screen: the view is
+  // orthographic, so a sphere of light draws as a circle of the same radius.
+  // A tile lists every light whose circle touches it, in the order the
+  // lights are listed, so each pixel sums them in the same order every frame.
+  const int w = rtW(), h = rtH();
+  tilesX_ = (w + kTile - 1) / kTile;
+  const int tilesY = (h + kTile - 1) / kTile;
+  const int tiles = tilesX_ * tilesY;
+  const float pxPerMetre = static_cast<float>(w) / (2.f * camera.orthoHalfW);
+  struct Reach {
+    float x, y, r;
+    int x0, y0, x1, y1;
+  };
+  std::vector<Reach> reach;
+  reach.reserve(pointLights_.size());
+  std::vector<std::uint32_t> counts(static_cast<std::size_t>(tiles), 0);
+  auto touches = [](const Reach& r, int tx, int ty) {
+    const float cx = std::clamp(r.x, static_cast<float>(tx * kTile), static_cast<float>((tx + 1) * kTile));
+    const float cy = std::clamp(r.y, static_cast<float>(ty * kTile), static_cast<float>((ty + 1) * kTile));
+    return (cx - r.x) * (cx - r.x) + (cy - r.y) * (cy - r.y) <= r.r * r.r;
+  };
+  for (const PointLight& l : pointLights_) {
+    const glm::vec3 d = l.pos - camera.eye;
+    Reach r;
+    r.x = (glm::dot(d, camera.right) / camera.orthoHalfW * 0.5f + 0.5f) * static_cast<float>(w);
+    r.y = (glm::dot(d, camera.up) / camera.orthoHalfH * 0.5f + 0.5f) * static_cast<float>(h);
+    r.r = l.radius * pxPerMetre + 1.f;
+    r.x0 = std::max(0, static_cast<int>(std::floor((r.x - r.r) / kTile)));
+    r.y0 = std::max(0, static_cast<int>(std::floor((r.y - r.r) / kTile)));
+    r.x1 = std::min(tilesX_ - 1, static_cast<int>(std::floor((r.x + r.r) / kTile)));
+    r.y1 = std::min(tilesY - 1, static_cast<int>(std::floor((r.y + r.r) / kTile)));
+    for (int ty = r.y0; ty <= r.y1; ++ty)
+      for (int tx = r.x0; tx <= r.x1; ++tx)
+        if (touches(r, tx, ty)) ++counts[static_cast<std::size_t>(ty * tilesX_ + tx)];
+    reach.push_back(r);
+  }
+  // Tile headers (first index, count), then the lists.
+  std::vector<std::uint32_t> list(static_cast<std::size_t>(2 * tiles));
+  std::uint32_t next = static_cast<std::uint32_t>(2 * tiles);
+  for (int t = 0; t < tiles; ++t) {
+    list[static_cast<std::size_t>(2 * t)] = next;
+    list[static_cast<std::size_t>(2 * t + 1)] = 0;
+    next += counts[static_cast<std::size_t>(t)];
+  }
+  list.resize(next);
+  for (std::size_t i = 0; i < reach.size(); ++i) {
+    const Reach& r = reach[i];
+    for (int ty = r.y0; ty <= r.y1; ++ty)
+      for (int tx = r.x0; tx <= r.x1; ++tx) {
+        if (!touches(r, tx, ty)) continue;
+        const auto t = static_cast<std::size_t>(ty * tilesX_ + tx);
+        list[list[2 * t] + list[2 * t + 1]++] = static_cast<std::uint32_t>(i);
+      }
+  }
+  std::vector<float> lights;
+  lights.reserve(pointLights_.size() * 8 + 8);
+  for (const PointLight& l : pointLights_)
+    lights.insert(lights.end(), {l.pos.x, l.pos.y, l.pos.z, l.radius, l.strength, static_cast<float>(l.kind), 0.f, 0.f});
+  if (lights.empty()) lights.assign(8, 0.f);  // never an empty buffer
+  glBindBuffer(GL_TEXTURE_BUFFER, pointBuf_);
+  glBufferData(GL_TEXTURE_BUFFER, static_cast<GLsizeiptr>(lights.size() * sizeof(float)), lights.data(), GL_STREAM_DRAW);
+  glBindBuffer(GL_TEXTURE_BUFFER, tileBuf_);
+  glBufferData(GL_TEXTURE_BUFFER, static_cast<GLsizeiptr>(list.size() * sizeof(std::uint32_t)), list.data(), GL_STREAM_DRAW);
+  glBindBuffer(GL_TEXTURE_BUFFER, 0);
+  return static_cast<int>(pointLights_.size());
 }
 
 void Renderer::render(const Scene& scene, const CameraFrame& camera, const FrameParams& params) {
@@ -924,22 +1063,33 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindTexture(GL_TEXTURE_2D, heat_);
   u1i(progEdge_, "uHeat", 3);
   u1i(progEdge_, "uFire", fireCount > 0 ? 1 : 0);
-  // Firefly light, lit in this pass from the depth and normals already
-  // drawn rather than in every shader: t3ssel8r's light volumes, a lot of
-  // small lights for little cost.
+  // Point lights - fireflies, small fires, campfires without a firelight
+  // slot, and any the game adds - lit in this pass from the depth and
+  // normals already drawn rather than in every shader: t3ssel8r's light
+  // volumes, a lot of small lights for little cost.
   {
-    constexpr int kMaxFlies = 48;
-    std::vector<float> fly;
-    for (const Firefly& f : flies)
-      if (f.glow > 0.02f && static_cast<int>(fly.size()) < kMaxFlies * 4) fly.insert(fly.end(), {f.pos.x, f.pos.y, f.pos.z, f.glow});
-    const int count = lighting.fireflyLight > 0.f ? static_cast<int>(fly.size() / 4) : 0;
-    u1i(progEdge_, "uFlyCount", count);
-    if (count > 0) glUniform4fv(uloc(progEdge_, "uFly"), count, fly.data());
+    pointLights_.insert(pointLights_.end(), params.lights.begin(), params.lights.end());
+    if (lighting.fireflyLight > 0.f)
+      for (const Firefly& f : flies)
+        if (f.glow > 0.02f) pointLights_.push_back({f.pos, kFireflyReach, f.glow, PointLight::kFirefly});
+    u1i(progEdge_, "uPointCount", uploadPointLights(camera));
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_BUFFER, pointTex_);
+    u1i(progEdge_, "uPoints", 8);
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_BUFFER, tileTex_);
+    u1i(progEdge_, "uTiles", 9);
+    u1i(progEdge_, "uTileSize", kTile);
+    u1i(progEdge_, "uTilesX", tilesX_);
     u1f(progEdge_, "uFlyLight", lighting.fireflyLight);
     u1f(progEdge_, "uFlyDim", lighting.fireflyDim);
     std::vector<float> band;
     for (int s = 0; s < kSurfCount; ++s) band.insert(band.end(), {lighting.fireflyBand[s].x, lighting.fireflyBand[s].y, lighting.fireflyBand[s].z});
     u3fv(progEdge_, "uFlyBand", kSurfCount, band.data());
+    band.clear();
+    for (int s = 0; s < kSurfCount; ++s) band.insert(band.end(), {lighting.fireBand[s].x, lighting.fireBand[s].y, lighting.fireBand[s].z});
+    u3fv(progEdge_, "uFireBand", kSurfCount, band.data());
+    u1f(progEdge_, "uFireDim", lighting.fireDim);
   }
   // God rays sample the sun's shadow map through the air above each pixel.
   // They are strongest looking toward the sun, where the light scatters

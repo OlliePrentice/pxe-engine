@@ -155,7 +155,7 @@ void Fire::stepEmbers(glm::vec2 wind) {
   }
   embers_.erase(std::remove_if(embers_.begin(), embers_.end(), [](const Particle& p) { return p.age >= p.life; }),
                 embers_.end());
-  if (random() < 0.35f * level_) {
+  if (random() < 0.35f * level_ * std::min(size_, 1.f)) {
     Particle p{};
     p.pos = base_ + glm::vec3{0.15f * signedRandom(), 0.3f + 0.25f * random(), 0.15f * signedRandom()};
     p.vel = {0.15f * signedRandom(), 0.5f + 0.5f * random(), 0.15f * signedRandom()};
@@ -208,6 +208,11 @@ void Fire::collect() {
     const float t = p.age / p.life;
     drawn_.push_back({p.pos, p.radius * (1.f + 2.2f * t), p.heat * (1.f - t), 3.f});
   }
+  if (size_ != 1.f)
+    for (FireParticle& p : drawn_) {
+      p.pos = base_ + (p.pos - base_) * size_;
+      p.radius *= size_;
+    }
 }
 
 }  // namespace pxe

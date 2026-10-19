@@ -55,6 +55,7 @@ struct Options {
   float fireSmoke = 0.f;
   bool shelterTest = false;
   int extraFires = 0;
+  bool candles = false;
   float settle = 0.f;  // captures: seconds of weather run first, the hour held
   bool rays = true;
   bool fireflies = false;
@@ -96,6 +97,7 @@ void printUsage() {
                "  --fire-level L,S         captures: campfires burning at L (0 out .. 1), smoke S once out\n"
                "  --shelter-test           ruins: add a fire under a stone shelter and one under a tree\n"
                "  --extra-fires N          ruins: N bare flames over the lawn, to test many fires\n"
+               "  --candles                ruins: candles on the stonework and the lawn (and under the --shelter-test roof)\n"
                "  --settle S               captures: run the weather S seconds first (rain puts fires out)\n"
                "  --no-rays                no god rays\n"
                "  --fireflies              fireflies out\n"
@@ -193,6 +195,8 @@ Options parseArgs(int argc, char** argv) {
       opt.settle = static_cast<float>(std::atof(need("--settle")));
     } else if (a == "--extra-fires") {
       opt.extraFires = std::atoi(need("--extra-fires"));
+    } else if (a == "--candles") {
+      opt.candles = true;
     } else if (a == "--shelter-test") {
       opt.shelterTest = true;
     } else if (a == "--fire-level") {
@@ -424,7 +428,7 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
 // The fires burning this frame, for the renderer.
 std::vector<pxe::FireDraw> fireDraws(const game::WorldClock& clock) {
   std::vector<pxe::FireDraw> draws;
-  for (const game::WorldClock::Fire& f : clock.fires) draws.push_back({f.id, f.base, f.level, f.smoke});
+  for (const game::WorldClock::Fire& f : clock.fires) draws.push_back({f.id, f.base, f.level, f.smoke, f.size});
   return draws;
 }
 
@@ -449,7 +453,8 @@ pxe::FrameParams makeParams(const Options& opt) {
 int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& scene) {
   pxe::FrameParams params;
   params.lighting = pxe::lightingAt(scene, kCaptureHour);
-  for (std::uint32_t i = 0; i < scene.fires.size(); ++i) params.fires.push_back({i, scene.fires[i].base});
+  for (std::uint32_t i = 0; i < scene.fires.size(); ++i)
+    params.fires.push_back({i, scene.fires[i].base, 1.f, 0.f, scene.fires[i].size});
   params.framebufferW = 320;
   params.framebufferH = 180;
   params.present = false;
@@ -582,6 +587,7 @@ int main(int argc, char** argv) {
       build.stamps = opt.stamps;
       build.shelterTest = opt.shelterTest;
       build.extraFires = opt.extraFires;
+      build.candles = opt.candles;
       build.scene = opt.scene;
       pxe::Scene scene;
       try {

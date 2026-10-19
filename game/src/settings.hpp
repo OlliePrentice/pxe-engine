@@ -28,7 +28,9 @@ struct WorldClock {
   // adds as it runs. Each is lit until Rain or Downpour puts it out - unless
   // a structure shelters it - then out until relit from the menu. Its level
   // eases between out (0) and burning (1), and once out it smokes on for a
-  // while (smoke 1 just out .. 0).
+  // while (smoke 1 just out .. 0). `size` is 1 for a campfire and less
+  // for a small flame - about 0.2 for a candle - which catches and goes out
+  // faster.
   struct Fire {
     std::uint32_t id = 0;  // stays the fire's while it lives
     glm::vec3 base{0.f};
@@ -36,6 +38,7 @@ struct WorldClock {
     bool lit = true;
     float level = 1.f;
     float smoke = 0.f;
+    float size = 1.f;
   };
   std::vector<Fire> fires;
   std::uint32_t nextFireId = 0;
@@ -50,7 +53,7 @@ struct WorldClock {
   // One burning fire per scene fire, sheltered as the scene says.
   void placeFires(const std::vector<pxe::FireSite>& sites);
   // Light a new fire at `base` (sheltered from `shelter`); returns its id.
-  std::uint32_t addFire(glm::vec3 base, const pxe::ShelterMap& shelter);
+  std::uint32_t addFire(glm::vec3 base, const pxe::ShelterMap& shelter, float size = 1.f);
   void removeFire(std::uint32_t id);
   // Relight every fire that is out.
   void relightFires();
