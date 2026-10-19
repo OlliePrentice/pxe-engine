@@ -1,5 +1,7 @@
 #include "pxe/fire.hpp"
 
+#include <glm/geometric.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -117,11 +119,15 @@ void Fire::collectCoals() {
 // dwindling to specks.
 void Fire::stepFlames(glm::vec2 wind) {
   const float dt = 1.f / kFlameRate;
+  // Low down the flames are drawn back to the middle, which keeps the
+  // teardrop; a wind stronger than the default slackens that, so the fire
+  // lays over and streams downwind instead of standing up against it.
+  const float pull = 2.2f / (1.f + 0.6f * std::max(glm::length(wind) - 0.6f, 0.f));
   for (Particle& p : flames_) {
     p.age += dt;
     p.vel.y += 1.1f * dt;
-    p.vel.x += 0.35f * signedRandom() + (wind.x * 0.5f - 2.2f * (p.pos.x - base_.x)) * dt;
-    p.vel.z += 0.35f * signedRandom() + (wind.y * 0.5f - 2.2f * (p.pos.z - base_.z)) * dt;
+    p.vel.x += 0.35f * signedRandom() + (wind.x * 0.5f - pull * (p.pos.x - base_.x)) * dt;
+    p.vel.z += 0.35f * signedRandom() + (wind.y * 0.5f - pull * (p.pos.z - base_.z)) * dt;
     p.vel.x *= 0.8f;
     p.vel.z *= 0.8f;
     p.pos += p.vel * dt;

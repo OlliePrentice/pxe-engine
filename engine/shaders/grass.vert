@@ -9,7 +9,10 @@ uniform float uGrassBiasNdc;      // grass: just enough to clear the ground it s
 uniform float uUprightNdcPerPx;   // how much nearer each pixel up an upright blade is
 uniform vec3 uTip[kSurfaces * 3];     // blade tip colour where it overhangs darker ground
 uniform float uTime;
-uniform float uWindPx;    // peak tip sway in target pixels
+uniform float uWindPx;    // peak tip sway in target pixels, by wind strength
+uniform float uWindTime;  // the wind's phase: seconds, run faster the stronger it blows
+uniform float uWindRate;  // how fast the phase runs against real time
+uniform float uSwayPad;   // extra box width each side for a strong wind's sway
 uniform vec2 uWindDir;    // world XZ, unit
 uniform float uWindLean;  // how much of the wind points along screen right, -1..1
 uniform mat4 uMirror;       // identity, or the mirror about the water plane
@@ -43,8 +46,8 @@ flat out float vFlutter;  // leaves: extra spin, radians
 // cloud shadows drift.
 float wind(vec2 xz) {
     vec2 side = vec2(-uWindDir.y, uWindDir.x);
-    float a = sin(dot(xz, uWindDir) * 0.25 - uTime * 1.7);
-    float b = sin(dot(xz, uWindDir * 0.17 + side * 0.24) - uTime * 2.3 + 1.3);
+    float a = sin(dot(xz, uWindDir) * 0.25 - uWindTime * 1.7);
+    float b = sin(dot(xz, uWindDir * 0.17 + side * 0.24) - uWindTime * 2.3 + 1.3);
     return 0.65 * a + 0.35 * b;
 }
 
@@ -61,7 +64,7 @@ void main() {
         gl_ClipDistance[0] = -1.0;
         return;
     }
-    vec2 box = leaf ? kLeafBox : ((vKind < 0.5) ? kClumpBox : kTuftBox);
+    vec2 box = leaf ? kLeafBox : ((vKind < 0.5) ? kClumpBox : kTuftBox) + vec2(2.0 * uSwayPad, uSwayPad);
     float halfW = floor(box.x * 0.5);
     float halfH = leaf ? floor(box.y * 0.5) : 0.0;
     // Most sprites are off screen. Their whole quad is the box, so if the box
@@ -87,7 +90,7 @@ void main() {
     vScale = iParams.z;
     // Blades lean downwind on screen, with gusts and a little per-tuft phase
     // on top so the edge never moves as one rigid strip.
-    vSway = uWindPx * (uWindLean * (0.6 + wind(iRoot.xz)) + 0.25 * sin(uTime * 3.1 + vSeed * 6.2831));
+    vSway = uWindPx * (uWindLean * (0.6 + wind(iRoot.xz)) + 0.25 * sin(uWindTime * 3.1 + vSeed * 6.2831));
 
     // Lit once at the root, exactly like the ground under it, so a tuft is
     // invisible inside a band and only shows where it overhangs the next one.
@@ -142,10 +145,15 @@ void main() {
         // turning leaf re-rasterises every frame and shimmers against the
         // leaves round it, so the turn snaps between a few poses and every
         // leaf moves together on one 12 fps beat, like hand animation.
-        float t = floor(uTime * 12.0) / 12.0;
+        // The beat stays at 12 fps of real time; the wind's phase is read
+        // at the beat, so a stronger wind moves them further and faster
+        // between beats without speeding the beat up.
+        float beat = floor(uTime * 12.0) / 12.0;
+        float t = uWindTime - (uTime - beat) * uWindRate;
         float gust = wind(iRoot.xz);
-        vSway = floor(uWindPx * (uWindLean * (0.4 + 0.8 * gust) + 0.6 * sin(t * 2.3 + vSeed * 6.2831 + iRoot.y)) + 0.5);
-        float turn = (0.14 + 0.1 * gust) * sin(t * 3.4 + vSeed * 31.0);
+        float swayPx = min(uWindPx, 2.0 * 1.6);  // crowns sway less than the lawn
+        vSway = floor(swayPx * (uWindLean * (0.4 + 0.8 * gust) + 0.6 * sin(t * 2.3 + vSeed * 6.2831 + iRoot.y)) + 0.5);
+        float turn = (0.14 + 0.1 * gust) * (0.5 + 0.5 * uWindPx / 1.6) * sin(t * 3.4 + vSeed * 31.0);
         // In rain the upward-facing leaves bob as drops hit them.
         if (uRain > 0.0 && iNormal.y > 0.3)
             turn += uRain * 0.3 * sin(t * 9.0 + vSeed * 57.0) * step(0.5, fract(vSeed * 13.0 + t * 0.7));
