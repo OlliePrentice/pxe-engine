@@ -40,7 +40,14 @@ void Fire::restart(float time) {
   smokeTick_ = static_cast<long long>(std::floor(start * kSmokeRate));
 }
 
-void Fire::advanceTo(float time, glm::vec2 wind) {
+int Fire::count(float n) {
+  const float whole = std::floor(n);
+  return static_cast<int>(whole) + (random() < n - whole ? 1 : 0);
+}
+
+void Fire::advanceTo(float time, glm::vec2 wind, float level, float smoulder) {
+  level_ = std::clamp(level, 0.f, 1.f);
+  smoulder_ = std::clamp(smoulder, 0.f, 1.f);
   if (time_ < 0.f || time < time_ || time - time_ > 2.f) restart(time);
   time_ = time;
   const auto coreTo = static_cast<long long>(std::floor(time * kCoreRate));
@@ -76,12 +83,30 @@ void Fire::advanceTo(float time, glm::vec2 wind) {
 // each beat. They are what the yellow heart of the flame is made of.
 void Fire::stepCore() {
   core_.clear();
-  for (int i = 0; i < 3; ++i) {
+  const int n = count(3.f * level_);
+  for (int i = 0; i < n; ++i) {
     Particle p{};
     p.pos = base_ + glm::vec3{0.06f * signedRandom(), 0.06f + 0.12f * random(), 0.06f * signedRandom()};
-    p.radius = 0.19f + 0.05f * random();
-    p.heat = 0.8f + 0.15f * random();
+    p.radius = (0.19f + 0.05f * random()) * (0.45f + 0.55f * level_);
+    p.heat = (0.8f + 0.15f * random()) * std::sqrt(level_);
     core_.push_back(p);
+  }
+}
+
+// Coals: while the fire is dying, a few red pixels glow in the logs after
+// the flames have shrunk away, going dark as the last of it goes out.
+void Fire::collectCoals() {
+  if (level_ <= 0.f || level_ >= 0.5f) return;
+  std::uint32_t h = seed_ * 2654435761u + static_cast<std::uint32_t>(coreTick_) * 40503u;
+  auto next = [&h]() {
+    h ^= h << 13;
+    h ^= h >> 17;
+    h ^= h << 5;
+    return static_cast<float>(h & 0xffffff) / 16777216.f;
+  };
+  for (int i = 0; i < 4; ++i) {
+    const glm::vec3 at = base_ + glm::vec3{0.14f * (next() * 2.f - 1.f), 0.03f + 0.05f * next(), 0.14f * (next() * 2.f - 1.f)};
+    drawn_.push_back({at, 0.f, std::min(1.f, 2.f * level_) * (0.5f + 0.5f * next()), 2.f});
   }
 }
 
@@ -103,13 +128,15 @@ void Fire::stepFlames(glm::vec2 wind) {
   }
   flames_.erase(std::remove_if(flames_.begin(), flames_.end(), [](const Particle& p) { return p.age >= p.life; }),
                 flames_.end());
-  for (int i = 0; i < 5; ++i) {
+  // A dying fire puts up fewer, smaller, shorter-lived and cooler flames.
+  const int n = count(5.f * level_);
+  for (int i = 0; i < n; ++i) {
     Particle p{};
     p.pos = base_ + glm::vec3{0.1f * signedRandom(), 0.04f * random(), 0.1f * signedRandom()};
-    p.vel = {0.1f * signedRandom(), 0.6f + 0.5f * random(), 0.1f * signedRandom()};
-    p.life = 0.45f + 0.45f * random();
-    p.radius = 0.15f + 0.08f * random();
-    p.heat = 0.8f + 0.2f * random();
+    p.vel = {0.1f * signedRandom(), (0.6f + 0.5f * random()) * (0.6f + 0.4f * level_), 0.1f * signedRandom()};
+    p.life = (0.45f + 0.45f * random()) * (0.5f + 0.5f * level_);
+    p.radius = (0.15f + 0.08f * random()) * (0.5f + 0.5f * level_);
+    p.heat = (0.8f + 0.2f * random()) * (0.65f + 0.35f * level_);
     flames_.push_back(p);
   }
 }
@@ -128,7 +155,7 @@ void Fire::stepEmbers(glm::vec2 wind) {
   }
   embers_.erase(std::remove_if(embers_.begin(), embers_.end(), [](const Particle& p) { return p.age >= p.life; }),
                 embers_.end());
-  if (random() < 0.35f) {
+  if (random() < 0.35f * level_) {
     Particle p{};
     p.pos = base_ + glm::vec3{0.15f * signedRandom(), 0.3f + 0.25f * random(), 0.15f * signedRandom()};
     p.vel = {0.15f * signedRandom(), 0.5f + 0.5f * random(), 0.15f * signedRandom()};
@@ -153,9 +180,13 @@ void Fire::stepSmoke(glm::vec2 wind) {
   }
   smoke_.erase(std::remove_if(smoke_.begin(), smoke_.end(), [](const Particle& p) { return p.age >= p.life; }),
                smoke_.end());
-  if (random() < 0.8f) {
+  // While it burns, smoke starts well above the flames; once they are gone
+  // it rises straight from the wet logs, and thins as the fire smoulders out.
+  const float smoke = std::max(level_, smoulder_);
+  if (random() < 0.8f * smoke) {
     Particle p{};
-    p.pos = base_ + glm::vec3{0.08f * signedRandom(), 1.45f + 0.2f * random(), 0.08f * signedRandom()};
+    const float from = 0.35f + 1.1f * level_;
+    p.pos = base_ + glm::vec3{0.08f * signedRandom(), from + 0.2f * random(), 0.08f * signedRandom()};
     p.vel = {0.05f * signedRandom(), 0.32f + 0.15f * random(), 0.05f * signedRandom()};
     p.life = 3.f + 2.f * random();
     p.radius = 0.14f + 0.06f * random();
@@ -172,6 +203,7 @@ void Fire::collect() {
     drawn_.push_back({p.pos, p.radius * (1.f - 0.4f * t), p.heat * (1.f - 0.75f * t), 1.f});
   }
   for (const Particle& p : embers_) drawn_.push_back({p.pos, 0.f, 1.f - p.age / p.life, 2.f});
+  collectCoals();
   for (const Particle& p : smoke_) {
     const float t = p.age / p.life;
     drawn_.push_back({p.pos, p.radius * (1.f + 2.2f * t), p.heat * (1.f - t), 3.f});

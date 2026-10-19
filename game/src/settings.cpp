@@ -66,6 +66,21 @@ void WorldClock::advance(float dt) {
       nextStrike_ = (16.f + (6.f - 16.f) * heavy) * (0.5f + random());
     }
   }
+  // The campfire: Rain or Downpour puts it out, over about eight seconds
+  // in rain and three and a half in a downpour, and it stays out until it
+  // is relit, catching again over a couple of seconds. It smokes harder as
+  // it dies and wisps on for about twenty seconds after the last flame.
+  if (fireLit && rain >= kRainPutsOutFire) fireLit = false;
+  if (fireLit) {
+    fireLevel = std::min(1.f, fireLevel + dt / 2.5f);
+    fireSmoke = std::max(0.f, fireSmoke - dt / 20.f);
+  } else {
+    const float heavy = std::clamp((rain - kRainPutsOutFire) / (1.f - kRainPutsOutFire), 0.f, 1.f);
+    fireLevel = std::max(0.f, fireLevel - dt / (8.f - 4.5f * heavy));
+    if (fireLevel > 0.f) fireSmoke = std::max(fireSmoke, 1.f - fireLevel);
+    else fireSmoke = std::max(0.f, fireSmoke - dt / 20.f);
+  }
+
   flash = 0.f;
   if (strikeAge_ >= 0.f) {
     strikeAge_ += dt;
@@ -194,6 +209,18 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
       ImGui::SameLine();
       ImGui::Checkbox("God rays", &view.rays);
       ImGui::Checkbox("Fireflies", &view.fireflies);
+
+      ImGui::SeparatorText("Campfire");
+      const char* state = clock.fireLit ? (clock.fireLevel < 1.f ? "Catching" : "Burning")
+                        : clock.fireLevel > 0.f ? "Going out in the rain"
+                        : clock.fireSmoke > 0.f ? "Out, still smoking" : "Out";
+      ImGui::Text("%s", state);
+      const bool tooWet = clock.rain >= WorldClock::kRainPutsOutFire;
+      ImGui::BeginDisabled(clock.fireLit || tooWet);
+      ImGui::SameLine();
+      if (ImGui::Button("Relight fire")) clock.fireLit = true;
+      ImGui::EndDisabled();
+      ImGui::TextDisabled(tooWet ? "Too wet to relight; Rain and Downpour put it out" : "Rain and Downpour put it out");
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms), capped by vsync; --bench measures uncapped", fps, 1000.f / fps);
       else

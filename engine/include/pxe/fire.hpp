@@ -33,8 +33,10 @@ class Fire {
   // Bring the fire to `time` seconds, with `wind` the horizontal wind in
   // metres per second. A first call, or a jump back or far ahead, restarts
   // it a few seconds earlier, so it is always already burning and a capture
-  // at a given time always shows the same flames.
-  void advanceTo(float time, glm::vec2 wind);
+  // at a given time always shows the same flames. `level` is how well it is
+  // burning, 0 out .. 1 full; a dying fire has fewer, smaller, cooler flames.
+  // `smoulder` (0..1) keeps smoke rising from the logs after it is out.
+  void advanceTo(float time, glm::vec2 wind, float level = 1.f, float smoulder = 0.f);
 
   const std::vector<FireParticle>& particles() const { return drawn_; }
   glm::vec3 base() const { return base_; }
@@ -57,6 +59,8 @@ class Fire {
   void stepEmbers(glm::vec2 wind);
   void stepSmoke(glm::vec2 wind);
   void collect();
+  void collectCoals();
+  int count(float n);      // n rounded up or down at random, keeping the mean
   float random();          // 0..1
   float signedRandom();    // -1..1
 
@@ -68,6 +72,8 @@ class Fire {
   std::vector<Particle> core_, flames_, embers_, smoke_;
   std::vector<FireParticle> drawn_;
   float flicker_ = 1.f;
+  float level_ = 1.f;
+  float smoulder_ = 0.f;
 };
 
 }  // namespace pxe

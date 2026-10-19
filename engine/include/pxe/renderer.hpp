@@ -26,8 +26,11 @@ struct FrameParams {
   float time = 0.f;
   // Light rims and dark outlines on stone and bark.
   bool edges = true;
-  // Campfire flames and their light.
+  // Campfire flames and their light, how well it is burning (0 out .. 1)
+  // and how much it still smokes once out.
   bool fire = true;
+  float fireLevel = 1.f;
+  float fireSmoke = 0.f;
   // Sunbeams through the trees.
   bool rays = true;
   // Fireflies, and their light.
