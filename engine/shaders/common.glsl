@@ -309,6 +309,20 @@ float burnAt(vec3 wpos) {
     return textureLod(uBurn, uv, 0.0).r;
 }
 
+// How much of the crown over a point has burnt away, 0 none .. 1 all.
+float crownBurnAt(vec3 wpos) {
+    vec2 uv = (wpos.xz - uBurnDomain.xy) * uBurnDomain.zw;
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+    return textureLod(uBurn, uv, 0.0).g;
+}
+
+// A crown burns away in holes a third of a metre across, scattered so the
+// last of it goes in ragged patches (shadow.frag makes the same holes).
+bool crownGone(float burnt, vec3 wpos) {
+    vec3 q = floor(wpos * 3.0);
+    return burnt > 0.5 + 0.45 * fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+
 // Burnt grass and the ground under it, at a tone: scorched (1) to a dry
 // brown between the grass and the bare dirt, then charred (2) near black.
 vec3 burntColour(float tone, int level) {

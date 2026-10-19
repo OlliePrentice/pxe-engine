@@ -125,6 +125,20 @@ void main() {
             vTip = level == 2 ? vCol : burntColour(min(tone + 1.0, 2.0), 1);
             vScale *= level == 2 ? 0.35 : 0.8;
         }
+    } else {
+        // Leaves on a burning crown char, then fall, each at its own point.
+        float burnt = crownBurnAt(iRoot);
+        float own = fract(vSeed * 7.31);
+        if (burnt > 0.3 + 0.55 * own) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            gl_ClipDistance[0] = -1.0;
+            return;
+        }
+        charred = smoothstep(0.05 + 0.25 * own, 0.2 + 0.3 * own, burnt);
+        if (charred > 0.0) {
+            vCol = mix(vCol, burntColour(tone, 2), charred);
+            vTip = mix(vTip, burntColour(tone, 2), charred);
+        }
     }
 #endif
     float shade = cloudShade(iRoot);

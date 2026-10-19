@@ -8,6 +8,8 @@
 
 uniform sampler2D uState;
 uniform sampler2D uGround;
+uniform sampler2D uCanopy;        // crowns: g leaves left
+uniform sampler2D uCanopyGround;  // r leaves to begin with
 uniform vec2 uMin;      // world xz of the grid's corner
 uniform float uTexel;   // metres per burn texel
 uniform float uScale;   // burn texels per cell
@@ -41,6 +43,13 @@ float burntCell(ivec2 c) {
     return fuel > 0.0 ? clamp((1.0 - texelFetch(uState, c, 0).g / fuel - 0.01) / 0.99, 0.0, 1.0) : 0.0;
 }
 
+// Likewise the share of a crown's leaves gone.
+float burntCrown(ivec2 c) {
+    c = clamp(c, ivec2(0), textureSize(uState, 0) - 1);
+    float leaves = texelFetch(uCanopyGround, c, 0).r;
+    return leaves > 0.0 ? clamp((1.0 - texelFetch(uCanopy, c, 0).g / leaves - 0.01) / 0.99, 0.0, 1.0) : 0.0;
+}
+
 bool regrowing(vec2 cell) {
     for (int i = 0; i < uStrokeCount; ++i) {
         if (uStrokeShape[i].y < 1.5) continue;
@@ -58,12 +67,15 @@ void main() {
     vec2 f = cell - vec2(i);
     float b = mix(mix(burntCell(i), burntCell(i + ivec2(1, 0)), f.x),
                   mix(burntCell(i + ivec2(0, 1)), burntCell(i + ivec2(1, 1)), f.x), f.y);
-    if (b <= 0.0) {
+    float bc = mix(mix(burntCrown(i), burntCrown(i + ivec2(1, 0)), f.x),
+                   mix(burntCrown(i + ivec2(0, 1)), burntCrown(i + ivec2(1, 1)), f.x), f.y);
+    if (b <= 0.0 && bc <= 0.0) {
         if (uRegrow == 0) discard;
         oBurn = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
     vec2 world = uMin + gl_FragCoord.xy * uTexel;
     float n = 0.65 * noise(world * 2.2) + 0.35 * noise(world * 5.3 + 7.7);
-    oBurn = vec4(clamp(b * 1.3 + (n - 0.5) * 0.7 * smoothstep(0.0, 0.3, b), 0.0, 1.0), 0.0, 0.0, 1.0);
+    oBurn = vec4(clamp(b * 1.3 + (n - 0.5) * 0.7 * smoothstep(0.0, 0.3, b), 0.0, 1.0),
+                 clamp(bc * 1.2 + (n - 0.5) * 0.5 * smoothstep(0.0, 0.3, bc), 0.0, 1.0), 0.0, 1.0);
 }

@@ -27,6 +27,11 @@ struct PointLight;
 // the burning ground and the embers left behind. Brush strokes paint into
 // the grid: fire sets the grass alight, water soaks it and puts fire out,
 // and regrowth brings burnt grass back.
+//
+// Tree crowns are a second layer over the same cells, their leaves the
+// fuel. A crown warms over burning grass until it catches, then spreads
+// crown to crown downwind and rains embers on the grass below; its leaves
+// char and fall, and the crown burns away to the bare trunk.
 class FireGrid {
  public:
   // Metres per cell; the burn texture is kBurnScale times finer.
@@ -73,8 +78,8 @@ class FireGrid {
   void drawFlames(const glm::mat4& viewProj, glm::vec2 target, float pxPerMetre, float depthBiasNdc, float time,
                   glm::vec2 wind) const;
 
-  // The burn texture (0 untouched .. 1 burnt out) and where it lies:
-  // xz of its corner, and 1 / its size in metres.
+  // The burn texture and where it lies: xz of its corner, and 1 / its size
+  // in metres. r the grass, g the crowns over it: 0 untouched .. 1 burnt out.
   unsigned burnTexture() const { return burn_; }
   glm::vec4 burnDomain() const { return {min_.x, min_.y, 1.f / (kCell * w_), 1.f / (kCell * h_)}; }
   // The grid blurred, per cell over the same domain: r fire, g embers, b
@@ -95,11 +100,14 @@ class FireGrid {
   unsigned flameVao_ = 0, flameVbo_ = 0;  // per instance: a patch's first cell
   unsigned ground_ = 0;    // fuel, roofed, ground height
   unsigned state_[2] = {};  // fire, fuel left, wetness, embers
+  unsigned canopyGround_ = 0;  // leaves, mean crown height, crown top
+  unsigned canopy_[2] = {};    // crown fire, leaves left, warmth, embers; drawn with state_
   unsigned fbo_[2] = {};
   unsigned burn_ = 0, fboBurn_ = 0;
   unsigned glow_[2] = {}, fboGlow_[2] = {};  // blurred alongside state_
   unsigned patches_ = 0, fboPatches_ = 0;  // per patch: summed fire, fire-weighted x and z, summed embers
-  unsigned pbo_[2] = {};
+  unsigned crownPatches_ = 0;  // per patch: summed crown fire, fire-weighted x, z and height; drawn with patches_
+  unsigned pbo_[2] = {}, crownPbo_[2] = {};
   const Scene* scene_ = nullptr;
   glm::vec2 min_{0.f};
   int w_ = 0, h_ = 0;    // cells
@@ -122,6 +130,7 @@ class FireGrid {
   // The last two patch readbacks, and which patches burn (with their
   // neighbours, which may catch before the next readback).
   std::vector<float> patchPrev_, patchCur_;
+  std::vector<float> crownPrev_, crownCur_;
   std::vector<int> active_;
 };
 

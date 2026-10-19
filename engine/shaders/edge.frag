@@ -338,6 +338,7 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
         // Charred grass and ground take the firelight as charred: darker
         // than the lawn round them, so the burn reads at night.
         if (surf == 0) charred = smoothstep(0.3, 0.75, textureLod(uBurn, uv, 0.0).r);
+        else if (surf == kSurfLeaf || surf == kSurfBark) charred = smoothstep(0.15, 0.6, textureLod(uBurn, uv, 0.0).g);
     }
     if (k <= 0.0 && fire <= 0.0 && ember <= 0.0) return col;
 #else
