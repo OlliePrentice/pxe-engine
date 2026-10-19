@@ -62,6 +62,15 @@ struct Options {
   // turning w degrees a second.
   bool haveFireball = false;
   glm::vec4 fireball{0.f};
+  // Spell brush strokes (see BrushSettings), each moved at an even pace
+  // from `from` to `to` (world xz) between `start` and `end` seconds in.
+  struct ScriptedStroke {
+    int kind = 0;
+    glm::vec2 from{0.f}, to{0.f};
+    float start = 0.f, end = 0.f;
+    float radius = 1.f;
+  };
+  std::vector<ScriptedStroke> brushes;
   float rainFrom = -1.f;  // captures with --settle: dry until this many seconds in, then --rain
   float settle = 0.f;  // captures: seconds of weather run first, the hour held
   bool rays = true;
@@ -109,6 +118,9 @@ void printUsage() {
                "  --grass-fire X,Z         set the grass alight at world X,Z (repeatable; G does it at the view's centre)\n"
                "  --rain-from S            with --settle: dry for S seconds, then --rain\n"
                "  --fireball X,Z,DEG[,TURN]  roll a fireball from X,Z pushed toward compass DEG, turning TURN deg/s\n"
+               "  --brush KIND,X1,Z1,X2,Z2,T0,T1[,R]  paint a spell brush stroke (fire, water or regrow) from X1,Z1\n"
+               "                           to X2,Z2 between T0 and T1 s, R m wide (default 1; repeatable; with\n"
+               "                           --ui-shot it goes through the mouse's pick of the ground)\n"
                "                           (play: F launches one, I J K L steer, C follows it)\n"
                "  --no-rays                no god rays\n"
                "  --fireflies              fireflies out\n"
@@ -220,6 +232,17 @@ Options parseArgs(int argc, char** argv) {
         std::exit(1);
       }
       opt.haveFireball = true;
+    } else if (a == "--brush") {
+      Options::ScriptedStroke b;
+      char kind[16] = {};
+      const int got = std::sscanf(need("--brush"), "%15[a-z],%f,%f,%f,%f,%f,%f,%f", kind, &b.from.x, &b.from.y, &b.to.x,
+                                  &b.to.y, &b.start, &b.end, &b.radius);
+      b.kind = std::strcmp(kind, "fire") == 0 ? 0 : std::strcmp(kind, "water") == 0 ? 1 : std::strcmp(kind, "regrow") == 0 ? 2 : -1;
+      if (got < 7 || b.kind < 0 || b.end < b.start) {
+        std::fprintf(stderr, "bad --brush, expected fire|water|regrow,x1,z1,x2,z2,t0,t1[,radius]\n");
+        std::exit(1);
+      }
+      opt.brushes.push_back(b);
     } else if (a == "--rain-from") {
       opt.rainFrom = static_cast<float>(std::atof(need("--rain-from")));
     } else if (a == "--candles") {
@@ -294,6 +317,7 @@ struct Input {
   bool igniteGrass = false;
   bool launchFireball = false;
   bool follow = false;
+  int brush = -2;  // 1 2 3 pick a spell brush (0 fire, 1 water, 2 regrowth); -2 none pressed
   glm::vec2 steer{0.f};  // fireball push: x screen right, y screen up
   int speedSteps = 0;  // +1 doubles, -1 halves
   bool shot = false;
@@ -334,6 +358,10 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken) {
   if (pressed(win, GLFW_KEY_G, gkey)) in.igniteGrass = true;
   static bool fkey = false, ckey = false;
   if (pressed(win, GLFW_KEY_F, fkey)) in.launchFireball = true;
+  static bool one = false, two = false, three = false;
+  if (pressed(win, GLFW_KEY_1, one)) in.brush = 0;
+  if (pressed(win, GLFW_KEY_2, two)) in.brush = 1;
+  if (pressed(win, GLFW_KEY_3, three)) in.brush = 2;
   if (pressed(win, GLFW_KEY_C, ckey)) in.follow = true;
   if (down(GLFW_KEY_L)) in.steer.x += 1.f;
   if (down(GLFW_KEY_J)) in.steer.x -= 1.f;
@@ -487,6 +515,23 @@ void scriptFireball(const Options& opt, game::Fireball& ball, game::WorldClock& 
   ball.update(clock, scene, dt, compass(opt.fireball.z + opt.fireball.w * static_cast<float>(frame) * dt), ignite);
 }
 
+// The --brush strokes over the frame from t - dt to t seconds in: the
+// stretch each brush covered in that time.
+void scriptBrushes(const Options& opt, float t, float dt, std::vector<pxe::FireGrid::Stroke>& out) {
+  for (const Options::ScriptedStroke& b : opt.brushes) {
+    const float t0 = std::max(t - dt, b.start), t1 = std::min(t, b.end);
+    if (t1 < t0) continue;
+    auto at = [&](float u) { return b.end > b.start ? glm::mix(b.from, b.to, (u - b.start) / (b.end - b.start)) : b.to; };
+    out.push_back({at(t0), at(t1), b.radius, b.kind});
+  }
+}
+
+float brushesEnd(const Options& opt) {
+  float end = -1.f;
+  for (const Options::ScriptedStroke& b : opt.brushes) end = std::max(end, b.end);
+  return end;
+}
+
 pxe::FrameParams makeParams(const Options& opt) {
   pxe::FrameParams params;
   params.framebufferW = opt.width;
@@ -501,7 +546,7 @@ pxe::FrameParams makeParams(const Options& opt) {
   params.fire = opt.fire;
   params.rays = opt.rays;
   params.fireflies = opt.fireflies;
-  params.grassFire = !opt.grassFires.empty() || opt.haveFireball;
+  params.grassFire = !opt.grassFires.empty() || opt.haveFireball || !opt.brushes.empty();
   params.present = true;
   return params;
 }
@@ -703,6 +748,7 @@ int main(int argc, char** argv) {
           if (!opt.benchPaused) clock.advance(1.f / 60.f);
           if (f == 0) params.igniteGrass = opt.grassFires;
           scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
+          scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
           params.fires = fireDraws(clock);
           params.lighting = lightingFor(scene, clock);
           draw(params);
@@ -750,6 +796,7 @@ int main(int argc, char** argv) {
             params.time = opt.time + static_cast<float>(f) / 60.f;
             if (f == 0) params.igniteGrass = opt.grassFires;
             scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
+            scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
             params.fires = fireDraws(clock);
             params.lighting = lightingFor(scene, clock);
             draw(params);
@@ -777,9 +824,11 @@ int main(int argc, char** argv) {
           params.time = opt.time + std::ceil(opt.settle * 60.f) / 60.f;
           scriptFireball(opt, ball, clock, scene, static_cast<int>(std::ceil(opt.settle * 60.f)), 1.f / 60.f,
                          params.igniteGrass);
+          scriptBrushes(opt, std::ceil(opt.settle * 60.f) / 60.f, 1.f / 60.f, params.gridStrokes);
         } else {
           params.igniteGrass = opt.grassFires;
           scriptFireball(opt, ball, clock, scene, 0, 1.f / 60.f, params.igniteGrass);
+          scriptBrushes(opt, 0.f, 1.f / 60.f, params.gridStrokes);
         }
         params.fires = fireDraws(clock);
         params.lighting = lightingFor(scene, clock);
@@ -836,6 +885,13 @@ int main(int argc, char** argv) {
         std::vector<glm::vec2> ignite = opt.grassFires;
         game::Fireball ball;
         bool following = false;
+        game::BrushSettings brush;
+        bool painting = false;      // the left button was painting last frame
+        glm::vec2 lastPaintPx{0.f};  // and where the cursor was, framebuffer pixels
+        float pickError = 0.f;       // scripted strokes: worst miss of the pick, metres
+        glm::vec2 scriptedCursor{-1.f};  // --ui-shot: the brush stays where the script left it
+        // --ui-shot: the frame to save; with --brush, once the strokes are done.
+        const int uiFrames = opt.brushes.empty() ? 8 : static_cast<int>(std::ceil((brushesEnd(opt) + 1.f) * 60.f));
         pxe::CameraFrame lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
         if (opt.haveFireball) {
           ball.launch(clock, scene, {opt.fireball.x, opt.fireball.y}, compass(opt.fireball.z));
@@ -859,6 +915,7 @@ int main(int argc, char** argv) {
           if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
+          if (input.brush >= 0) brush.kind = brush.kind == input.brush ? game::BrushSettings::kNone : input.brush;
           if (input.strike) clock.strike();
           if (input.toggleSound) sound.on = !sound.on;
           if (input.igniteGrass) {
@@ -896,6 +953,71 @@ int main(int argc, char** argv) {
 
           int fbW = 0, fbH = 0;
           glfwGetFramebufferSize(window, &fbW, &fbH);
+
+          // Spell brushes: the ground under the cursor, picked through the
+          // last frame drawn. Held down, the left button paints from where
+          // the cursor was last frame to where it is now. Scripted --brush
+          // strokes go through the same pick, from where their ends show.
+          std::vector<pxe::FireGrid::Stroke> strokes;
+          std::vector<glm::vec2> brushOutline;
+          {
+            int winW = 0, winH = 0;
+            glfwGetWindowSize(window, &winW, &winH);
+            const float pointScale = winW > 0 ? static_cast<float>(fbW) / static_cast<float>(winW) : 1.f;
+            auto pick = [&](glm::vec2 px, glm::vec3& hit) {
+              return scene.ground.raycast(renderer.rayThrough(lastFrame, fbW, fbH, px), lastFrame.forward, 400.f, hit);
+            };
+            auto shown = [&](glm::vec2 xz) {
+              const float y = scene.ground.heightAt(xz);
+              return renderer.windowPoint(lastFrame, fbW, fbH, {xz.x, y > pxe::HeightMap::kNone ? y : 0.f, xz.y});
+            };
+            auto paint = [&](glm::vec2 fromPx, glm::vec2 toPx, float radius, int kind) {
+              glm::vec3 a{0.f}, b{0.f};
+              if (!pick(fromPx, a) || !pick(toPx, b)) return false;
+              strokes.push_back({{a.x, a.z}, {b.x, b.z}, radius, kind});
+              grassFire = true;
+              return true;
+            };
+            glm::vec2 cursorPx{-1.f};
+            float cursorRadius = brush.radius;
+            int cursorKind = brush.kind;
+            if (brush.kind != game::BrushSettings::kNone) {
+              double cx = 0.0, cy = 0.0;
+              glfwGetCursorPos(window, &cx, &cy);
+              cursorPx = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
+              const bool down = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !menu.wantsMouse();
+              if (down) paint(painting ? lastPaintPx : cursorPx, cursorPx, brush.radius, brush.kind);
+              painting = down;
+              lastPaintPx = cursorPx;
+            } else {
+              painting = false;
+            }
+            std::vector<pxe::FireGrid::Stroke> scripted;
+            scriptBrushes(opt, static_cast<float>(frameCount) / 60.f, 1.f / 60.f, scripted);
+            for (const pxe::FireGrid::Stroke& k : scripted) {
+              if (!paint(shown(k.from), shown(k.to), k.radius, k.kind)) continue;
+              pickError = std::max({pickError, glm::distance(strokes.back().from, k.from), glm::distance(strokes.back().to, k.to)});
+              // The script holds the brush as a player would.
+              scriptedCursor = shown(k.to);
+              brush.kind = cursorKind = k.kind;
+              brush.radius = cursorRadius = k.radius;
+            }
+            if (!opt.uiShot.empty() && scriptedCursor.x >= 0.f) cursorPx = scriptedCursor;
+            // The brush's outline on the ground round the cursor. It keeps to
+            // the cursor's height where the ground steps up onto stone, so it
+            // stays a ring on the lawn rather than climbing walls.
+            glm::vec3 hit{0.f};
+            if (cursorKind != game::BrushSettings::kNone && cursorPx.x >= 0.f && pick(cursorPx, hit)) {
+              for (int i = 0; i < 40; ++i) {
+                const float a = static_cast<float>(i) / 40.f * 6.2831853f;
+                const glm::vec2 xz = glm::vec2{hit.x, hit.z} + cursorRadius * glm::vec2{std::cos(a), std::sin(a)};
+                float y = scene.ground.heightAt(xz);
+                if (y <= pxe::HeightMap::kNone || std::fabs(y - hit.y) > 0.4f) y = hit.y;
+                brushOutline.push_back(renderer.windowPoint(lastFrame, fbW, fbH, {xz.x, y, xz.y}) / pointScale);
+              }
+            }
+          }
+
           pxe::FrameParams params = makeParams(opt);
           params.framebufferW = fbW;
           params.framebufferH = fbH;
@@ -908,6 +1030,7 @@ int main(int argc, char** argv) {
           params.grassFire = grassFire;
           params.igniteGrass = std::move(ignite);
           ignite.clear();
+          params.gridStrokes = std::move(strokes);
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
@@ -927,16 +1050,18 @@ int main(int argc, char** argv) {
                                      renderer.readView());
             std::fprintf(stderr, "pxe: %s shot.png\n", ok ? "wrote" : "failed");
           }
-          menu.draw(clock, view, sound, fps);
-          if (!opt.uiShot.empty() && ++frameCount == 8) {
+          menu.draw(clock, view, sound, brush, brushOutline, fps);
+          ++frameCount;
+          if (!opt.uiShot.empty() && frameCount == uiFrames) {
             const bool ok = writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
             std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", ok ? "wrote" : "failed", opt.uiShot.c_str(), fbW, fbH);
+            if (!opt.brushes.empty()) std::fprintf(stderr, "pxe: brush picks within %.3f m of the scripted strokes\n", pickError);
             glfwSetWindowShouldClose(window, GLFW_TRUE);
           }
           char title[200];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD pan   Q/E yaw   G grass fire   F fireball, IJKL roll   F4 capture",
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD pan   Q/E yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
           (void)frame;

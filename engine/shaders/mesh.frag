@@ -28,12 +28,18 @@ void main() {
     vec3 col = toneColour(vSurface, tone);
 #ifdef FIRE_GRID
     // The lawn under burnt grass is scorched, then charred.
+    float charred = 0.0;
     if (vSurface == 0) {
         float burn = burnAt(vWorld);
         if (burn > 0.3) col = burntColour(tone, burn > 0.62 ? 2 : 1);
+        charred = smoothstep(0.3, 0.75, burn);
     }
-#endif
+    float shade = cloudShade(vWorld);
+    col = clouded(col, vSurface, shade);
+    oColor = vec4(charLit(col, fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), charred), 1.0);
+#else
     float shade = cloudShade(vWorld);
     col = clouded(col, vSurface, shade);
     oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), 1.0);
+#endif
 }

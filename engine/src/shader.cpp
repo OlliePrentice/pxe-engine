@@ -28,6 +28,14 @@ std::string compose(const std::string& source, const std::string& common) {
   return out;
 }
 
+// Defines for a shader without a common file go just after its #version line.
+std::string withDefines(const std::string& source, const std::string& defines) {
+  if (defines.empty()) return source;
+  const auto eol = source.find('\n');
+  if (eol == std::string::npos) return source;
+  return source.substr(0, eol + 1) + defines + source.substr(eol + 1);
+}
+
 unsigned compile(unsigned type, const std::string& source, const std::string& label) {
   const char* src = source.c_str();
   const unsigned shader = glCreateShader(type);
@@ -51,8 +59,9 @@ unsigned compile(unsigned type, const std::string& source, const std::string& la
 unsigned linkProgram(const std::string& vertPath, const std::string& fragPath,
                      const std::string& commonPath, const std::string& commonPrefix) {
   const std::string common = commonPath.empty() ? std::string{} : commonPrefix + readAll(commonPath);
-  const unsigned vs = compile(GL_VERTEX_SHADER, compose(readAll(vertPath), common), vertPath);
-  const unsigned fs = compile(GL_FRAGMENT_SHADER, compose(readAll(fragPath), common), fragPath);
+  const std::string defines = commonPath.empty() ? commonPrefix : std::string{};
+  const unsigned vs = compile(GL_VERTEX_SHADER, withDefines(compose(readAll(vertPath), common), defines), vertPath);
+  const unsigned fs = compile(GL_FRAGMENT_SHADER, withDefines(compose(readAll(fragPath), common), defines), fragPath);
   const unsigned prog = glCreateProgram();
   glAttachShader(prog, vs);
   glAttachShader(prog, fs);

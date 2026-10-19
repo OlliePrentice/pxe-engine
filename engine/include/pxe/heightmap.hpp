@@ -23,6 +23,9 @@ class HeightMap {
   // Smooth height at xz, blended from the cells round it, so something
   // moving over the ground rises and falls without steps; kNone off the map.
   float heightAt(glm::vec2 xz) const;
+  // Where a ray from `origin` along unit `dir` first meets the surface
+  // (heightAt), within `maxDist` metres; false if it misses.
+  bool raycast(glm::vec3 origin, glm::vec3 dir, float maxDist, glm::vec3& hit) const;
 
  private:
   float at(int x, int z) const;

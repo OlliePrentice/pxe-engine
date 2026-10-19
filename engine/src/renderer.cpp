@@ -166,7 +166,8 @@ Renderer::~Renderer() {
         if (prog) glDeleteProgram(prog);
   if (progShadow_) glDeleteProgram(progShadow_);
   if (progPresent_) glDeleteProgram(progPresent_);
-  if (progEdge_) glDeleteProgram(progEdge_);
+  for (unsigned prog : edge_)
+    if (prog) glDeleteProgram(prog);
   if (progFire_) glDeleteProgram(progFire_);
   if (progFireShadow_) glDeleteProgram(progFireShadow_);
   if (fireVbo_) glDeleteBuffers(1, &fireVbo_);
@@ -438,7 +439,8 @@ void Renderer::init() {
   grid_.init(dir);
   progShadow_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag");
   progPresent_ = linkProgram(dir + "/present.vert", dir + "/present.frag");
-  progEdge_ = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
+  edge_[0] = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
+  edge_[1] = linkProgram(dir + "/edge.vert", dir + "/edge.frag", {}, "#define FIRE_GRID\n");
   progFire_ = linkProgram(dir + "/fire.vert", dir + "/fire.frag");
   progFireShadow_ = linkProgram(dir + "/fireshadow.vert", dir + "/fireshadow.frag");
   createTargets();
@@ -472,6 +474,27 @@ void Renderer::upload(const Scene& scene) {
   glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(scene.grass.size() * sizeof(GrassInstance)),
                scene.grass.empty() ? nullptr : scene.grass.data(), GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+// The window maps onto the low-res target as drawPresent lays it out: the
+// view scaled by a whole number and centred, shifted by the snap error.
+glm::vec3 Renderer::rayThrough(const CameraFrame& camera, int fbW, int fbH, glm::vec2 px) const {
+  const int scale = std::max(1, std::min(fbW / viewW(), fbH / viewH()));
+  const glm::vec2 corner{static_cast<float>((fbW - viewW() * scale) / 2), static_cast<float>((fbH - viewH() * scale) / 2)};
+  const glm::vec2 up{px.x, static_cast<float>(fbH) - px.y};
+  const glm::vec2 texel = static_cast<float>(RenderConfig::kPad) + camera.texelError + (up - corner) / static_cast<float>(scale);
+  const glm::vec2 ndc = texel / glm::vec2{static_cast<float>(rtW()), static_cast<float>(rtH())} * 2.f - 1.f;
+  return camera.eye + camera.right * (ndc.x * camera.orthoHalfW) + camera.up * (ndc.y * camera.orthoHalfH);
+}
+
+glm::vec2 Renderer::windowPoint(const CameraFrame& camera, int fbW, int fbH, glm::vec3 world) const {
+  const int scale = std::max(1, std::min(fbW / viewW(), fbH / viewH()));
+  const glm::vec2 corner{static_cast<float>((fbW - viewW() * scale) / 2), static_cast<float>((fbH - viewH() * scale) / 2)};
+  const glm::vec2 ndc{glm::dot(world - camera.eye, camera.right) / camera.orthoHalfW,
+                      glm::dot(world - camera.eye, camera.up) / camera.orthoHalfH};
+  const glm::vec2 texel = (ndc + 1.f) * 0.5f * glm::vec2{static_cast<float>(rtW()), static_cast<float>(rtH())};
+  const glm::vec2 up = corner + (texel - static_cast<float>(RenderConfig::kPad) - camera.texelError) * static_cast<float>(scale);
+  return {up.x, static_cast<float>(fbH) - up.y};
 }
 
 void Renderer::drawPresent(const CameraFrame& camera, const FrameParams& params) {
@@ -867,8 +890,11 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   updateFires(scene, params);
   // The grass fire steps on the GPU before anything reads it this frame.
   const glm::vec2 windDir = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{0.f};
-  if (params.grassFire) grid_.advance(scene, params.time, params.igniteGrass, lighting.rain, windDir * lighting.windStrength);
+  if (params.grassFire)
+    grid_.advance(scene, params.time, params.igniteGrass, params.gridStrokes, lighting.rain,
+                  windDir * lighting.windStrength);
   const bool grassFire = params.grassFire && grid_.running();
+  progEdge_ = edge_[grassFire ? 1 : 0];
   const ToonPrograms& toon = toon_[grassFire ? 1 : 0][fireLights_.size() > 1 ? 1 : 0];
   progMesh_ = toon.mesh;
   progGrass_ = toon.grass;
@@ -1100,6 +1126,20 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindTexture(GL_TEXTURE_2D, heat_);
   u1i(progEdge_, "uHeat", 3);
   u1i(progEdge_, "uFire", fireCount > 0 || gridFlames ? 1 : 0);
+  if (grassFire) {
+    // The grid's glow (unit 10 still holds the burn texture).
+    glActiveTexture(GL_TEXTURE14);
+    glBindTexture(GL_TEXTURE_2D, grid_.glowTexture(true));
+    glActiveTexture(GL_TEXTURE15);
+    glBindTexture(GL_TEXTURE_2D, grid_.glowTexture(false));
+    u1i(progEdge_, "uBurn", 10);
+    u1i(progEdge_, "uGlow", 14);
+    u1i(progEdge_, "uGlowPrev", 15);
+    u1f(progEdge_, "uGlowBlend", grid_.glowBlend());
+    u1f(progEdge_, "uGlowLight", gridFlames ? 1.f : 0.f);
+    const glm::vec4 d = grid_.burnDomain();
+    glUniform4f(uloc(progEdge_, "uGridDomain"), d.x, d.y, d.z, d.w);
+  }
   // Point lights - fireflies, small fires, campfires without a firelight
   // slot, and any the game adds - lit in this pass from the depth and
   // normals already drawn rather than in every shader: t3ssel8r's light

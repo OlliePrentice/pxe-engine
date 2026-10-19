@@ -69,4 +69,30 @@ float HeightMap::heightAt(glm::vec2 xz) const {
   return weight > 1e-6f ? sum / weight : cellTop(xz);
 }
 
+bool HeightMap::raycast(glm::vec3 origin, glm::vec3 dir, float maxDist, glm::vec3& hit) const {
+  if (heights_.empty()) return false;
+  // March half a cell at a time until the ray is below the surface, then
+  // close in on the crossing.
+  auto below = [&](float t) {
+    const glm::vec3 p = origin + dir * t;
+    const float h = heightAt({p.x, p.z});
+    return h > kNone && p.y <= h;
+  };
+  const float stepLen = cell_ * 0.5f;
+  float prev = 0.f;
+  for (float t = 0.f; t <= maxDist; t += stepLen) {
+    if (below(t)) {
+      float lo = prev, hi = t;
+      for (int i = 0; i < 16; ++i) {
+        const float mid = 0.5f * (lo + hi);
+        (below(mid) ? hi : lo) = mid;
+      }
+      hit = origin + dir * hi;
+      return true;
+    }
+    prev = t;
+  }
+  return false;
+}
+
 }  // namespace pxe

@@ -316,4 +316,10 @@ vec3 burntColour(float tone, int level) {
     if (level >= 2) return dirt * vec3(0.42, 0.4, 0.42);
     return mix(toneColour(0, tone), dirt, 0.65) * vec3(1.04, 0.94, 0.74);
 }
+
+// Firelight on burnt grass: charred (1) it takes half the light the lawn
+// would, so the burn still reads as dark in the light of a fire.
+vec3 charLit(vec3 col, vec3 lit, float charred) {
+    return mix(lit, col + (lit - col) * 0.5, charred);
+}
 #endif

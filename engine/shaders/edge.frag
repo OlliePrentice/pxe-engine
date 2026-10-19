@@ -64,6 +64,16 @@ uniform float uFireDim;          // firelight, likewise
 uniform vec3 uFireBand[7];
 uniform sampler2D uHeat;    // fire: flame heat (r), ember glow (g), smoke (b)
 uniform int uFire;
+#ifdef FIRE_GRID
+// Grass fire (see FireGrid), in the build used only while it runs, so
+// without it this pass is exactly what it always was.
+uniform sampler2D uBurn;       // 0 untouched .. 1 burnt out
+uniform sampler2D uGlow;       // the grid blurred: fire, embers, ground height * grass, grass
+uniform sampler2D uGlowPrev;   // the same a step earlier
+uniform float uGlowBlend;      // 0 the step before .. 1 the latest
+uniform float uGlowLight;      // 1 with the fire shown, 0 without
+uniform vec4 uGridDomain;      // xz of the grid's corner, 1 / its size in metres
+#endif
 
 out vec4 oColor;
 
@@ -269,12 +279,24 @@ vec3 godRays(ivec2 p, vec3 col) {
 // the shade.
 const int kFirefly = 0;
 vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
+#ifdef FIRE_GRID
+    // The grid's glow lights pixels with no point light near them too.
+    if (texelFetch(uDepth, p, 0).r >= 0.9999) return col;
+    int first = 0, count = 0;
+    if (uPointCount > 0) {
+        ivec2 tile = p / uTileSize;
+        int t = tile.y * uTilesX + tile.x;
+        first = int(texelFetch(uTiles, 2 * t).r);
+        count = int(texelFetch(uTiles, 2 * t + 1).r);
+    }
+#else
     if (uPointCount <= 0 || texelFetch(uDepth, p, 0).r >= 0.9999) return col;
     ivec2 tile = p / uTileSize;
     int t = tile.y * uTilesX + tile.x;
     int first = int(texelFetch(uTiles, 2 * t).r);
     int count = int(texelFetch(uTiles, 2 * t + 1).r);
     if (count == 0) return col;
+#endif
     vec3 s = worldAt(p);
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
     int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, 6));
@@ -297,7 +319,30 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
             fire += pow(fall, 1.4) * ndl * light.x;
         }
     }
+#ifdef FIRE_GRID
+    // The grass fire's own low glow, from the grid blurred: the burning
+    // ground lights what is just above it, and embers left on the burnt
+    // ground glow a dull red for a while after. Both ease from step to step,
+    // so the light changes every frame as the fire moves.
+    float ember = 0.0;
+    float charred = 0.0;
+    vec2 uv = (s.xz - uGridDomain.xy) * uGridDomain.zw;
+    if (all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)))) {
+        vec4 glow = mix(texture(uGlowPrev, uv), texture(uGlow, uv), uGlowBlend);
+        if (glow.a > 0.02 && uGlowLight > 0.0) {
+            float above = s.y - glow.b / glow.a;
+            float low = clamp(1.0 - above / 0.9, 0.0, 1.0) * step(-0.4, above) * clamp(n.y * 0.6 + 0.4, 0.0, 1.0);
+            fire += 0.45 * glow.r * low;
+            ember = 0.6 * glow.g * low;
+        }
+        // Charred grass and ground take the firelight as charred: darker
+        // than the lawn round them, so the burn reads at night.
+        if (surf == 0) charred = smoothstep(0.3, 0.75, textureLod(uBurn, uv, 0.0).r);
+    }
+    if (k <= 0.0 && fire <= 0.0 && ember <= 0.0) return col;
+#else
     if (k <= 0.0 && fire <= 0.0) return col;
+#endif
     float sun = 0.0;
     if (uFlyDim > 0.0 || uFireDim > 0.0) {
         float ndl = clamp(dot(n, uLight) * 3.0, 0.0, 1.0);
@@ -309,10 +354,21 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
         k *= uFlyLight * (1.0 - uFlyDim * sun);
         col = mix(col, max(col, uFlyBand[surf]), clamp(k, 0.0, 0.7));
     }
+#ifdef FIRE_GRID
+    if (ember > 0.0) {
+        ember *= 1.0 - uFireDim * sun;
+        col = mix(col, max(col, uFireBand[surf] * vec3(0.8, 0.36, 0.3)), clamp(ember, 0.0, 0.6));
+    }
+    if (fire > 0.0) {
+        fire *= 1.0 - uFireDim * sun;
+        col = mix(col, max(col, uFireBand[surf] * (1.0 - 0.5 * charred)), clamp(fire, 0.0, 0.85));
+    }
+#else
     if (fire > 0.0) {
         fire *= 1.0 - uFireDim * sun;
         col = mix(col, max(col, uFireBand[surf]), clamp(fire, 0.0, 0.85));
     }
+#endif
     return col;
 }
 

@@ -82,6 +82,15 @@ struct ViewToggles {
   bool fireflies = false;
 };
 
+// Spell brushes, painted into the grass fire with the left mouse button:
+// fire sets it alight, water soaks it and puts fire out, regrowth brings
+// burnt grass back. Kinds are pxe::FireGrid::Stroke's.
+struct BrushSettings {
+  static constexpr int kNone = -1;
+  int kind = kNone;
+  float radius = 1.f;  // metres
+};
+
 // Dear ImGui panel toggled with Tab. Drawn at window resolution on top of
 // the upscaled pixel art.
 class SettingsMenu {
@@ -94,9 +103,14 @@ class SettingsMenu {
   // True while a text field or slider has the keyboard, so WASD etc. should
   // not move the camera.
   bool wantsKeyboard() const;
+  // True while the pointer is over the panel, so a click is not a brush stroke.
+  bool wantsMouse() const;
 
-  // Build and draw the panel. Call after the scene is presented, before swap.
-  void draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, float fps);
+  // Build and draw the panel, and round the cursor the brush's outline on
+  // the ground (window points) if any. Call after the scene is presented,
+  // before swap.
+  void draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
+            const std::vector<glm::vec2>& brushOutline, float fps);
 
  private:
   bool ready_ = false;

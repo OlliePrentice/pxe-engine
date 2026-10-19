@@ -168,7 +168,10 @@ void SettingsMenu::shutdown() {
 
 bool SettingsMenu::wantsKeyboard() const { return ready_ && open_ && ImGui::GetIO().WantTextInput; }
 
-void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, float fps) {
+bool SettingsMenu::wantsMouse() const { return ready_ && open_ && ImGui::GetIO().WantCaptureMouse; }
+
+void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
+                        const std::vector<glm::vec2>& brushOutline, float fps) {
   if (!ready_) return;
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
@@ -279,12 +282,33 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
                                       : "Rain and Downpour put it out";
       if (tooWet) ImGui::TextDisabled("Too wet to relight. %s", why);
       else ImGui::TextDisabled("%s", why);
+      ImGui::SeparatorText("Spell brushes");
+      ImGui::RadioButton("Off", &brush.kind, BrushSettings::kNone);
+      ImGui::SameLine();
+      ImGui::RadioButton("Fire  (1)", &brush.kind, 0);
+      ImGui::SameLine();
+      ImGui::RadioButton("Water  (2)", &brush.kind, 1);
+      ImGui::SameLine();
+      ImGui::RadioButton("Regrow  (3)", &brush.kind, 2);
+      ImGui::SliderFloat("Brush size", &brush.radius, 0.4f, 3.f, "%.1f m");
+      ImGui::TextDisabled("Hold the left mouse button to paint the grass");
+
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms), capped by vsync; --bench measures uncapped", fps, 1000.f / fps);
       else
         ImGui::TextDisabled("measuring fps...");
     }
     ImGui::End();
+  }
+
+  // The brush's outline where it lies on the ground, in its colour.
+  if (brushOutline.size() > 2) {
+    static const ImU32 colours[3] = {IM_COL32(255, 150, 70, 220), IM_COL32(120, 190, 255, 220),
+                                     IM_COL32(150, 230, 110, 220)};
+    std::vector<ImVec2> points;
+    for (const glm::vec2& p : brushOutline) points.emplace_back(p.x, p.y);
+    ImGui::GetForegroundDrawList()->AddPolyline(points.data(), static_cast<int>(points.size()),
+                                                colours[std::clamp(brush.kind, 0, 2)], ImDrawFlags_Closed, 2.f);
   }
 
   ImGui::Render();

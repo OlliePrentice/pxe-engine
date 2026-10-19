@@ -12,6 +12,8 @@ layout(location = 0) in vec2 aPatch;  // the patch's first cell
 uniform sampler2D uState;  // the latest step
 uniform sampler2D uPrev;   // the step before
 uniform sampler2D uGround;
+uniform sampler2D uGlow;      // the grid blurred (gridglow.frag), latest step
+uniform sampler2D uGlowPrev;  // and the step before
 uniform float uBlend;      // 0 the step before .. 1 the latest
 uniform vec2 uMin;
 uniform float uCell;
@@ -70,17 +72,25 @@ void main() {
     vec3 jitter = vec3(h2 - 0.5, 0.0, h3 - 0.5) * uCell;
     vec3 wind = vec3(uWind.x, 0.0, uWind.y);
 
-    if (part < 3) {
-        if (fire < 0.03) {
+    if (part == 0) {
+        // The burning grass itself, a low glow that joins the flames up
+        // along the front, at 8 fps. It follows the grid blurred, so cells
+        // just catching and the unburnt gaps between burning ones glow too
+        // and the front reads as one ragged line rather than separate sparks.
+        float spread = mix(texelFetch(uGlowPrev, cell, 0).r, texelFetch(uGlow, cell, 0).r, uBlend);
+        float glow = max(fire, s.g > 0.05 ? min(1.0, 1.8 * spread) : 0.0);
+        if (glow < 0.1) {
             drop();
             return;
         }
-        if (part == 0) {
-            // The burning grass itself, a low glow that joins the flames up
-            // along the front, at 8 fps.
-            float t = floor(uTime * 8.0) / 8.0;
-            float swell = 0.85 + 0.15 * sin(t * 9.0 + h0 * 6.3);
-            emit(base + jitter * 0.5 + vec3(0.0, 0.06, 0.0), 0.15 * swell, 0.75 * fire, 0.0);
+        float t = floor(uTime * 8.0) / 8.0;
+        float swell = 0.85 + 0.15 * sin(t * 9.0 + h0 * 6.3);
+        emit(base + jitter * 0.5 + vec3(0.0, 0.06, 0.0), (0.13 + 0.04 * glow) * swell, 0.15 + 0.5 * glow, 0.0);
+        return;
+    }
+    if (part < 3) {
+        if (fire < 0.03) {
+            drop();
             return;
         }
         // Flames, at 12 fps: each rises off the grass, shrinking and cooling
