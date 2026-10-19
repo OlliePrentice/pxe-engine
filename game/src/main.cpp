@@ -51,8 +51,11 @@ struct Options {
   bool tufts = true;
   bool edges = true;
   bool fire = true;
-  float fireLevel = 1.f;  // captures: how well the campfire burns, and its smoke once out
+  float fireLevel = 1.f;  // captures: how well every campfire burns, and its smoke once out
   float fireSmoke = 0.f;
+  bool shelterTest = false;
+  int extraFires = 0;
+  float settle = 0.f;  // captures: seconds of weather run first, the hour held
   bool rays = true;
   bool fireflies = false;
   float hour = -1.f;  // < 0: 15:00 for captures, 05:30 interactive
@@ -90,7 +93,10 @@ void printUsage() {
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
                "  --no-fire                campfire unlit\n"
-               "  --fire-level L,S         captures: campfire burning at L (0 out .. 1), smoke S once out\n"
+               "  --fire-level L,S         captures: campfires burning at L (0 out .. 1), smoke S once out\n"
+               "  --shelter-test           ruins: add a fire under a stone shelter and one under a tree\n"
+               "  --extra-fires N          ruins: N bare flames over the lawn, to test many fires\n"
+               "  --settle S               captures: run the weather S seconds first (rain puts fires out)\n"
                "  --no-rays                no god rays\n"
                "  --fireflies              fireflies out\n"
                "  --no-lightning           no lightning flashes in rain and downpour\n"
@@ -183,6 +189,12 @@ Options parseArgs(int argc, char** argv) {
       opt.rain = std::atof(need("--rain"));
     } else if (a == "--no-fire") {
       opt.fire = false;
+    } else if (a == "--settle") {
+      opt.settle = static_cast<float>(std::atof(need("--settle")));
+    } else if (a == "--extra-fires") {
+      opt.extraFires = std::atoi(need("--extra-fires"));
+    } else if (a == "--shelter-test") {
+      opt.shelterTest = true;
     } else if (a == "--fire-level") {
       std::sscanf(need("--fire-level"), "%f,%f", &opt.fireLevel, &opt.fireSmoke);
     } else if (a == "--no-rays") {
@@ -372,7 +384,7 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
   // full firelight is its midday lit colour pulled toward a golden orange.
   {
     const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
-    lighting.fireLight = 1.5f * clock.fireLevel;
+    lighting.fireLight = 1.5f;
     lighting.fireDim = 0.9f * (1.f - dark);
     lighting.fireReach = 6.f + 3.5f * dark;
     const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
@@ -409,6 +421,13 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
   return lighting;
 }
 
+// The fires burning this frame, for the renderer.
+std::vector<pxe::FireDraw> fireDraws(const game::WorldClock& clock) {
+  std::vector<pxe::FireDraw> draws;
+  for (const game::WorldClock::Fire& f : clock.fires) draws.push_back({f.id, f.base, f.level, f.smoke});
+  return draws;
+}
+
 pxe::FrameParams makeParams(const Options& opt) {
   pxe::FrameParams params;
   params.framebufferW = opt.width;
@@ -430,6 +449,7 @@ pxe::FrameParams makeParams(const Options& opt) {
 int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& scene) {
   pxe::FrameParams params;
   params.lighting = pxe::lightingAt(scene, kCaptureHour);
+  for (std::uint32_t i = 0; i < scene.fires.size(); ++i) params.fires.push_back({i, scene.fires[i].base});
   params.framebufferW = 320;
   params.framebufferH = 180;
   params.present = false;
@@ -560,6 +580,8 @@ int main(int argc, char** argv) {
       build.leafDensity *= density * density;
       build.tufts = opt.tufts && !opt.stamps;
       build.stamps = opt.stamps;
+      build.shelterTest = opt.shelterTest;
+      build.extraFires = opt.extraFires;
       build.scene = opt.scene;
       pxe::Scene scene;
       try {
@@ -598,6 +620,7 @@ int main(int argc, char** argv) {
         clock.lightning = opt.lightning;
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
+        clock.placeFires(scene.fires);
         // Per-pass GPU timers block every frame and, on macOS's GL-on-Metal,
         // under-report; they are opt-in. The wall-clock figure is the one to trust.
         const bool passes = std::getenv("PXE_BENCH_PASSES") != nullptr;
@@ -615,6 +638,7 @@ int main(int argc, char** argv) {
           // Advance the day as the game does at default speed, so the sun
           // moves and the shadow map is redrawn every frame (unless paused).
           if (!opt.benchPaused) clock.advance(1.f / 60.f);
+          params.fires = fireDraws(clock);
           params.lighting = lightingFor(scene, clock);
           draw(params);
           glfwSwapBuffers(window);
@@ -637,9 +661,35 @@ int main(int argc, char** argv) {
         clock.cloudCover = opt.clouds;
         clock.rain = opt.rain;
         clock.lightning = opt.lightning;
-        clock.fireLevel = opt.fireLevel;
-        clock.fireSmoke = opt.fireSmoke;
-        clock.fireLit = opt.fireLevel > 0.f;
+        clock.placeFires(scene.fires);
+        for (game::WorldClock::Fire& f : clock.fires) {
+          f.level = opt.fireLevel;
+          f.smoke = opt.fireSmoke;
+          f.lit = opt.fireLevel > 0.f;
+        }
+        if (opt.settle > 0.f) {
+          // The fires burn down (or catch) as they would in play, every frame
+          // drawn from the capture's time on; the hour, clouds and lightning
+          // stay as asked.
+          const bool lightning = clock.lightning;
+          clock.paused = true;
+          clock.lightning = false;
+          const int frames = static_cast<int>(std::ceil(opt.settle * 60.f));
+          for (int f = 0; f < frames; ++f) {
+            clock.advance(1.f / 60.f);
+            pxe::FrameParams params = makeParams(opt);
+            params.framebufferW = fbW;
+            params.framebufferH = fbH;
+            params.time = opt.time + static_cast<float>(f) / 60.f;
+            params.fires = fireDraws(clock);
+            params.lighting = lightingFor(scene, clock);
+            draw(params);
+          }
+          clock.paused = false;
+          clock.lightning = lightning;
+          for (const game::WorldClock::Fire& f : clock.fires)
+            std::fprintf(stderr, "pxe: fire %s, level %.2f, smoke %.2f\n", f.lit ? "lit" : "out", f.level, f.smoke);
+        }
         if (opt.flash > 0.f) {
           // Compass bearing, like the wind: 0 north (-z), 90 east (+x).
           const float az = opt.flashAz * 3.14159265f / 180.f, el = opt.flashEl * 3.14159265f / 180.f;
@@ -651,8 +701,8 @@ int main(int argc, char** argv) {
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
-        params.fireLevel = clock.fireLevel;
-        params.fireSmoke = clock.fireSmoke;
+        params.fires = fireDraws(clock);
+        if (opt.settle > 0.f) params.time = opt.time + std::ceil(opt.settle * 60.f) / 60.f;
         params.lighting = lightingFor(scene, clock);
         const pxe::CameraFrame frame = draw(params);
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
@@ -688,6 +738,7 @@ int main(int argc, char** argv) {
         clock.lightning = opt.lightning;
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
+        clock.placeFires(scene.fires);
         game::SoundSettings sound;
         sound.on = opt.sound;
         game::Audio audio;
@@ -744,8 +795,7 @@ int main(int argc, char** argv) {
           params.fire = view.fire;
           params.rays = view.rays;
           params.fireflies = view.fireflies;
-          params.fireLevel = clock.fireLevel;
-          params.fireSmoke = clock.fireSmoke;
+          params.fires = fireDraws(clock);
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);

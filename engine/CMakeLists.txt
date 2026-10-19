@@ -8,6 +8,7 @@ add_library(pxe_engine
   src/lighting.cpp
   src/fire.cpp
   src/fireflies.cpp
+  src/shelter.cpp
 )
 
 target_include_directories(pxe_engine
