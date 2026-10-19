@@ -189,14 +189,42 @@ void Fire::stepSmoke(glm::vec2 wind) {
   // While it burns, smoke starts well above the flames; once they are gone
   // it rises straight from the wet logs, and thins as the fire smoulders out.
   const float smoke = std::max(level_, smoulder_);
-  if (random() < 0.8f * smoke) {
+  // How far the wind is past the default strength (0 at or below it).
+  const float gale = std::max(glm::length(wind) - 0.6f, 0.f);
+  if (gale <= 0.f) {
+    if (random() < 0.8f * smoke) {
+      Particle p{};
+      const float from = 0.35f + 1.1f * level_;
+      p.pos = base_ + glm::vec3{0.08f * signedRandom(), from + 0.2f * random(), 0.08f * signedRandom()};
+      p.vel = {0.05f * signedRandom(), 0.32f + 0.15f * random(), 0.05f * signedRandom()};
+      p.life = 3.f + 2.f * random();
+      p.radius = 0.14f + 0.06f * random();
+      p.heat = 0.8f + 0.2f * random();
+      smoke_.push_back(p);
+    }
+    return;
+  }
+  // In a strong wind the flames lay over, so the smoke starts lower and
+  // downwind, where their tips are, and leaves already moving with the
+  // wind. It travels far between beats then, so each beat lets out a short
+  // run of smaller puffs strung along the path it covers in that beat,
+  // overlapping into one stream rather than a row of separate bubbles.
+  if (random() >= 0.8f * smoke + 0.2f * std::min(gale, 1.f)) return;
+  const glm::vec2 dir = wind / glm::length(wind);
+  const float from = (0.35f + 1.1f * level_) / (1.f + 0.15f * gale);
+  const float lean = from * std::min(0.8f, 0.3f * gale) * level_;
+  const glm::vec3 origin = base_ + glm::vec3{dir.x * lean, from, dir.y * lean};
+  const glm::vec3 drift{wind.x * 0.35f, 0.3f, wind.y * 0.35f};
+  const int puffs = 1 + static_cast<int>(std::min(gale * 0.8f, 5.f));
+  for (int k = 0; k < puffs; ++k) {
     Particle p{};
-    const float from = 0.35f + 1.1f * level_;
-    p.pos = base_ + glm::vec3{0.08f * signedRandom(), from + 0.2f * random(), 0.08f * signedRandom()};
-    p.vel = {0.05f * signedRandom(), 0.32f + 0.15f * random(), 0.05f * signedRandom()};
-    p.life = 3.f + 2.f * random();
-    p.radius = 0.14f + 0.06f * random();
-    p.heat = 0.8f + 0.2f * random();
+    const float f = static_cast<float>(k) / static_cast<float>(puffs);
+    p.vel = drift + glm::vec3{0.05f * signedRandom(), 0.1f * random(), 0.05f * signedRandom()};
+    p.pos = origin + glm::vec3{0.06f * signedRandom(), 0.15f * random(), 0.06f * signedRandom()} + p.vel * dt * f;
+    p.age = dt * f;
+    p.life = (2.f + 1.5f * random()) / (1.f + 0.1f * gale);
+    p.radius = (0.12f + 0.05f * random()) / std::sqrt(1.f + 0.3f * gale);
+    p.heat = (0.8f + 0.2f * random()) / std::sqrt(static_cast<float>(puffs));
     smoke_.push_back(p);
   }
 }
