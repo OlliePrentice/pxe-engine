@@ -536,11 +536,14 @@ float brushesEnd(const Options& opt) {
   return end;
 }
 
-// Water puts out the game's fires (campfires, candles, the fireball) as
-// well as the grass fire, which takes the strokes itself.
-void douseFires(game::WorldClock& clock, const std::vector<pxe::FireGrid::Stroke>& strokes) {
-  for (const pxe::FireGrid::Stroke& k : strokes)
+// Brushes reach the game's fires (campfires, candles, the fireball) as
+// well as the grass fire, which takes the strokes itself: water puts them
+// out and fire relights them.
+void brushFires(game::WorldClock& clock, const std::vector<pxe::FireGrid::Stroke>& strokes) {
+  for (const pxe::FireGrid::Stroke& k : strokes) {
     if (k.kind == pxe::FireGrid::Stroke::kWater) clock.douse(k.from, k.to, k.radius);
+    if (k.kind == pxe::FireGrid::Stroke::kFire) clock.kindle(k.from, k.to, k.radius);
+  }
 }
 
 pxe::FrameParams makeParams(const Options& opt) {
@@ -761,7 +764,7 @@ int main(int argc, char** argv) {
           if (f == 0) params.igniteGrass = opt.grassFires;
           scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
           scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
-          douseFires(clock, params.gridStrokes);
+          brushFires(clock, params.gridStrokes);
           params.fires = fireDraws(clock);
           params.lighting = lightingFor(scene, clock);
           draw(params);
@@ -810,7 +813,7 @@ int main(int argc, char** argv) {
             if (f == 0) params.igniteGrass = opt.grassFires;
             scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
             scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
-            douseFires(clock, params.gridStrokes);
+            brushFires(clock, params.gridStrokes);
             params.fires = fireDraws(clock);
             params.lighting = lightingFor(scene, clock);
             draw(params);
@@ -839,12 +842,12 @@ int main(int argc, char** argv) {
           scriptFireball(opt, ball, clock, scene, static_cast<int>(std::ceil(opt.settle * 60.f)), 1.f / 60.f,
                          params.igniteGrass);
           scriptBrushes(opt, std::ceil(opt.settle * 60.f) / 60.f, 1.f / 60.f, params.gridStrokes);
-          douseFires(clock, params.gridStrokes);
+          brushFires(clock, params.gridStrokes);
         } else {
           params.igniteGrass = opt.grassFires;
           scriptFireball(opt, ball, clock, scene, 0, 1.f / 60.f, params.igniteGrass);
           scriptBrushes(opt, 0.f, 1.f / 60.f, params.gridStrokes);
-          douseFires(clock, params.gridStrokes);
+          brushFires(clock, params.gridStrokes);
         }
         params.fires = fireDraws(clock);
         params.lighting = lightingFor(scene, clock);
@@ -1047,7 +1050,7 @@ int main(int argc, char** argv) {
           params.grassFire = grassFire;
           params.igniteGrass = std::move(ignite);
           ignite.clear();
-          douseFires(clock, strokes);
+          brushFires(clock, strokes);
           params.gridStrokes = std::move(strokes);
           params.grassFireLife = clock.grassFireLife;
           params.magentaGrass = magenta;

@@ -64,6 +64,10 @@ struct WorldClock {
   // Water over the stroke from `from` to `to` (world xz), `radius` metres
   // wide: puts out every fire under it at once, roofed or not.
   void douse(glm::vec2 from, glm::vec2 to, float radius);
+  // Fire over a stroke likewise: relights every fire under it that is out,
+  // and it catches as a relit fire does. Rain still puts an open fire out
+  // again, as it stops the menu's relight.
+  void kindle(glm::vec2 from, glm::vec2 to, float radius);
   // Advance by `dt` real seconds.
   void advance(float dt);
   // A lightning flash now, lighting the scene from a random direction.
@@ -75,6 +79,7 @@ struct WorldClock {
 
  private:
   float random();
+  static bool underStroke(const Fire& f, glm::vec2 from, glm::vec2 to, float radius);
   float nextStrike_ = 3.f;    // seconds until the next flash
   float strikeAge_ = -1.f;    // seconds since the flash began; < 0 none
   bool flicker_ = false;      // the flash dips and comes back once
