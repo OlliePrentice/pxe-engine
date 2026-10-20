@@ -1,5 +1,6 @@
 #include "audio.hpp"
 #include "fireball.hpp"
+#include "gamepad.hpp"
 #include "hero.hpp"
 #include "scene.hpp"
 #include "settings.hpp"
@@ -361,17 +362,28 @@ bool pressed(GLFWwindow* win, int key, bool& latch) {
   return edge;
 }
 
-Input pollInput(GLFWwindow* win, bool keyboardTaken) {
+Input pollInput(GLFWwindow* win, bool keyboardTaken, game::Gamepad& pad) {
   Input in;
   static bool tab = false;
   if (pressed(win, GLFW_KEY_TAB, tab)) in.toggleMenu = true;
+  pad.poll();
+  if (pad.toggleMenu) in.toggleMenu = true;
   if (keyboardTaken) return in;
+  if (pad.togglePause) in.togglePause = true;
+  in.rotate += pad.rotate;
   auto down = [&](int key) { return glfwGetKey(win, key) == GLFW_PRESS; };
   if (down(GLFW_KEY_A) || down(GLFW_KEY_LEFT)) in.panX -= 1.f;
   if (down(GLFW_KEY_D) || down(GLFW_KEY_RIGHT)) in.panX += 1.f;
   if (down(GLFW_KEY_W) || down(GLFW_KEY_UP)) in.panY += 1.f;
   if (down(GLFW_KEY_S) || down(GLFW_KEY_DOWN)) in.panY -= 1.f;
-  in.move = {in.panX, in.panY};
+  // The pad's stick adds to the keys; pushed part way, the hero goes at
+  // part pace.
+  in.move = glm::vec2{in.panX, in.panY} + pad.move;
+  if (glm::length(in.move) > 1.f) in.move = glm::normalize(in.move);
+  if (in.panX == 0.f && in.panY == 0.f) {
+    in.panX = pad.move.x;
+    in.panY = pad.move.y;
+  }
   in.walk = down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT);
   const float speed = in.walk ? 14.f : 6.f;
   in.panX *= speed;
@@ -978,6 +990,7 @@ int main(int argc, char** argv) {
           ball.launch(clock, scene, {opt.fireball.x, opt.fireball.y}, compass(opt.fireball.z));
           following = true;
         }
+        game::Gamepad gamepad;
         double previous = glfwGetTime();
         while (!glfwWindowShouldClose(window)) {
           const double now = glfwGetTime();
@@ -992,7 +1005,7 @@ int main(int argc, char** argv) {
           }
           dt = std::clamp(dt, 0.f, 0.05f);
           glfwPollEvents();
-          Input input = pollInput(window, menu.wantsKeyboard());
+          Input input = pollInput(window, menu.wantsKeyboard(), gamepad);
           if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
@@ -1155,7 +1168,7 @@ int main(int argc, char** argv) {
           char title[200];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD move (Shift walk)   Q/E yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
           (void)frame;
