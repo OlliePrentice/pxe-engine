@@ -109,6 +109,7 @@ struct Options {
   bool haveHeroMove = false;
   glm::vec3 heroMove{0.f};
   float heroAttack = -1.f;  // captures: this many seconds into an attack (after any move)
+  int heroPresses = 1;      // ...pressing X this many times, a fifth of a second apart
 };
 
 void printUsage() {
@@ -153,6 +154,7 @@ void printUsage() {
                "  --hero-size S            the hero against a real person (default 1.6)\n"
                "  --hero-move DEG,SECS[,WALK]  captures: run (WALK 1: walk) the hero toward compass DEG first\n"
                "  --hero-attack SECS       captures: the hero SECS into an attack (X; then on toward DEG if moving)\n"
+               "  --hero-combo N           ...pressing X N times, 0.2 s apart, to chain the combo\n"
                "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
@@ -211,6 +213,8 @@ Options parseArgs(int argc, char** argv) {
       opt.hero = 0;
     } else if (a == "--hero-size") {
       opt.heroSize = static_cast<float>(std::atof(need("--hero-size")));
+    } else if (a == "--hero-combo") {
+      opt.heroPresses = std::max(1, std::atoi(need("--hero-combo")));
     } else if (a == "--hero-attack") {
       opt.heroAttack = static_cast<float>(std::atof(need("--hero-attack")));
     } else if (a == "--hero-move") {
@@ -902,7 +906,7 @@ int main(int argc, char** argv) {
               game::HeroInput in;
               if (opt.haveHeroMove) in.move = compass(opt.heroMove.x);
               in.walk = opt.heroMove.z > 0.5f;
-              in.attack = f == 0;
+              in.attack = f % 12 == 0 && f / 12 < opt.heroPresses;
               hero.update(scene, 1.f / 60.f, in);
               // The smear samples the blade as it is drawn; keep it fed.
               if (f < attackFrames) {
@@ -912,7 +916,7 @@ int main(int argc, char** argv) {
               }
             }
           }
-          if (frames > 0) std::fprintf(stderr, "pxe: hero at %.2f %.2f %.2f, %.2f m/s\n", hero.position().x,
+          if (frames > 0 || opt.heroAttack >= 0.f) std::fprintf(stderr, "pxe: hero at %.2f %.2f %.2f, %.2f m/s\n", hero.position().x,
                                        hero.position().y, hero.position().z, hero.speed());
           camera.setTarget(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
         }

@@ -69,11 +69,10 @@ struct HeroInput {
 // it leans into acceleration and banks into turns, and its cape and hood
 // follow through with second-order dynamics.
 //
-// It attacks with a diagonal cut (the Attack clip): standing, with its whole
-// body; on the move, with its upper body over its legs' stride. It steps
-// into the strike and turns to the stick as it starts, its blade leaves a
-// glowing smear through the swing, and pressing again late in the swing
-// cuts again.
+// It fights with a three-cut sword combo after Hyper Light Drifter's -
+// forehand, backhand, finisher - each turning to the stick, holding its
+// wind-up a beat, then lunging through the strike, the blade leaving a
+// glowing smear; presses are buffered so the cuts chain cleanly.
 class Hero {
  public:
   // Load the model (needs the GL context); throws if it is missing.
@@ -102,7 +101,8 @@ class Hero {
   pxe::SkinnedModel::Pose pose_, run_, idle_;
   std::vector<pxe::Vertex> verts_;
   bool built_ = false;
-  int idleClip_ = -1, walkClip_ = -1, runClip_ = -1, attackClip_ = -1;
+  int idleClip_ = -1, walkClip_ = -1, runClip_ = -1;
+  int attackClips_[3] = {-1, -1, -1};
   int spine_ = -1, chest_ = -1, hips_ = -1, hood_ = -1, head_ = -1;
   struct Chain {
     int joints[3] = {-1, -1, -1};
@@ -113,7 +113,9 @@ class Hero {
   // The attack: seconds into its clip (< 0 not attacking), and how much of
   // each joint it takes over - the legs only while standing.
   float attackT_ = -1.f;
-  bool lunged_ = false;
+  int combo_ = 0;            // which cut: 0 forehand, 1 backhand, 2 finisher
+  bool queued_ = false;      // the next cut was asked for during this one
+  float comboGrace_ = 0.f;   // seconds left to carry the combo on after a cut
   pxe::SkinnedModel::Pose attack_, last_, from_;
   float fadeLeft_ = 0.f;  // seconds still easing out of from_ (a pose cut short)
   std::vector<float> lower_;  // per joint: 1 legs and hips, 0.5 cape and flaps, 0 the rest

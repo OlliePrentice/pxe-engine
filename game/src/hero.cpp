@@ -23,15 +23,25 @@ constexpr float kGravity = 30.f;
 constexpr float kFoot = 0.15f;   // half the footprint it stands on (m, at size 1)
 constexpr float kAhead = 0.2f;   // how far ahead it looks for walls
 
-// The attack clip, in seconds: the wind-up ends, the blade strikes, the
-// smear runs, and from when another press cuts again.
-constexpr float kWindup = 5.f / 30.f;
-constexpr float kSmearFrom = 4.5f / 30.f;
-constexpr float kSmearTo = 13.f / 30.f;
-constexpr float kChainFrom = 12.f / 30.f;
-constexpr float kAttackSlow = 0.3f;  // pace kept while cutting
-constexpr float kLunge = 2.4f;       // m/s of step into the strike, at size 1
-constexpr float kFadeIn = 0.06f;     // seconds to ease into the attack
+// The sword combo, after Hyper Light Drifter: forehand, backhand, then a
+// heavier finisher. Each cut holds its wind-up a beat, then lunges forward
+// through the strike; a press any time after the wind-up is kept and cuts
+// the next one from the follow-through. Frames (at 30 a second) match
+// ATTACKS in build_hooded_hero.py: wind-up held to, strike lands, follow
+// through, length. Lunge: speed (m/s at size 1, easing off) and how long.
+struct AttackSpec {
+  const char* clip;
+  float wind, strike, follow, length;
+  float lunge, lungeTime;
+};
+constexpr AttackSpec kAttacks[3] = {
+    {"HH_Attack1", 4.f / 30, 6.f / 30, 8.f / 30, 16.f / 30, 7.f, 0.14f},
+    {"HH_Attack2", 4.f / 30, 6.f / 30, 8.f / 30, 16.f / 30, 7.f, 0.14f},
+    {"HH_Attack3", 6.f / 30, 9.f / 30, 11.f / 30, 24.f / 30, 10.f, 0.18f},
+};
+constexpr float kBufferFrom = 0.05f;  // seconds in before a press counts toward the next cut
+constexpr float kComboGrace = 0.3f;   // after a cut ends, a press still continues the combo
+constexpr float kFadeIn = 0.04f;     // seconds to ease into the attack
 constexpr float kFadeOut = 0.2f;     // and back out of it at the end
 constexpr float kCut = 0.08f;        // easing out of a pose cut short
 constexpr float kSmearAge = 0.1f;    // seconds of the swing the smear shows
@@ -49,7 +59,7 @@ void Hero::build() {
   idleClip_ = model_.clip("HH_Idle");
   walkClip_ = model_.clip("HH_Walk");
   runClip_ = model_.clip("HH_Run");
-  attackClip_ = model_.clip("HH_Attack");
+  for (int i = 0; i < 3; ++i) attackClips_[i] = model_.clip(kAttacks[i].clip);
   spine_ = model_.joint("spine");
   chest_ = model_.joint("chest");
   hips_ = model_.joint("hips");
@@ -117,6 +127,9 @@ void Hero::spawn(const pxe::Scene& scene, glm::vec2 xz, float yaw) {
   yawRate_ = 0.f;
   phase_ = clock_ = runBlend_ = lastSpeed_ = fall_ = fadeLeft_ = 0.f;
   attackT_ = -1.f;
+  combo_ = 0;
+  queued_ = false;
+  comboGrace_ = 0.f;
   trail_.clear();
   turn_.reset(yaw);
   lagSpeed_.reset(0.f);
@@ -130,40 +143,59 @@ void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
   clock_ += dt;
   dt_ = dt;
 
-  // Attack: a press starts a cut, or another late in the last one. It turns
-  // to the stick as it starts.
-  const float attackLength = model_.clipDuration(attackClip_);
-  if (input.attack && attackClip_ >= 0 && (attackT_ < 0.f || attackT_ >= kChainFrom)) {
+  // The combo. A press starts the first cut, or is kept (from early in a
+  // cut) for the next, which starts from the follow-through. Each cut turns
+  // to the stick as it starts. Pushing the stick after a cut's
+  // follow-through cancels its recovery; a press soon after still carries on
+  // the combo, which ends after the finisher.
+  const float tilt = std::min(glm::length(input.move), 1.f);
+  const glm::vec2 dir = tilt > 1e-4f ? input.move / glm::length(input.move) : glm::vec2{0.f};
+  auto start = [&](int which) {
     if (attackT_ >= 0.f) {
       from_ = last_;  // cut short: ease out of where it was
       fadeLeft_ = kCut;
     }
+    combo_ = which;
     attackT_ = 0.f;
-    lunged_ = false;
-    if (glm::length(input.move) > 0.1f) {
-      yaw_ = std::atan2(input.move.x, input.move.y);
-      yaw_ = turn_.value() + std::remainder(yaw_ - turn_.value(), 2.f * kPi);
+    queued_ = false;
+    if (tilt > 0.2f) {
+      const float want = std::atan2(dir.x, dir.y);
+      yaw_ = turn_.value() + std::remainder(want - turn_.value(), 2.f * kPi);
       turn_.reset(yaw_);
     }
-  } else if (attackT_ >= 0.f) {
+  };
+  comboGrace_ = std::max(0.f, comboGrace_ - dt);
+  if (attackT_ >= 0.f) {
+    const AttackSpec& a = kAttacks[combo_];
     attackT_ += dt;
-    if (attackT_ >= attackLength) attackT_ = -1.f;
+    if (input.attack && attackT_ >= kBufferFrom && combo_ < 2) queued_ = true;
+    if (queued_ && attackT_ >= a.follow) {
+      start(combo_ + 1);
+    } else if (attackT_ >= a.length || (attackT_ >= a.follow && tilt > 0.3f)) {
+      if (attackT_ < a.length) {
+        from_ = last_;
+        fadeLeft_ = kCut;
+      }
+      attackT_ = -1.f;
+      comboGrace_ = combo_ < 2 ? kComboGrace : 0.f;
+    }
+  } else if (input.attack && attackClips_[0] >= 0) {
+    start(comboGrace_ > 0.f ? combo_ + 1 : 0);
   }
-  const bool cutting = attackT_ >= 0.f && attackT_ < kChainFrom;
+  const AttackSpec& spec = kAttacks[combo_];
+  const bool swinging = attackT_ >= 0.f && attackT_ < spec.follow;
   const float walkSpeed = kWalkCycle * size_ / std::max(model_.clipDuration(walkClip_), 1e-3f);
   const float runSpeed = kRunCycle * size_ / std::max(model_.clipDuration(runClip_), 1e-3f);
 
   // Speed eases toward what the stick asks for, so it sets off and pulls up
-  // over a few frames rather than jumping.
-  const float tilt = std::min(glm::length(input.move), 1.f);
-  const glm::vec2 dir = tilt > 1e-4f ? input.move / glm::length(input.move) : glm::vec2{0.f};
-  const glm::vec2 target = dir * tilt * (input.walk ? walkSpeed : runSpeed) * (cutting ? kAttackSlow : 1.f);
+  // over a few frames rather than jumping. Through a swing the stick is
+  // ignored: it holds still through the wind-up, then lunges, easing off.
+  const glm::vec2 target = swinging ? glm::vec2{0.f} : dir * tilt * (input.walk ? walkSpeed : runSpeed);
   const float rate = glm::length(target) > glm::length(vel_) ? kAccel : kStop;
-  vel_ += (target - vel_) * (1.f - std::exp(-dt * rate));
-  // It steps into the strike.
-  if (attackT_ >= kWindup && !lunged_) {
-    vel_ += glm::vec2{std::sin(yaw_), std::cos(yaw_)} * kLunge * size_;
-    lunged_ = true;
+  vel_ += (target - vel_) * (1.f - std::exp(-dt * (swinging ? 25.f : rate)));
+  if (attackT_ >= spec.wind && attackT_ < spec.wind + spec.lungeTime) {
+    const float u = (attackT_ - spec.wind) / spec.lungeTime;
+    vel_ = glm::vec2{std::sin(yaw_), std::cos(yaw_)} * spec.lunge * size_ * (1.f - u) * (1.f - u);
   }
 
   // One axis at a time, so it slides along a wall met at an angle. It steps
@@ -214,7 +246,7 @@ void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
 
   // Facing turns smoothly toward the way it moves.
   const float prevYaw = yaw_;
-  if (glm::length(vel_) > 0.05f * size_ && !cutting) {
+  if (glm::length(vel_) > 0.05f * size_ && attackT_ < 0.f) {
     float want = std::atan2(vel_.x, vel_.y);
     want = turn_.value() + std::remainder(want - turn_.value(), 2.f * kPi);
     yaw_ = turn_.update(dt, want);
@@ -259,11 +291,12 @@ void Hero::pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Me
 
   // The attack over it all: the whole body standing, the upper body moving.
   if (attackT_ >= 0.f) {
-    const float length = model_.clipDuration(attackClip_);
-    const float w = smooth01(attackT_ / kFadeIn) * smooth01((length - attackT_) / kFadeOut);
-    const float legs = w * (1.f - 0.9f * moving);
+    const AttackSpec& a = kAttacks[combo_];
+    const float w = smooth01(attackT_ / kFadeIn) * smooth01((a.length - attackT_) / kFadeOut);
+    // The whole body through the swing; the legs give way to the stride after.
+    const float legs = attackT_ < a.follow ? w : w * (1.f - 0.9f * moving);
     for (std::size_t j = 0; j < mask_.size(); ++j) mask_[j] = lower_[j] >= 1.f ? legs : lower_[j] > 0.f ? 0.5f * w : w;
-    model_.sample(attackClip_, attackT_, attack_, false);
+    model_.sample(attackClips_[combo_], attackT_, attack_, false);
     pxe::SkinnedModel::blend(pose_, attack_, mask_, pose_);
   }
   // A pose cut short eases into the new one.
@@ -314,7 +347,8 @@ void Hero::smear(std::vector<const pxe::Mesh*>& effects) {
   trail_.erase(std::remove_if(trail_.begin(), trail_.end(), [](const Sample& s) { return s.age > kSmearAge; }),
                trail_.end());
   if (sword_ < 0 || glow_ < 0) return;
-  if (attackT_ >= kSmearFrom && attackT_ <= kSmearTo)
+  const AttackSpec& a = kAttacks[combo_];
+  if (attackT_ >= a.wind - 0.5f / 30.f && attackT_ <= a.follow + 3.f / 30.f)
     trail_.push_back({model_.jointPoint(sword_, grip_), model_.jointPoint(sword_, bladeBase_),
                       model_.jointPoint(sword_, bladeTip_), 0.f});
   if (trail_.size() < 2) return;
