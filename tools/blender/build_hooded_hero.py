@@ -832,7 +832,7 @@ class Builder:
             turn(f"hand.{S}", X, -g("wrist" + S, 0.0))
             turn(f"tabard.{S}.1", X, -g("tabard" + S, 0.0))
             turn(f"tabard.{S}.2", X, -0.5 * g("tabard" + S, 0.0))
-            clear[S] = 0.45 * max(0.0, -g("arm" + S, 0.0)) + 0.3 * max(0.0, -g("armDown" + S, 0.3))
+            clear[S] = 0.3 * max(0.0, -g("arm" + S, 0.0)) + 0.25 * max(0.0, -g("armDown" + S, 0.3))
         turn("hips", Z, g("twistHips", 0.0))
         turn("spine", X, g("spine", 0.0))
         turn("chest", X, g("chest", 0.0))
@@ -852,6 +852,23 @@ class Builder:
                 turn(f"cape.{name}.{i + 1}", Y, -swing * (0.5 if i == 0 else 0.25))
         pb = rig.pose.bones["hips"]
         pb.location = self.rest_rot("hips").inverted() @ v(g("sway", 0.0), -g("shift", 0.0), g("bob", 0.0))
+        if "bladeYaw" in p:
+            self.aim_blade(math.radians(p["bladeYaw"]), math.radians(p.get("bladePitch", 0.0)))
+
+    def aim_blade(self, yaw, pitch):
+        """Turn the right wrist so the blade points along yaw (from straight
+        ahead, positive to the figure's left) and pitch (positive up), in the
+        body's frame - for cuts, whose look is all in where the blade points."""
+        rig = self.rig
+        bpy.context.view_layer.update()
+        hand = rig.pose.bones["hand.R"]
+        sword = rig.pose.bones["sword"]
+        now = (sword.matrix.to_3x3() @ Y).normalized()
+        want = v(math.sin(yaw) * math.cos(pitch), -math.cos(yaw) * math.cos(pitch), math.sin(pitch))
+        turn = now.rotation_difference(want).to_matrix().to_4x4()
+        pivot = hand.matrix.translation.copy()
+        hand.matrix = Matrix.Translation(pivot) @ turn @ Matrix.Translation(-pivot) @ hand.matrix
+        bpy.context.view_layer.update()
 
     def animate(self):
         rig = self.rig
@@ -862,9 +879,16 @@ class Builder:
             act = bpy.data.actions.new("HH_" + name)
             act.use_fake_user = True
             rig.animation_data.action = act
+            prev = {}
             for frame, p in keys + ([(frames, keys[0][1])] if cyclic else []):
                 self.set_pose(p)
                 for pb in rig.pose.bones:
+                    # Keep each key's quaternion on the same side as the last,
+                    # so the curves between them take the short way round.
+                    q = pb.rotation_quaternion
+                    if pb.name in prev and q.dot(prev[pb.name]) < 0.0:
+                        pb.rotation_quaternion = -q
+                    prev[pb.name] = pb.rotation_quaternion.copy()
                     pb.keyframe_insert("rotation_quaternion", frame=frame, group=pb.name)
                     pb.keyframe_insert("location", frame=frame, group=pb.name)
             # Smooth curves: loops get Bezier handles that see the cycle, so
@@ -984,96 +1008,73 @@ def clips():
     return [("Idle", idle, 120, True), ("Walk", walk, 30, True), ("Run", run, 20, True)] + attacks(stand)
 
 
-# The sword combo, after Hyper Light Drifter: three cuts, each a held
-# anticipation, a strike over two or three frames and a follow-through flung
-# well past the target, in extreme poses t3ssel8r would push them to. The
-# engine lunges the figure forward through each strike and chains the next
-# cut from the follow-through.
-#   Attack1  a forehand cut, high right down across to low left
-#   Attack2  a rising backhand, low left up across to high right
-#   Attack3  the finisher: an overhead cleave from behind the head into the
-#            ground, out of a deep lunge, with a longer recovery
-# ATTACKS gives each its keys' frames: (wind-up held, strike lands, follow
-# through, length). hero.cpp keeps the same table.
+# The sword, after Hyper Light Drifter. Its cuts are flat sweeps that read
+# from above: barely any wind-up (the blade cocked to one side for a frame or
+# two), the sweep itself in a frame, then the blade held out straight at the
+# target for a beat before a quick recovery. The engine lunges the figure a
+# short step through each sweep and draws the crescent smear.
+#   Slash1   forehand, sweeping from the right across to ahead-left
+#   Slash2   backhand, from the left across to ahead-right
+#   Slash3   a heavier, wider forehand out of a deeper lunge
+#   Charge   held: crouched, the blade drawn low behind (a loop)
+#   Spin     the charge released: the arm flung straight out to the side,
+#            held while the engine spins the figure round
+# ATTACKS gives each cut's frames: (wind-up reached, sweep through, held
+# out until, length). hero.cpp keeps the same table.
 ATTACKS = {
-    "Attack1": (4, 6, 8, 16),
-    "Attack2": (4, 6, 8, 16),
-    "Attack3": (6, 9, 11, 24),
+    "Slash1": (2, 3, 7, 12),
+    "Slash2": (2, 3, 7, 12),
+    "Slash3": (3, 5, 10, 16),
 }
 
 
 def attacks(stand):
     base = dict(stand, armDownL=0.42, armDownR=0.36, elbowL=0.2, elbowR=0.35)
-    guard = dict(stand, thighL=0.12, kneeL=0.2, thighR=-0.15, kneeR=0.15, bob=-0.03, spine=0.06,
-                 armDownL=0.35, armL=0.2, elbowL=0.5, armDownR=0.3, armR=0.3, elbowR=0.5, wristR=0.3)
+    lunge_r = dict(thighR=0.45, kneeR=0.45, thighL=-0.38, kneeL=0.18, footL=-0.25, bob=-0.07, shift=0.06)
+    lunge_l = dict(thighL=0.45, kneeL=0.45, thighR=-0.38, kneeR=0.18, footR=-0.25, bob=-0.07, shift=0.06)
+    off_hand = dict(armL=-0.3, armDownL=0.15, elbowL=0.5)
 
-    # Forehand: the sword cocked high over the right shoulder, chest wound
-    # away; it whips down across and the body unwinds hard after it.
-    f1_wind = dict(stand, twistChest=-0.65, twistHips=-0.3, spine=-0.06, headTurn=0.35,
-                   armDownR=-0.85, armR=0.25, armAcrossR=-0.25, elbowR=1.85, foreTwistR=0.35, wristR=0.75,
-                   armL=0.55, armDownL=0.2, armAcrossL=0.35, elbowL=0.8,
-                   thighL=0.3, kneeL=0.35, thighR=-0.25, kneeR=0.2, footR=-0.2, bob=-0.05, cape=0.04, capeSide=-0.1)
-    f1_strike = dict(stand, twistChest=0.5, twistHips=0.22, spine=0.22, chest=0.08, head=-0.1, headTurn=-0.1,
-                     armDownR=0.05, armR=1.15, armAcrossR=0.55, elbowR=0.2, wristR=0.1,
-                     armL=-0.35, armDownL=0.1, elbowL=0.35,
-                     thighR=0.55, kneeR=0.55, thighL=-0.45, kneeL=0.25, footL=-0.3, bob=-0.1, shift=0.1,
-                     cape=0.12, capeSide=0.1, capeWave=0.05, hood=0.2)
-    f1_follow = dict(stand, twistChest=0.85, twistHips=0.32, spine=0.26, chest=0.1, head=-0.1, headTurn=-0.25,
-                     armDownR=0.25, armR=0.7, armAcrossR=1.15, elbowR=0.4, foreTwistR=-0.25, wristR=-0.45,
-                     armL=-0.45, armDownL=0.0, elbowL=0.45,
-                     thighR=0.55, kneeR=0.6, thighL=-0.48, kneeL=0.3, footL=-0.3, bob=-0.11, shift=0.1,
-                     cape=0.1, capeSide=0.2, capeWave=-0.04, hood=0.22)
-    f1_settle = dict(guard, twistChest=0.35, twistHips=0.15, armAcrossR=0.6, armR=0.5, wristR=-0.1,
-                     thighR=0.35, kneeR=0.4, thighL=-0.3, kneeL=0.2, bob=-0.06, shift=0.05, capeSide=0.08)
+    s1_wind = dict(stand, bladeYaw=-115, bladePitch=-5, twistChest=-0.6, twistHips=-0.25, headTurn=0.2, armDownR=-0.45, armR=0.35,
+                   armAcrossR=-0.95, elbowR=0.45, wristR=0.55, armL=0.35, armDownL=0.2, armAcrossL=0.3, elbowL=0.7,
+                   thighL=0.22, kneeL=0.25, thighR=-0.15, kneeR=0.15, bob=-0.04, capeSide=-0.06)
+    s1_sweep = dict(stand, bladeYaw=-25, bladePitch=-12, **lunge_r, **off_hand, twistChest=0.05, twistHips=0.05, spine=0.18,
+                    armDownR=0.0, armR=1.2, armAcrossR=0.05, elbowR=0.05, wristR=0.6, cape=0.08, hood=0.12)
+    s1_out = dict(stand, bladeYaw=35, bladePitch=-15, **lunge_r, **off_hand, twistChest=0.4, twistHips=0.16, spine=0.2, headTurn=-0.15,
+                  armDownR=0.05, armR=1.2, armAcrossR=0.6, elbowR=0.05, wristR=0.6, cape=0.08, capeSide=0.08, hood=0.15)
+    s1_hold = dict(s1_out, armAcrossR=0.65, twistChest=0.44, bladeYaw=40)
 
-    # Backhand: from the follow-through low on the left the blade rises
-    # across and up to high on the right, the body unwinding the other way.
-    f2_wind = dict(stand, twistChest=0.75, twistHips=0.3, spine=0.2, head=-0.06, headTurn=-0.3,
-                   armDownR=0.3, armR=0.55, armAcrossR=1.25, elbowR=0.7, foreTwistR=-0.45, wristR=-0.7,
-                   armL=-0.3, armDownL=0.1, elbowL=0.5,
-                   thighR=0.4, kneeR=0.5, thighL=-0.35, kneeL=0.25, bob=-0.09, shift=0.05, cape=0.06, capeSide=0.15)
-    f2_strike = dict(stand, twistChest=-0.45, twistHips=-0.2, spine=0.12, head=-0.05, headTurn=0.15,
-                     armDownR=-0.45, armR=0.95, armAcrossR=-0.15, elbowR=0.15, foreTwistR=0.2, wristR=0.55,
-                     armL=0.4, armDownL=0.15, armAcrossL=0.4, elbowL=0.7,
-                     thighL=0.5, kneeL=0.5, thighR=-0.42, kneeR=0.25, footR=-0.3, bob=-0.09, shift=0.1,
-                     cape=0.12, capeSide=-0.15, capeWave=0.05, hood=0.18)
-    f2_follow = dict(stand, twistChest=-0.75, twistHips=-0.3, spine=0.04, chest=-0.05, headTurn=0.3,
-                     armDownR=-1.05, armR=0.55, armAcrossR=-0.35, elbowR=0.35, foreTwistR=0.3, wristR=0.9,
-                     armL=0.55, armDownL=0.2, armAcrossL=0.5, elbowL=0.8,
-                     thighL=0.5, kneeL=0.55, thighR=-0.45, kneeR=0.3, footR=-0.3, bob=-0.08, shift=0.1,
-                     cape=0.1, capeSide=-0.22, capeWave=-0.05, hood=0.12)
-    f2_settle = dict(guard, twistChest=-0.3, twistHips=-0.12, armDownR=-0.2, armR=0.45, wristR=0.4,
-                     thighL=0.3, kneeL=0.35, thighR=-0.25, kneeR=0.2, bob=-0.05, shift=0.05, capeSide=-0.08)
+    s2_wind = dict(stand, bladeYaw=105, bladePitch=-5, **lunge_r, twistChest=0.6, twistHips=0.22, spine=0.12, headTurn=-0.2,
+                   armDownR=0.25, armR=0.75, armAcrossR=1.3, elbowR=0.9, foreTwistR=-0.6, wristR=0.25,
+                   armL=-0.3, armDownL=0.15, elbowL=0.5, capeSide=0.06)
+    s2_sweep = dict(stand, bladeYaw=20, bladePitch=-12, **lunge_l, twistChest=0.05, twistHips=-0.05, spine=0.18,
+                    armDownR=-0.05, armR=1.25, armAcrossR=0.25, elbowR=0.08, foreTwistR=-0.35, wristR=0.6,
+                    armL=0.3, armDownL=0.2, armAcrossL=0.3, elbowL=0.7, cape=0.08, hood=0.12)
+    s2_out = dict(stand, bladeYaw=-35, bladePitch=-15, **lunge_l, twistChest=-0.38, twistHips=-0.15, spine=0.2, headTurn=0.15,
+                  armDownR=-0.3, armR=1.15, armAcrossR=-0.5, elbowR=0.05, foreTwistR=-0.25, wristR=0.6,
+                  armL=0.35, armDownL=0.2, armAcrossL=0.4, elbowL=0.75, cape=0.08, capeSide=-0.08, hood=0.15)
+    s2_hold = dict(s2_out, armAcrossR=-0.55, twistChest=-0.42, bladeYaw=-40)
 
-    # Finisher: rise up and back with the sword high behind the head - a
-    # long hold - then drop into a deep lunge and cleave it into the ground.
-    f3_wind = dict(stand, spine=-0.2, chest=-0.12, head=0.12, twistChest=-0.15,
-                   armDownR=-0.35, armR=2.7, elbowR=1.5, wristR=0.6,
-                   armL=2.2, armDownL=0.0, armAcrossL=0.5, elbowL=1.4,
-                   thighL=0.15, kneeL=0.1, thighR=-0.1, bob=0.03, cape=0.0, hood=-0.1)
-    f3_strike = dict(stand, spine=0.42, chest=0.2, head=-0.2, twistChest=0.12,
-                     armDownR=0.15, armR=1.25, armAcrossR=0.35, elbowR=0.1, wristR=-0.15,
-                     armL=0.9, armDownL=0.2, armAcrossL=0.6, elbowL=0.5,
-                     thighR=0.75, kneeR=0.95, footR=0.1, thighL=-0.65, kneeL=0.35, footL=-0.45, bob=-0.2, shift=0.14,
-                     cape=0.3, capeWave=0.1, hood=0.35)
-    f3_follow = dict(stand, spine=0.5, chest=0.22, head=-0.22, twistChest=0.15,
-                     armDownR=0.2, armR=0.85, armAcrossR=0.4, elbowR=0.15, wristR=-0.45,
-                     armL=0.5, armDownL=0.25, armAcrossL=0.5, elbowL=0.6,
-                     thighR=0.8, kneeR=1.05, footR=0.1, thighL=-0.7, kneeL=0.4, footL=-0.5, bob=-0.23, shift=0.15,
-                     cape=0.12, capeWave=-0.1, hood=0.3)
-    f3_settle = dict(f3_follow, spine=0.35, chest=0.12, armR=0.7, wristR=-0.35, bob=-0.18, cape=0.05, hood=0.15)
+    s3_wind = dict(stand, bladeYaw=-140, bladePitch=0, twistChest=-0.9, twistHips=-0.35, spine=0.05, headTurn=0.3, armDownR=-0.55, armR=0.2,
+                   armAcrossR=-1.25, elbowR=0.4, wristR=0.55, armL=0.6, armDownL=0.15, armAcrossL=0.5, elbowL=0.8,
+                   thighL=0.3, kneeL=0.45, thighR=-0.25, kneeR=0.3, bob=-0.1, capeSide=-0.12, cape=0.04)
+    s3_sweep = dict(stand, bladeYaw=-10, bladePitch=-10, twistChest=0.1, twistHips=0.1, spine=0.26, armDownR=0.0, armR=1.2, armAcrossR=0.1,
+                    elbowR=0.03, wristR=0.6, armL=-0.4, armDownL=0.1, elbowL=0.4,
+                    thighR=0.6, kneeR=0.7, thighL=-0.55, kneeL=0.25, footL=-0.35, bob=-0.14, shift=0.1, cape=0.2, hood=0.25)
+    s3_out = dict(s3_sweep, twistChest=0.8, twistHips=0.3, headTurn=-0.3, armAcrossR=1.05, capeSide=0.18, spine=0.3,
+                  bladeYaw=85, bladePitch=-12)
+    s3_hold = dict(s3_out, armAcrossR=1.1, twistChest=0.85, bob=-0.15, bladeYaw=90)
 
     table = {
-        "Attack1": [base, f1_wind, f1_strike, f1_follow, f1_settle, base],
-        "Attack2": [base, f2_wind, f2_strike, f2_follow, f2_settle, base],
-        "Attack3": [base, f3_wind, f3_strike, f3_follow, f3_settle, base],
+        "Slash1": [base, s1_wind, s1_sweep, s1_out, s1_hold, base],
+        "Slash2": [base, s2_wind, s2_sweep, s2_out, s2_hold, base],
+        "Slash3": [base, s3_wind, s3_sweep, s3_out, s3_hold, base],
     }
     out = []
-    for name, (wind, strike, follow, length) in ATTACKS.items():
+    for name, (wind, sweep, held, length) in ATTACKS.items():
         poses = table[name]
-        # The wind-up is held: reached quickly and kept for a beat.
-        frames = [0, max(1, wind - 2), wind, strike, follow, follow + (length - follow) // 2, length]
-        keyed = [poses[0], poses[1], poses[1], poses[2], poses[3], poses[4], poses[5]]
+        # Wind-up, the sweep's middle, out at the target, held there, back.
+        frames = [0, wind, sweep, sweep + 1, held, length]
+        keyed = [poses[0], poses[1], poses[2], poses[3], poses[4], poses[5]]
         keys = []
         for f, p in zip(frames, keyed):
             q = dict(p)
@@ -1081,6 +1082,29 @@ def attacks(stand):
                 q.setdefault("tabard" + S, 0.08 + 0.75 * max(0.0, q.get("thigh" + S, 0.0)))
             keys.append((f, q))
         out.append((name, keys, length, False))
+
+    # The charge: a low crouch, sword drawn back and down on the right, the
+    # off hand out ahead; it breathes a little while held.
+    crouch = dict(stand, bladeYaw=-150, bladePitch=-25, twistChest=-0.65, twistHips=-0.25, spine=0.3, head=-0.12, headTurn=0.3,
+                  armDownR=0.1, armR=-0.45, armAcrossR=-0.55, elbowR=0.3, wristR=-0.35,
+                  armL=0.7, armDownL=0.25, armAcrossL=0.5, elbowL=0.5,
+                  thighL=0.45, kneeL=0.9, thighR=-0.25, kneeR=0.7, footR=-0.15, bob=-0.22, cape=0.03, hood=0.05)
+    crouch2 = dict(crouch, bob=-0.17, spine=0.22, cape=0.05)
+    charge = [(0, crouch), (10, crouch2)]
+    # Spin: arm thrown straight out to the right, blade level, body upright
+    # and turned into it; the engine turns the whole figure round.
+    flung = dict(stand, bladeYaw=-95, bladePitch=-22, twistChest=-0.2, spine=0.22, armDownR=-0.55, armR=0.35, armAcrossR=-0.15,
+                 elbowR=0.0, wristR=0.6, armL=0.2, armDownL=-0.3, elbowL=0.3, legOutL=0.25, legOutR=0.25,
+                 thighL=0.15, thighR=0.15, kneeL=0.55, kneeR=0.55, bob=-0.16, cape=0.35, capeWave=0.1, hood=0.2)
+    spin = [(0, flung), (6, dict(flung, bob=-0.09)), (12, flung)]
+    for name, keys, length, cyclic in (("Charge", charge, 20, True), ("Spin", spin, 12, False)):
+        done = []
+        for f, p in keys:
+            q = dict(p)
+            for S in "LR":
+                q.setdefault("tabard" + S, 0.08 + 0.75 * max(0.0, q.get("thigh" + S, 0.0)))
+            done.append((f, q))
+        out.append((name, done, length, cyclic))
     return out
 
 
@@ -1123,9 +1147,11 @@ def render_previews(b):
         shoot(f"walk{f:02d}", acts["Walk"], f, 70, 12)
     for f in (0, 2, 5, 7):
         shoot(f"run{f:02d}", acts["Run"], f, 70, 12)
-    for name, (wind, strike, follow, length) in ATTACKS.items():
-        for f in (wind, strike, follow, length - 4):
-            shoot(f"{name.lower()}_{f:02d}", acts[name], f, 25, 20)
+    for name, (wind, sweep, held, length) in ATTACKS.items():
+        for f in (wind, sweep, sweep + 1, held):
+            shoot(f"{name.lower()}_{f:02d}", acts[name], f, 20, 60)
+    shoot("charge", acts["Charge"], 0, 30, 30)
+    shoot("spin", acts["Spin"], 3, 20, 60)
 
 
 def export():

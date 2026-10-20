@@ -110,6 +110,7 @@ struct Options {
   glm::vec3 heroMove{0.f};
   float heroAttack = -1.f;  // captures: this many seconds into an attack (after any move)
   int heroPresses = 1;      // ...pressing X this many times, a fifth of a second apart
+  float heroHold = 0.f;     // ...holding the first press this many seconds (a charge)
 };
 
 void printUsage() {
@@ -155,6 +156,7 @@ void printUsage() {
                "  --hero-move DEG,SECS[,WALK]  captures: run (WALK 1: walk) the hero toward compass DEG first\n"
                "  --hero-attack SECS       captures: the hero SECS into an attack (X; then on toward DEG if moving)\n"
                "  --hero-combo N           ...pressing X N times, 0.2 s apart, to chain the combo\n"
+               "  --hero-charge SECS       ...holding X that long first (a charged spin)\n"
                "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
@@ -213,6 +215,8 @@ Options parseArgs(int argc, char** argv) {
       opt.hero = 0;
     } else if (a == "--hero-size") {
       opt.heroSize = static_cast<float>(std::atof(need("--hero-size")));
+    } else if (a == "--hero-charge") {
+      opt.heroHold = static_cast<float>(std::atof(need("--hero-charge")));
     } else if (a == "--hero-combo") {
       opt.heroPresses = std::max(1, std::atoi(need("--hero-combo")));
     } else if (a == "--hero-attack") {
@@ -345,6 +349,7 @@ struct Input {
   glm::vec2 move{0.f};  // WASD unscaled: x screen right, y screen up, for the hero
   bool walk = false;    // Shift held
   bool attack = false;  // X (key or pad button) pressed
+  bool attackHeld = false;  // and held
   int rotate = 0;
   bool toggleGrass = false;
   bool toggleMagenta = false;
@@ -381,6 +386,7 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken, game::Gamepad& pad) {
   if (pad.togglePause) in.togglePause = true;
   static bool xkey = false;
   if (pressed(win, GLFW_KEY_X, xkey) || pad.attack) in.attack = true;
+  in.attackHeld = xkey || pad.attackHeld;
   in.rotate += pad.rotate;
   auto down = [&](int key) { return glfwGetKey(win, key) == GLFW_PRESS; };
   if (down(GLFW_KEY_A) || down(GLFW_KEY_LEFT)) in.panX -= 1.f;
@@ -907,6 +913,7 @@ int main(int argc, char** argv) {
               if (opt.haveHeroMove) in.move = compass(opt.heroMove.x);
               in.walk = opt.heroMove.z > 0.5f;
               in.attack = f % 12 == 0 && f / 12 < opt.heroPresses;
+              in.attackHeld = in.attack || static_cast<float>(f) / 60.f < opt.heroHold;
               hero.update(scene, 1.f / 60.f, in);
               // The smear samples the blade as it is drawn; keep it fed.
               if (f < attackFrames) {
@@ -1070,6 +1077,7 @@ int main(int argc, char** argv) {
               if (glm::length(in.move) > 1.f) in.move = glm::normalize(in.move);
               in.walk = input.walk;
               in.attack = input.attack;
+              in.attackHeld = input.attackHeld;
               hero.update(scene, dt, in);
               if (glm::length(in.move) > 0.f) following = false;
               if (!(ball.alive() && following)) camera.follow(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
@@ -1196,7 +1204,7 @@ int main(int argc, char** argv) {
           char title[256];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   X attack   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   X attack (hold: charge)   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
           (void)frame;
