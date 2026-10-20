@@ -147,16 +147,28 @@ void WorldClock::relightFires() {
   }
 }
 
-void WorldClock::douse(glm::vec2 from, glm::vec2 to, float radius) {
+bool WorldClock::underStroke(const Fire& f, glm::vec2 from, glm::vec2 to, float radius) {
   const glm::vec2 along = to - from;
   const float len2 = glm::dot(along, along);
+  const glm::vec2 p{f.base.x, f.base.z};
+  const float t = len2 > 1e-8f ? std::clamp(glm::dot(p - from, along) / len2, 0.f, 1.f) : 0.f;
+  // A campfire's flames spread past its base, so a stroke near it counts.
+  return glm::distance(p, from + along * t) <= radius + 0.4f * f.size;
+}
+
+void WorldClock::douse(glm::vec2 from, glm::vec2 to, float radius) {
   for (Fire& f : fires) {
-    const glm::vec2 p{f.base.x, f.base.z};
-    const float t = len2 > 1e-8f ? std::clamp(glm::dot(p - from, along) / len2, 0.f, 1.f) : 0.f;
-    // A campfire's flames spread past its base, so water near it counts.
-    if (glm::distance(p, from + along * t) > radius + 0.4f * f.size) continue;
+    if (!underStroke(f, from, to, radius)) continue;
     f.lit = false;
     f.doused = true;
+  }
+}
+
+void WorldClock::kindle(glm::vec2 from, glm::vec2 to, float radius) {
+  for (Fire& f : fires) {
+    if (!underStroke(f, from, to, radius)) continue;
+    f.lit = true;
+    f.doused = false;
   }
 }
 
@@ -324,7 +336,7 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
       ImGui::SameLine();
       ImGui::RadioButton("Regrow  (3)", &brush.kind, 2);
       ImGui::SliderFloat("Brush size", &brush.radius, 0.4f, 3.f, "%.1f m");
-      ImGui::TextDisabled("Hold the left mouse button to paint the grass");
+      ImGui::TextDisabled("Hold the left mouse button to paint; fire and water also\nlight and put out campfires");
 
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms), capped by vsync; --bench measures uncapped", fps, 1000.f / fps);
