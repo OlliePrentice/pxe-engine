@@ -59,6 +59,17 @@ void Mesh::upload(const std::vector<Vertex>& vertices, const std::vector<std::ui
   glBindVertexArray(0);
 }
 
+void Mesh::update(const std::vector<Vertex>& vertices, const std::vector<std::uint32_t>& indices) {
+  if (!vao_) {
+    upload(vertices, indices);
+    return;
+  }
+  glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(Vertex)), nullptr, GL_STREAM_DRAW);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertices.size() * sizeof(Vertex)), vertices.data());
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
 void Mesh::draw() const {
   if (!vao_ || indexCount_ == 0) return;
   glBindVertexArray(vao_);

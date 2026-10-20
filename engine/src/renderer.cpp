@@ -187,9 +187,9 @@ Renderer::~Renderer() {
 }
 
 void Renderer::destroyTargets() {
-  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, flashShadow_, heat_, canopy_, refl_, reflDepth_, bed_, bedDepth_};
+  unsigned textures[] = {color_, normals_, final_, ground_, depth_, shadow_, shadowStatic_, flashShadow_, heat_, canopy_, refl_, reflDepth_, bed_, bedDepth_};
   glDeleteTextures(static_cast<GLsizei>(std::size(textures)), textures);
-  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = flashShadow_ = heat_ = canopy_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
+  color_ = normals_ = final_ = ground_ = depth_ = shadow_ = shadowStatic_ = flashShadow_ = heat_ = canopy_ = refl_ = reflDepth_ = bed_ = bedDepth_ = 0;
   if (fboHeat_) glDeleteFramebuffers(1, &fboHeat_);
   fboHeat_ = 0;
   if (fireCubes_) glDeleteTextures(1, &fireCubes_);
@@ -203,7 +203,9 @@ void Renderer::destroyTargets() {
   fboFinal_ = fboRefl_ = 0;
   if (fboShadow_) glDeleteFramebuffers(1, &fboShadow_);
   if (fboFlash_) glDeleteFramebuffers(1, &fboFlash_);
-  fbo_ = fboShadow_ = fboFlash_ = 0;
+  if (fboShadowStatic_) glDeleteFramebuffers(1, &fboShadowStatic_);
+  fbo_ = fboShadow_ = fboFlash_ = fboShadowStatic_ = 0;
+  shadowScene_ = nullptr;
 }
 
 unsigned Renderer::makeColor(int w, int h) {
@@ -254,6 +256,7 @@ void Renderer::createTargets() {
   bed_ = makeColor(rtW(), rtH());
   bedDepth_ = makeDepth(rtW(), rtH(), false);
   shadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
+  shadowStatic_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
   flashShadow_ = makeDepth(RenderConfig::kShadow, RenderConfig::kShadow, true);
   glGenTextures(1, &heat_);
   glBindTexture(GL_TEXTURE_2D, heat_);
@@ -356,6 +359,13 @@ void Renderer::createTargets() {
   glGenFramebuffers(1, &fboShadow_);
   glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadow_, 0);
+  glDrawBuffer(GL_NONE);
+  glReadBuffer(GL_NONE);
+  glGenFramebuffers(1, &fboShadowStatic_);
+  glBindFramebuffer(GL_FRAMEBUFFER, fboShadowStatic_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowStatic_, 0);
+  glDrawBuffer(GL_NONE);
+  glReadBuffer(GL_NONE);
   glGenFramebuffers(1, &fboFlash_);
   glBindFramebuffer(GL_FRAMEBUFFER, fboFlash_);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, flashShadow_, 0);
@@ -568,7 +578,8 @@ void Renderer::endPass() {
   if (profiling_) glEndQuery(GL_TIME_ELAPSED);
 }
 
-void Renderer::drawMeshes(const Scene& scene, const glm::mat4& viewProj, const glm::mat4& mirror, float clipBelow) {
+void Renderer::drawMeshes(const Scene& scene, const FrameParams& params, const glm::mat4& viewProj,
+                          const glm::mat4& mirror, float clipBelow) {
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
@@ -577,6 +588,10 @@ void Renderer::drawMeshes(const Scene& scene, const glm::mat4& viewProj, const g
   umat(progMesh_, "uMirror", mirror);
   u1f(progMesh_, "uClipBelow", clipBelow);
   for (const Mesh& m : scene.meshes) m.draw();
+  for (const Mesh* m : params.actors) m->draw();
+  glDisable(GL_CULL_FACE);
+  for (const Mesh* m : params.actorEffects) m->draw();
+  glEnable(GL_CULL_FACE);
 }
 
 void Renderer::drawSprites(const Scene&, const CameraFrame&, const FrameParams& params, const glm::mat4& viewProj,
@@ -885,8 +900,13 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     const glm::vec4 d = grid_.burnDomain();
     glUniform4f(uloc(progShadow, "uBurnDomain"), d.x, d.y, d.z, d.w);
   }
-  if (shadowScene_ != &scene || shadowLight_ != lighting.lightDir || crownShadows) {
-    glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
+  // Characters move every frame: with any about, the scene's shadows are
+  // drawn into their own map when they change, copied in, and the
+  // characters drawn over them.
+  const bool actors = !params.actors.empty();
+  const bool sceneShadows = shadowScene_ != &scene || shadowLight_ != lighting.lightDir || crownShadows;
+  if (sceneShadows) {
+    glBindFramebuffer(GL_FRAMEBUFFER, actors ? fboShadowStatic_ : fboShadow_);
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
     glClear(GL_DEPTH_BUFFER_BIT);
     glUseProgram(progShadow);
@@ -894,6 +914,27 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     for (const Mesh& m : scene.meshes) m.draw();
     shadowScene_ = &scene;
     shadowLight_ = lighting.lightDir;
+    shadowStaticValid_ = actors;
+  }
+  if (actors || shadowHadActors_) {
+    if (!shadowStaticValid_) {
+      // The scene's map is in shadow_ alone (drawn before any character came): keep a copy.
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, fboShadow_);
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fboShadowStatic_);
+      glBlitFramebuffer(0, 0, RenderConfig::kShadow, RenderConfig::kShadow, 0, 0, RenderConfig::kShadow,
+                        RenderConfig::kShadow, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+      shadowStaticValid_ = true;
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fboShadowStatic_);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fboShadow_);
+    glBlitFramebuffer(0, 0, RenderConfig::kShadow, RenderConfig::kShadow, 0, 0, RenderConfig::kShadow,
+                      RenderConfig::kShadow, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, fboShadow_);
+    glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
+    glUseProgram(progShadow);
+    umat(progShadow, "uLightViewProj", light.viewProj);
+    for (const Mesh* m : params.actors) m->draw();
+    shadowHadActors_ = actors;
   }
   // Lightning's map: drawn once when a flash strikes from a new direction.
   if (lighting.flash > 0.f && (flashScene_ != &scene || flashLight_ != lighting.flashDir || crownShadows)) {
@@ -969,6 +1010,25 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u1f(progMesh_, "uTime", params.time);
   bindToon(progMesh_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
   bindBurn(progMesh_);
+  if (!params.actors.empty() || !params.actorEffects.empty()) {
+    // The stone's ramp now, over its mid colour by day: the light a character stands in.
+    const glm::vec3 day = glm::max(scene.palette[kPhaseDay][kSurfStone].band[1], glm::vec3{0.02f});
+    std::vector<float> tint, colour;
+    std::vector<int> glow;
+    for (int b = 0; b < 3; ++b) {
+      const glm::vec3 t = params.testColours ? glm::vec3(b == 2, b == 1, b == 0) : lighting.palette[kSurfStone].band[b] / day;
+      tint.insert(tint.end(), {t.x, t.y, t.z});
+    }
+    for (const ActorMaterial& m : params.actorMaterials) {
+      colour.insert(colour.end(), {m.colour.x, m.colour.y, m.colour.z});
+      glow.push_back(m.glow ? 1 : 0);
+    }
+    u3fv(progMesh_, "uActorTint", 3, tint.data());
+    u3fv(progMesh_, "uActorColour", kActorMaterials, colour.data());
+    glUniform1iv(uloc(progMesh_, "uActorGlow"), kActorMaterials, glow.data());
+    const glm::vec3 fire = lighting.fireBand[kSurfStone] / day;
+    u3f(progMesh_, "uActorFire", fire.x, fire.y, fire.z);
+  }
   if (params.showGrass && grassCount_ > 0) {
     glUseProgram(progGrass_);
     u2f(progGrass_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
@@ -1035,7 +1095,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
       glScissor(x0, y0, x1 - x0, y1 - y0);
       glEnable(GL_CLIP_DISTANCE0);
       glFrontFace(GL_CW);  // the mirror flips winding
-      drawMeshes(scene, viewProj, mirror, h);
+      drawMeshes(scene, params, viewProj, mirror, h);
       glFrontFace(GL_CCW);
       if (params.showGrass && grassCount_ > 0) drawSprites(scene, camera, params, viewProj, mirror, -1.f, h);
       glDisable(GL_CLIP_DISTANCE0);
@@ -1048,7 +1108,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   beginPass(PassTimes::kMeshes);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glViewport(0, 0, rtW(), rtH());
-  drawMeshes(scene, viewProj, identity, -1e9f);
+  drawMeshes(scene, params, viewProj, identity, -1e9f);
   endPass();
   beginPass(PassTimes::kWater);
 

@@ -14,6 +14,7 @@
   M(PFNGLCULLFACEPROC, glCullFace)                  \
   M(PFNGLFRONTFACEPROC, glFrontFace)                \
   M(PFNGLSCISSORPROC, glScissor)                    \
+  M(PFNGLBLITFRAMEBUFFERPROC, glBlitFramebuffer)    \
   M(PFNGLGENQUERIESPROC, glGenQueries)              \
   M(PFNGLDELETEQUERIESPROC, glDeleteQueries)        \
   M(PFNGLBEGINQUERYPROC, glBeginQuery)              \
