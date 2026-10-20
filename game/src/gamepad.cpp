@@ -38,7 +38,7 @@ void Gamepad::poll() {
   (void)mapped;
   move = glm::vec2{0.f};
   rotate = 0;
-  toggleMenu = togglePause = false;
+  toggleMenu = togglePause = attack = false;
   GLFWgamepadstate state;
   int pad = -1;
   for (int j = GLFW_JOYSTICK_1; j <= GLFW_JOYSTICK_LAST && pad < 0; ++j)
@@ -71,6 +71,7 @@ void Gamepad::poll() {
   } else if (flicked_ && std::abs(rx) < kFlickBack) {
     flicked_ = false;
   }
+  if (pressed(GLFW_GAMEPAD_BUTTON_X)) attack = true;
   if (pressed(GLFW_GAMEPAD_BUTTON_START)) toggleMenu = true;
   if (pressed(GLFW_GAMEPAD_BUTTON_BACK)) togglePause = true;
 }

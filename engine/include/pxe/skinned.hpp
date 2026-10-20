@@ -48,10 +48,14 @@ class SkinnedModel {
   const std::vector<ActorMaterial>& materials() const { return materials_; }
 
   void restPose(Pose& pose) const;
-  // One clip at `time` seconds, wrapped round its length, over the rest pose.
-  void sample(int clip, float time, Pose& pose) const;
+  // One clip at `time` seconds over the rest pose: wrapped round its length
+  // when it loops, held at its ends when it plays once.
+  void sample(int clip, float time, Pose& pose, bool loop = true) const;
   // a toward b by w (0 all a .. 1 all b), into out (which may be a or b).
   static void blend(const Pose& a, const Pose& b, float w, Pose& out);
+  // The same with a weight for each joint, for layering one action over
+  // another on part of the body.
+  static void blend(const Pose& a, const Pose& b, const std::vector<float>& w, Pose& out);
   // Turn a joint by `angle` radians about `axis`, an axis of the model at
   // rest (y up, facing +z), after its animation; its children follow.
   void turn(Pose& pose, int joint, glm::vec3 axis, float angle) const;
@@ -59,6 +63,11 @@ class SkinnedModel {
   // order every call), surfaces kActorSurface + material.
   void skin(const Pose& pose, const glm::mat4& model, std::vector<Vertex>& out) const;
   const std::vector<std::uint32_t>& indices() const { return indices_; }
+  // A joint's place and axes at rest, in the model (y up, facing +z).
+  glm::mat4 restJoint(int joint) const;
+  // Where a point of the model at rest, carried by `joint`, is in the world
+  // as of the last skin().
+  glm::vec3 jointPoint(int joint, glm::vec3 restPoint) const;
 
  private:
   struct Joint {

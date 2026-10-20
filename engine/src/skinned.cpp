@@ -213,11 +213,13 @@ void SkinnedModel::restPose(Pose& pose) const {
   }
 }
 
-void SkinnedModel::sample(int clip, float time, Pose& pose) const {
+void SkinnedModel::sample(int clip, float time, Pose& pose, bool loop) const {
   if (pose.r.size() != joints_.size()) restPose(pose);
   if (clip < 0 || clip >= static_cast<int>(clips_.size())) return;
   const Clip& c = clips_[clip];
-  if (c.duration > 0.f) {
+  if (!loop) {
+    time = std::clamp(time, 0.f, c.duration);
+  } else if (c.duration > 0.f) {
     time = std::fmod(time, c.duration);
     if (time < 0.f) time += c.duration;
   }
@@ -259,6 +261,29 @@ void SkinnedModel::blend(const Pose& a, const Pose& b, float w, Pose& out) {
     out.r[i] = glm::normalize(glm::slerp(a.r[i], qb, w));
     out.s[i] = glm::mix(a.s[i], b.s[i], w);
   }
+}
+
+void SkinnedModel::blend(const Pose& a, const Pose& b, const std::vector<float>& w, Pose& out) {
+  const std::size_t n = std::min({a.r.size(), b.r.size(), w.size()});
+  out.t.resize(a.t.size());
+  out.r.resize(a.r.size());
+  out.s.resize(a.s.size());
+  for (std::size_t i = 0; i < n; ++i) {
+    out.t[i] = glm::mix(a.t[i], b.t[i], w[i]);
+    const glm::quat qb = glm::dot(a.r[i], b.r[i]) < 0.f ? -b.r[i] : b.r[i];
+    out.r[i] = glm::normalize(glm::slerp(a.r[i], qb, w[i]));
+    out.s[i] = glm::mix(a.s[i], b.s[i], w[i]);
+  }
+}
+
+glm::mat4 SkinnedModel::restJoint(int joint) const {
+  if (joint < 0 || joint >= static_cast<int>(joints_.size())) return glm::mat4{1.f};
+  return glm::inverse(joints_[joint].inverseBind);
+}
+
+glm::vec3 SkinnedModel::jointPoint(int joint, glm::vec3 restPoint) const {
+  if (joint < 0 || joint >= static_cast<int>(skinMats_.size())) return restPoint;
+  return glm::vec3(skinMats_[joint] * glm::vec4(restPoint, 1.f));
 }
 
 void SkinnedModel::turn(Pose& pose, int joint, glm::vec3 axis, float angle) const {

@@ -578,7 +578,7 @@ void Renderer::endPass() {
   if (profiling_) glEndQuery(GL_TIME_ELAPSED);
 }
 
-void Renderer::drawMeshes(const Scene& scene, const std::vector<const Mesh*>& actors, const glm::mat4& viewProj,
+void Renderer::drawMeshes(const Scene& scene, const FrameParams& params, const glm::mat4& viewProj,
                           const glm::mat4& mirror, float clipBelow) {
   glEnable(GL_DEPTH_TEST);
   glEnable(GL_CULL_FACE);
@@ -588,7 +588,10 @@ void Renderer::drawMeshes(const Scene& scene, const std::vector<const Mesh*>& ac
   umat(progMesh_, "uMirror", mirror);
   u1f(progMesh_, "uClipBelow", clipBelow);
   for (const Mesh& m : scene.meshes) m.draw();
-  for (const Mesh* m : actors) m->draw();
+  for (const Mesh* m : params.actors) m->draw();
+  glDisable(GL_CULL_FACE);
+  for (const Mesh* m : params.actorEffects) m->draw();
+  glEnable(GL_CULL_FACE);
 }
 
 void Renderer::drawSprites(const Scene&, const CameraFrame&, const FrameParams& params, const glm::mat4& viewProj,
@@ -1007,7 +1010,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u1f(progMesh_, "uTime", params.time);
   bindToon(progMesh_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
   bindBurn(progMesh_);
-  if (!params.actors.empty()) {
+  if (!params.actors.empty() || !params.actorEffects.empty()) {
     // The stone's ramp now, over its mid colour by day: the light a character stands in.
     const glm::vec3 day = glm::max(scene.palette[kPhaseDay][kSurfStone].band[1], glm::vec3{0.02f});
     std::vector<float> tint, colour;
@@ -1092,7 +1095,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
       glScissor(x0, y0, x1 - x0, y1 - y0);
       glEnable(GL_CLIP_DISTANCE0);
       glFrontFace(GL_CW);  // the mirror flips winding
-      drawMeshes(scene, params.actors, viewProj, mirror, h);
+      drawMeshes(scene, params, viewProj, mirror, h);
       glFrontFace(GL_CCW);
       if (params.showGrass && grassCount_ > 0) drawSprites(scene, camera, params, viewProj, mirror, -1.f, h);
       glDisable(GL_CLIP_DISTANCE0);
@@ -1105,7 +1108,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   beginPass(PassTimes::kMeshes);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glViewport(0, 0, rtW(), rtH());
-  drawMeshes(scene, params.actors, viewProj, identity, -1e9f);
+  drawMeshes(scene, params, viewProj, identity, -1e9f);
   endPass();
   beginPass(PassTimes::kWater);
 

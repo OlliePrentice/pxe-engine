@@ -9,6 +9,7 @@ namespace game {
 //   left stick   move the hero; how far it is pushed sets the pace, walk to run
 //   right stick  flick left or right to turn the view a step (like Q / E)
 //   LB / RB      turn the view a step
+//   X            attack
 //   Menu         settings menu        View   pause the day
 struct Gamepad {
   bool connected = false;
@@ -16,6 +17,7 @@ struct Gamepad {
   int rotate = 0;       // view steps this frame
   bool toggleMenu = false;
   bool togglePause = false;
+  bool attack = false;
 
   // Poll the pad, turning presses into this frame's edges.
   void poll();

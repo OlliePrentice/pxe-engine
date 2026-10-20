@@ -87,6 +87,8 @@ struct FrameParams {
   // scene's own shadows stay cached, with the characters' laid over them.
   std::vector<const Mesh*> actors;
   ActorMaterial actorMaterials[kActorMaterials];
+  // Drawn with the characters but casting no shadow: a sword's glowing smear.
+  std::vector<const Mesh*> actorEffects;
 };
 
 // GPU milliseconds per pass for the last frame, when profiling is on.
@@ -139,8 +141,8 @@ class Renderer {
   int uploadPointLights(const CameraFrame& camera);
   void drawPresent(const CameraFrame& camera, const FrameParams& params);
   // Draw the scene's meshes (and sprites, if shown) with the given mirror.
-  void drawMeshes(const Scene& scene, const std::vector<const Mesh*>& actors, const glm::mat4& viewProj,
-                  const glm::mat4& mirror, float clipBelow);
+  void drawMeshes(const Scene& scene, const FrameParams& params, const glm::mat4& viewProj, const glm::mat4& mirror,
+                  float clipBelow);
   void drawSprites(const Scene& scene, const CameraFrame& camera, const FrameParams& params,
                    const glm::mat4& viewProj, const glm::mat4& mirror, float spriteFlip, float clipBelow);
   unsigned makeColor(int w, int h);

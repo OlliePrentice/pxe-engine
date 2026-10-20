@@ -108,6 +108,7 @@ struct Options {
   // (walking if z is 1), with the view following.
   bool haveHeroMove = false;
   glm::vec3 heroMove{0.f};
+  float heroAttack = -1.f;  // captures: this many seconds into an attack (after any move)
 };
 
 void printUsage() {
@@ -151,6 +152,7 @@ void printUsage() {
                "  --hero / --no-hero       the hooded hero (on when playing: WASD moves it, Shift walks)\n"
                "  --hero-size S            the hero against a real person (default 1.6)\n"
                "  --hero-move DEG,SECS[,WALK]  captures: run (WALK 1: walk) the hero toward compass DEG first\n"
+               "  --hero-attack SECS       captures: the hero SECS into an attack (X; then on toward DEG if moving)\n"
                "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
@@ -209,6 +211,8 @@ Options parseArgs(int argc, char** argv) {
       opt.hero = 0;
     } else if (a == "--hero-size") {
       opt.heroSize = static_cast<float>(std::atof(need("--hero-size")));
+    } else if (a == "--hero-attack") {
+      opt.heroAttack = static_cast<float>(std::atof(need("--hero-attack")));
     } else if (a == "--hero-move") {
       if (std::sscanf(need("--hero-move"), "%f,%f,%f", &opt.heroMove.x, &opt.heroMove.y, &opt.heroMove.z) < 2) {
         std::fprintf(stderr, "bad --hero-move, expected DEG,SECS[,WALK]\n");
@@ -336,6 +340,7 @@ struct Input {
   float panY = 0.f;
   glm::vec2 move{0.f};  // WASD unscaled: x screen right, y screen up, for the hero
   bool walk = false;    // Shift held
+  bool attack = false;  // X (key or pad button) pressed
   int rotate = 0;
   bool toggleGrass = false;
   bool toggleMagenta = false;
@@ -370,6 +375,8 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken, game::Gamepad& pad) {
   if (pad.toggleMenu) in.toggleMenu = true;
   if (keyboardTaken) return in;
   if (pad.togglePause) in.togglePause = true;
+  static bool xkey = false;
+  if (pressed(win, GLFW_KEY_X, xkey) || pad.attack) in.attack = true;
   in.rotate += pad.rotate;
   auto down = [&](int key) { return glfwGetKey(win, key) == GLFW_PRESS; };
   if (down(GLFW_KEY_A) || down(GLFW_KEY_LEFT)) in.panX -= 1.f;
@@ -875,7 +882,7 @@ int main(int argc, char** argv) {
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
         game::Hero hero;
-        if (opt.hero == 1 || opt.haveHeroMove) {
+        if (opt.hero == 1 || opt.haveHeroMove || opt.heroAttack >= 0.f) {
           // Stands at the view's focus facing the camera, then runs or walks
           // the way asked, the view following.
           hero.build();
@@ -889,6 +896,22 @@ int main(int argc, char** argv) {
             in.walk = opt.heroMove.z > 0.5f;
             hero.update(scene, 1.f / 60.f, in);
           }
+          if (opt.heroAttack >= 0.f) {
+            const int attackFrames = static_cast<int>(std::lround(opt.heroAttack * 60.f));
+            for (int f = 0; f <= attackFrames; ++f) {
+              game::HeroInput in;
+              if (opt.haveHeroMove) in.move = compass(opt.heroMove.x);
+              in.walk = opt.heroMove.z > 0.5f;
+              in.attack = f == 0;
+              hero.update(scene, 1.f / 60.f, in);
+              // The smear samples the blade as it is drawn; keep it fed.
+              if (f < attackFrames) {
+                std::vector<const pxe::Mesh*> a, e;
+                pxe::ActorMaterial m[pxe::kActorMaterials];
+                hero.pose(a, e, m);
+              }
+            }
+          }
           if (frames > 0) std::fprintf(stderr, "pxe: hero at %.2f %.2f %.2f, %.2f m/s\n", hero.position().x,
                                        hero.position().y, hero.position().z, hero.speed());
           camera.setTarget(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
@@ -896,7 +919,7 @@ int main(int argc, char** argv) {
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
-        hero.pose(params.actors, params.actorMaterials);
+        hero.pose(params.actors, params.actorEffects, params.actorMaterials);
         if (opt.settle > 0.f) {
           params.time = opt.time + std::ceil(opt.settle * 60.f) / 60.f;
           scriptFireball(opt, ball, clock, scene, static_cast<int>(std::ceil(opt.settle * 60.f)), 1.f / 60.f,
@@ -1042,6 +1065,7 @@ int main(int argc, char** argv) {
               in.move = right * input.move.x + up * input.move.y;
               if (glm::length(in.move) > 1.f) in.move = glm::normalize(in.move);
               in.walk = input.walk;
+              in.attack = input.attack;
               hero.update(scene, dt, in);
               if (glm::length(in.move) > 0.f) following = false;
               if (!(ball.alive() && following)) camera.follow(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
@@ -1141,7 +1165,7 @@ int main(int argc, char** argv) {
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
           params.lighting = lightingFor(scene, clock);
-          hero.pose(params.actors, params.actorMaterials);
+          hero.pose(params.actors, params.actorEffects, params.actorMaterials);
           const pxe::CameraFrame frame = draw(params);
           lastFrame = frame;
           // Weather sound follows the settings; each new flash queues its
@@ -1165,10 +1189,10 @@ int main(int argc, char** argv) {
             if (!opt.brushes.empty()) std::fprintf(stderr, "pxe: brush picks within %.3f m of the scripted strokes\n", pickError);
             glfwSetWindowShouldClose(window, GLFW_TRUE);
           }
-          char title[200];
+          char title[256];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   X attack   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
           (void)frame;

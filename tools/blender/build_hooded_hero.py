@@ -108,8 +108,19 @@ for s, S in ((1, "L"), (-1, "R")):
 
 # The sword hangs from the right fist, point down and out, as in the
 # concept: its bone runs from the grip along the blade.
-GRIP = v(-0.49, -0.035, 0.91)
-BLADE_DIR = v(-0.22, -0.28, -0.93).normalized()
+def fist_frame(S):
+    """A fist's centre, the hand's length (down the fingers), the way its
+    thumb side faces (forward, at rest) and the axis across the knuckles."""
+    h, t, _ = BONES[f"hand.{S}"]
+    d = (t - h).normalized()
+    thumb = (FWD - d * FWD.dot(d)).normalized()
+    return h + d * 0.055, d, thumb, d.cross(thumb).normalized()
+
+
+# A grip runs along the thumb side of the fist; held low, the blade points
+# down and ahead, a little out.
+GRIP, _hand, _thumb, _ = fist_frame("R")
+BLADE_DIR = (_thumb * 0.55 + _hand * 0.8 + v(-0.15, 0, 0)).normalized()
 bone("sword", tuple(GRIP), tuple(GRIP + BLADE_DIR * 0.3), "hand.R")
 
 # Cape: five chains of three round the back, at these angles from straight
@@ -117,8 +128,8 @@ bone("sword", tuple(GRIP), tuple(GRIP + BLADE_DIR * 0.3), "hand.R")
 # flaring as it falls.
 CAPE_CHAINS = [("R2", -100), ("R1", -50), ("C", 0), ("L1", 50), ("L2", 100)]
 CAPE_Z = [1.40, 1.07, 0.70, 0.30]
-CAPE_RX = [0.21, 0.27, 0.36, 0.46]
-CAPE_RY = [0.15, 0.22, 0.29, 0.36]
+CAPE_RX = [0.25, 0.33, 0.41, 0.50]
+CAPE_RY = [0.16, 0.24, 0.31, 0.38]
 
 
 def cape_radius(z):
@@ -275,12 +286,20 @@ class Builder:
         self.outward(piece)
         return piece
 
-    def outward(self, piece, ref=None):
+    def outward(self, piece, ref=None, per_face=False):
         """Turn a piece's faces to face away from its own middle (or from
-        ref(point), a point inside it near that point)."""
+        ref(point), a point inside it near that point): all together, or
+        with per_face each on its own."""
         bm = self.bm
         bm.normal_update()
         if not piece.faces:
+            return
+        if per_face:
+            for f in piece.faces:
+                c = f.calc_center_median()
+                if f.normal.dot(c - ref(c)) < 0:
+                    f.normal_flip()
+            bm.normal_update()
             return
         mid = sum((f.calc_center_median() for f in piece.faces), Vector()) / len(piece.faces)
         score = 0.0
@@ -307,7 +326,8 @@ class Builder:
 
     def thicken(self, piece, th):
         """Give a one-sided shell a back: an inset copy facing in, and its
-        boundary closed, so it reads from both sides."""
+        boundary closed, so it reads from both sides. The inset's faces are
+        kept in piece.inner, for a lining of another material."""
         bm = self.bm
         bm.normal_update()
         inner = {}
@@ -317,13 +337,16 @@ class Builder:
         new = Piece(inner.values())
         for f in piece.faces:
             new.faces.append(bm.faces.new([inner[x] for x in reversed(f.verts)]))
+        lining = list(new.faces)
         for f in piece.faces:
             for loop in f.loops:
                 e = loop.edge
                 if sum(1 for lf in e.link_faces if lf in fs) == 1:
                     a, b = loop.vert, loop.link_loop_next.vert
                     new.faces.append(bm.faces.new((b, a, inner[a], inner[b])))
-        return piece.add(new)
+        piece.add(new)
+        piece.inner = lining
+        return piece
 
     def box(self, centre, axes, half):
         """A box from a centre, three axes and half-sizes along them."""
@@ -396,50 +419,58 @@ class Builder:
         """Torso and pelvis in plate, the belt and buckle, the chest chevron."""
         torso = self.loft([
             (v(0, 0.0, 0.86), 0.10, 0.075),
-            (v(0, 0.0, 0.93), 0.14, 0.10),
-            (v(0, 0.0, 1.01), 0.15, 0.105),
-            (v(0, 0.0, 1.11), 0.125, 0.09),
-            (v(0, 0.0, 1.22), 0.145, 0.10),
-            (v(0, -0.005, 1.32), 0.165, 0.112),
-            (v(0, 0.0, 1.41), 0.15, 0.10),
-            (v(0, 0.005, 1.47), 0.07, 0.065),
-            (v(0, 0.01, 1.57), 0.055, 0.055),
-        ], sides=8)
+            (v(0, 0.0, 0.92), 0.135, 0.098),
+            (v(0, 0.0, 0.98), 0.15, 0.106),
+            (v(0, 0.0, 1.04), 0.145, 0.102),
+            (v(0, 0.0, 1.11), 0.126, 0.09),
+            (v(0, 0.0, 1.17), 0.132, 0.094),
+            (v(0, -0.003, 1.24), 0.15, 0.104),
+            (v(0, -0.006, 1.31), 0.165, 0.113),
+            (v(0, -0.002, 1.37), 0.163, 0.108),
+            (v(0, 0.0, 1.42), 0.14, 0.095),
+            (v(0, 0.005, 1.47), 0.075, 0.068),
+            (v(0, 0.01, 1.57), 0.056, 0.056),
+        ], sides=12)
         self.finish(torso, "Armour", ["hips", "spine", "chest", "neck", "thigh.L", "thigh.R", "clavicle.L", "clavicle.R"])
 
-        belt = self.loft([(v(0, 0, 1.085), 0.133, 0.097), (v(0, 0, 1.135), 0.132, 0.096)], sides=8, cap0=False, cap1=False)
+        belt = self.loft([(v(0, 0, 1.085), 0.134, 0.097), (v(0, 0, 1.135), 0.133, 0.096)], sides=12, cap0=False, cap1=False)
         self.thicken(belt, 0.01)
         self.finish(belt, "Cloak", ["hips", "spine"])
-        buckle = self.box(v(0, -0.103, 1.11), (X, Y, Z), (0.03, 0.012, 0.03))
+        buckle = self.box(v(0, -0.104, 1.11), (X, Y, Z), (0.03, 0.012, 0.03))
         self.finish(buckle, "Accent", ["hips"])
 
         # The chevron on the chest: two plates meeting in a V below the collar.
         for s in (1, -1):
-            p = self.box(v(s * 0.035, -0.112, 1.35), (v(s * 0.7, 0, 0.7), Y, v(-s * 0.7, 0, 0.7)), (0.042, 0.008, 0.016))
+            p = self.box(v(s * 0.035, -0.114, 1.35), (v(s * 0.7, 0, 0.7), Y, v(-s * 0.7, 0, 0.7)), (0.042, 0.008, 0.016))
             self.finish(p, "Accent", ["chest"])
         self.refresh()
 
     def legs(self):
         for s, S in ((1, "L"), (-1, "R")):
-            thigh = self.limb(f"thigh.{S}", [(0.0, 0.085, 0.085), (0.45, 0.075, 0.08), (1.0, 0.058, 0.062)], sides=7, sink=(0.04, 0.0))
+            thigh = self.limb(f"thigh.{S}", [(0.0, 0.085, 0.085), (0.3, 0.08, 0.083), (0.65, 0.07, 0.075), (1.0, 0.058, 0.062)],
+                              sides=10, sink=(0.04, 0.0))
             self.finish(thigh, "Armour", [f"thigh.{S}", "hips", f"shin.{S}"])
-            shin = self.limb(f"shin.{S}", [(0.0, 0.058, 0.062), (0.35, 0.06, 0.066), (1.0, 0.045, 0.05)], sides=7)
+            shin = self.limb(f"shin.{S}", [(0.0, 0.058, 0.062), (0.3, 0.061, 0.067), (0.7, 0.052, 0.058), (1.0, 0.045, 0.05)], sides=10)
             self.finish(shin, "Armour", [f"shin.{S}", f"thigh.{S}"])
-            # Knee guard: a faceted wedge on the front of the knee.
+            # Knee guard: a faceted cap on the front of the knee.
             kh = BONES[f"shin.{S}"][0]
-            knee = self.blob(kh + v(0, -0.055, 0.0), (0.05, 0.03, 0.065), segs=5, rings=3)
+            knee = self.blob(kh + v(0, -0.052, 0.0), (0.05, 0.03, 0.066), segs=8, rings=4)
             self.finish(knee, "Armour", [f"shin.{S}", f"thigh.{S}"], keep=2)
             # Boot: a plated cuff, the shaft, then the foot with a heel.
-            cuff = self.loft([(v(s * 0.10, 0.005, 0.33), 0.066, 0.07), (v(s * 0.10, 0.006, 0.27), 0.062, 0.066)], sides=7)
+            cuff = self.loft([(v(s * 0.10, 0.005, 0.335), 0.066, 0.071), (v(s * 0.10, 0.005, 0.30), 0.068, 0.073),
+                              (v(s * 0.10, 0.006, 0.27), 0.062, 0.066)], sides=10)
             self.finish(cuff, "Glove", [f"shin.{S}"])
-            shaft = self.loft([(v(s * 0.10, 0.008, 0.27), 0.055, 0.06), (v(s * 0.10, 0.012, 0.10), 0.052, 0.062)], sides=7, cap0=False)
+            shaft = self.loft([(v(s * 0.10, 0.008, 0.27), 0.055, 0.06), (v(s * 0.10, 0.01, 0.18), 0.052, 0.058),
+                               (v(s * 0.10, 0.012, 0.10), 0.053, 0.063)], sides=10, cap0=False)
             self.finish(shaft, "Glove", [f"shin.{S}", f"foot.{S}"])
             foot = self.loft([
-                (v(s * 0.10, 0.055, 0.045), 0.045, 0.04),
-                (v(s * 0.10, 0.0, 0.05), 0.05, 0.05),
-                (v(s * 0.10, -0.08, 0.035), 0.048, 0.035),
-                (v(s * 0.10, -0.15, 0.025), 0.035, 0.022),
-            ], sides=6, ref=Z, phase=0.0)
+                (v(s * 0.10, 0.06, 0.045), 0.04, 0.035),
+                (v(s * 0.10, 0.03, 0.055), 0.05, 0.05),
+                (v(s * 0.10, -0.02, 0.05), 0.052, 0.045),
+                (v(s * 0.10, -0.08, 0.036), 0.049, 0.035),
+                (v(s * 0.10, -0.13, 0.028), 0.042, 0.026),
+                (v(s * 0.10, -0.16, 0.022), 0.03, 0.02),
+            ], sides=8, ref=Z, phase=0.0)
             for x in foot.verts:  # flatten the sole onto the ground
                 x.co.z = max(x.co.z, 0.0)
             self.finish(foot, "Glove", [f"foot.{S}", f"toe.{S}", f"shin.{S}"])
@@ -449,60 +480,104 @@ class Builder:
 
     def arms(self):
         for s, S in ((1, "L"), (-1, "R")):
-            shoulder = self.blob(BONES[f"upperarm.{S}"][0] + v(s * 0.01, 0, 0.0), (0.06, 0.058, 0.055), segs=6, rings=4)
+            shoulder = self.blob(BONES[f"upperarm.{S}"][0] + v(s * 0.008, 0, 0.0), (0.06, 0.058, 0.055), segs=10, rings=6)
             self.finish(shoulder, "Armour", [f"upperarm.{S}", f"clavicle.{S}", "chest"])
-            upper = self.limb(f"upperarm.{S}", [(0.0, 0.055, 0.058), (0.5, 0.05, 0.052), (1.0, 0.043, 0.045)], sides=6)
+            upper = self.limb(f"upperarm.{S}", [(0.0, 0.055, 0.058), (0.35, 0.052, 0.055), (0.7, 0.047, 0.05), (1.0, 0.043, 0.045)],
+                              sides=9)
             self.finish(upper, "Armour", [f"upperarm.{S}", f"forearm.{S}", f"clavicle.{S}"])
-            fore = self.limb(f"forearm.{S}", [(0.0, 0.043, 0.045), (0.55, 0.05, 0.052), (0.85, 0.052, 0.054), (1.0, 0.038, 0.04)], sides=6)
+            fore = self.limb(f"forearm.{S}", [(0.0, 0.043, 0.045), (0.3, 0.047, 0.049), (0.6, 0.051, 0.053), (0.85, 0.053, 0.055),
+                                              (0.92, 0.04, 0.042), (1.0, 0.036, 0.038)], sides=9)
             self.finish(fore, "Armour", [f"forearm.{S}", f"upperarm.{S}", f"hand.{S}"])
-            # Gauntlet flare and the glove: a squared mitten with a thumb.
-            h, t, _ = BONES[f"hand.{S}"]
-            d = (t - h).normalized()
-            side = d.cross(FWD).normalized()
-            palm = self.box(h + d * 0.055, (side, side.cross(d), d), (0.022, 0.034, 0.055))
-            self.finish(palm, "Glove", [f"hand.{S}", f"forearm.{S}"], keep=2)
-            thumb = self.box(h + d * 0.035 + FWD * 0.028, (side, side.cross(d), d), (0.014, 0.014, 0.03))
-            self.finish(thumb, "Glove", [f"hand.{S}"], keep=1)
+            self.fist(S)
         self.refresh()
+
+    def fist(self, S):
+        """A gloved fist round a grip that runs along the thumb's side, so a
+        sword in it points the way the thumb does."""
+        c, d, t, side = fist_frame(S)
+        palm = self.loft([
+            (c - d * 0.05, 0.03, 0.026),
+            (c - d * 0.02, 0.036, 0.034),
+            (c + d * 0.02, 0.034, 0.036),
+            (c + d * 0.045, 0.026, 0.03),
+        ], sides=8, ref=t, phase=0.5)
+        # Curled fingers ahead of the palm, and the thumb wrapped over them.
+        knuckles = self.box(c + d * 0.012, (side, t, d), (0.026, 0.042, 0.024))
+        thumb = self.box(c + t * 0.04 + side * 0.012, (side, t, d), (0.013, 0.012, 0.02))
+        for piece in (palm, knuckles, thumb):
+            self.finish(piece, "Glove", [f"hand.{S}"], keep=1)
 
     def head(self):
         """The void under the hood, the glowing eyes, and the hood itself."""
-        void = self.blob(v(0, 0.01, 1.625), (0.095, 0.10, 0.115), segs=8, rings=5)
+        void = self.blob(v(0, 0.015, 1.625), (0.092, 0.095, 0.112), segs=12, rings=8)
         self.finish(void, "Void", ["head", "neck"], keep=1)
 
-        # Eyes: one cyan chevron pointing down, just in front of the void.
+        # Eyes: one cyan chevron pointing down, recessed in the dark.
         eyes = Piece()
         bm = self.bm
-        y0, y1 = -0.098, -0.086
-        outline = [v(-0.058, 0, 1.662), v(0, 0, 1.636), v(0.058, 0, 1.662), v(0, 0, 1.600)]
+        y0, y1 = -0.083, -0.07
+        outline = [v(-0.064, 0, 1.664), v(-0.03, 0, 1.664), v(0, 0, 1.636), v(0.03, 0, 1.664), v(0.064, 0, 1.664),
+                   v(0, 0, 1.598)]
         front = [bm.verts.new(p + v(0, y0, 0)) for p in outline]
         back = [bm.verts.new(p + v(0, y1, 0)) for p in outline]
         eyes.verts = front + back
-        eyes.faces.append(bm.faces.new([front[0], front[3], front[2], front[1]]))
-        eyes.faces.append(bm.faces.new([back[0], back[1], back[2], back[3]]))
-        for i in range(4):
-            j = (i + 1) % 4
+        n = len(outline)
+        eyes.faces.append(bm.faces.new(list(reversed(front))))
+        eyes.faces.append(bm.faces.new(back))
+        for i in range(n):
+            j = (i + 1) % n
             eyes.faces.append(bm.faces.new([front[i], front[j], back[j], back[i]]))
         self.outward(eyes)
         self.finish(eyes, "Glow", ["head"], keep=1)
 
-        # Hood: lofted up from the shoulders to a point leaning back, open in front.
-        hood = self.loft([
-            (v(0, 0.005, 1.46), 0.165, 0.155),
-            (v(0, 0.005, 1.55), 0.158, 0.15),
-            (v(0, 0.012, 1.645), 0.152, 0.152),
-            (v(0, 0.035, 1.735), 0.125, 0.132),
-            (v(0, 0.075, 1.81), 0.075, 0.085),
-            (v(0, 0.11, 1.862), 0.032, 0.036),
-        ], sides=12, cap0=False, cap1=True, tip1=v(0, 0.135, 1.892), ref=FWD, phase=0.5)
-        cut = [f for f in hood.faces
-               if (lambda c: c.y < -0.06 and abs(c.x) < 0.085 and 1.52 < c.z < 1.78)(f.calc_center_median())]
-        for f in cut:
-            hood.faces.remove(f)
-        bmesh.ops.delete(bm, geom=cut, context="FACES_ONLY")
-        hood.verts = [x for x in hood.verts if x.is_valid and x.link_faces]
-        self.outward(hood, lambda c: v(0, 0.03, min(max(c.z, 1.5), 1.8)))
-        self.thicken(hood, 0.014)
+        # Hood: one sheet round the head, rows from the shoulders to a soft
+        # peak leaning back, with the face's opening woven in - an oval,
+        # pointed at the top - so its edge is smooth and nothing is cut. It
+        # stands well forward of the face, which sits deep in its shadow.
+        cols = 24
+        rings = [  # height, centre y, half-width, half-depth
+            (1.45, 0.0, 0.172, 0.168),
+            (1.50, -0.006, 0.173, 0.174),
+            (1.55, -0.01, 0.173, 0.178),
+            (1.60, -0.01, 0.17, 0.178),
+            (1.65, -0.006, 0.164, 0.174),
+            (1.70, 0.004, 0.153, 0.162),
+            (1.745, 0.018, 0.136, 0.145),
+            (1.785, 0.035, 0.11, 0.118),
+            (1.82, 0.055, 0.075, 0.082),
+            (1.84, 0.068, 0.04, 0.045),
+        ]
+
+        def opening(z):
+            # Half-angle of the opening at height z, from straight ahead.
+            lo, mid, hi = 1.5, 1.60, 1.765
+            if z <= lo or z >= hi:
+                return 0.0
+            if z < mid:
+                return 42.0 * math.sqrt(1.0 - ((mid - z) / (mid - lo)) ** 2)
+            return 42.0 * (1.0 - ((z - mid) / (hi - mid)) ** 1.6)
+
+        grid = []
+        for z, cy, rx, ry in rings:
+            half = opening(z)
+            row = []
+            for c in range(cols + 1):
+                ang = math.radians(half + (360.0 - 2 * half) * c / cols)
+                row.append(v(rx * math.sin(ang), cy - ry * math.cos(ang), z))
+            grid.append(row)
+        hood = self.sheet(grid)
+        top = bm.verts.new(v(0, 0.08, 1.855))
+        last = [x for x in hood.verts[-(cols + 1):]]
+        for c in range(cols):
+            hood.faces.append(bm.faces.new((last[c], last[c + 1], top)))
+        hood.verts.append(top)
+        # Close the seam at the front wherever the opening has closed.
+        welded = bmesh.ops.remove_doubles(bm, verts=hood.verts, dist=1e-5)
+        hood.verts = [x for x in hood.verts if x.is_valid]
+        hood.faces = [f for f in hood.faces if f.is_valid]
+        self.outward(hood, lambda c: v(0, 0.02, min(max(c.z, 1.5), 1.78)), per_face=True)
+        self.thicken(hood, 0.012)
+        inner = hood.inner
 
         def hood_weights(p, ws):
             # The hood's crown and point lag on their own bone; the rim sits on the head.
@@ -512,22 +587,28 @@ class Builder:
             return [(n, w) for n, w in out if w > 0]
 
         self.finish(hood, "Cloak", ["head"], adjust=hood_weights)
+        # Lined in black, so all that shows through the opening is shadow.
+        for f in inner:
+            f.material_index = M["Void"]
         self.refresh()
 
     def cowl(self):
         """The layered collar over the shoulders, its lower edge cut in points."""
+        sides = 18
         rings = [
-            (v(0, 0.01, 1.53), 0.135, 0.12),
-            (v(0, 0.01, 1.47), 0.21, 0.16),
-            (v(0, 0.012, 1.37), 0.31, 0.21),
+            (v(0, 0.01, 1.53), 0.14, 0.125),
+            (v(0, 0.01, 1.49), 0.2, 0.16),
+            (v(0, 0.011, 1.43), 0.27, 0.195),
+            (v(0, 0.012, 1.36), 0.325, 0.215),
         ]
-        piece = self.loft(rings, sides=12, cap0=False, cap1=False, ref=FWD, phase=0.5)
+        piece = self.loft(rings, sides=sides, cap0=False, cap1=False, ref=FWD, phase=0.5)
         # A jagged hem: drop every other vertex of the bottom ring into a point.
-        bottom = piece.verts[-12:]
+        bottom = piece.verts[-sides:]
         for k, x in enumerate(bottom):
-            x.co.z -= 0.075 if k % 2 == 0 else 0.0
-            x.co.x *= 1.12 if k % 2 == 0 else 1.0
-            x.co.y = (x.co.y - 0.012) * (1.08 if k % 2 == 0 else 1.0) + 0.012
+            if k % 2 == 0:
+                x.co.z -= 0.075
+                x.co.x *= 1.1
+                x.co.y = (x.co.y - 0.012) * 1.07 + 0.012
         self.outward(piece, lambda c: v(0, 0.01, c.z))
         self.thicken(piece, 0.012)
 
@@ -544,17 +625,17 @@ class Builder:
 
     def skirt(self):
         """The coat below the belt, split up the front into two flaps."""
-        rows = [1.10, 0.96, 0.80, 0.64, 0.50]
+        rows = [1.10, 1.00, 0.89, 0.78, 0.67, 0.57, 0.48]
+        angles = [9, 24, 42, 62, 84, 108, 132, 156, 178]
         for s, S in ((1, "L"), (-1, "R")):
             # Angles from straight ahead round this side to the back.
-            angles = [10, 35, 65, 100, 140, 178]
             grid = []
             for r, z in enumerate(rows):
                 row = []
                 for c, a in enumerate(angles):
-                    t = (1.10 - z) / 0.60
-                    rx = 0.14 + 0.06 * t
-                    ry = 0.105 + 0.05 * t
+                    t = (1.10 - z) / 0.62
+                    rx = 0.14 + 0.065 * t
+                    ry = 0.105 + 0.055 * t
                     zz = z
                     if r == len(rows) - 1:  # pointed hem, lowest at the front edge
                         zz = z - (0.06 if c % 2 == 0 else -0.04) - (0.04 if c == 0 else 0.0)
@@ -583,14 +664,18 @@ class Builder:
         self.refresh()
 
     def cape(self):
-        """The long cape round the back, folded, with a jagged hem."""
-        angles = [-112 + 14 * i for i in range(17)]
-        rows = [1.40, 1.25, 1.07, 0.88, 0.70, 0.50, 0.32]
+        """The long cape round the back, folded, with a jagged hem. It hangs
+        from behind the shoulders and flares wide of the arms, so they swing
+        inside it."""
+        cols = 25
+        angles = [-100 + 200 * i / (cols - 1) for i in range(cols)]
+        rows = [1.40, 1.31, 1.21, 1.10, 0.98, 0.86, 0.74, 0.62, 0.50, 0.40, 0.32]
         grid = []
         for r, z in enumerate(rows):
             row = []
             for c, a in enumerate(angles):
-                fold = (0.03 if c % 2 else -0.01) * (r / (len(rows) - 1))  # folds deepen as it falls
+                depth = r / (len(rows) - 1)
+                fold = (0.032 if c % 2 else -0.012) * depth  # folds deepen as it falls
                 zz = z
                 if r == len(rows) - 1:
                     zz = z - (0.07 if c % 2 == 0 else -0.09)
@@ -639,15 +724,16 @@ class Builder:
         self.refresh()
 
     def sword(self):
-        """A glowing crystal blade, dark guard, wrapped grip and pommel."""
+        """A glowing crystal blade, dark guard, wrapped grip and pommel, held
+        in the right fist."""
         d = BLADE_DIR
         side = d.cross(FWD).normalized()
         flat = side.cross(d).normalized()
         g = GRIP
         bones = ["sword"]
-        guard_at = g + d * 0.07
+        guard_at = g + d * 0.065
         blade = self.loft([
-            (guard_at + d * 0.01, 0.022, 0.009),
+            (guard_at + d * 0.012, 0.022, 0.009),
             (guard_at + d * 0.07, 0.034, 0.014),
             (guard_at + d * 0.13, 0.024, 0.01),
             (guard_at + d * 0.40, 0.03, 0.011),
@@ -656,12 +742,13 @@ class Builder:
         self.finish(blade, "Glow", bones, keep=1)
         guard = self.box(guard_at, (side, flat, d), (0.075, 0.02, 0.014))
         self.finish(guard, "Armour", bones, keep=1)
-        collar = self.loft([(guard_at - d * 0.005, 0.03, 0.026), (guard_at + d * 0.035, 0.018, 0.016)], sides=6,
+        collar = self.loft([(guard_at - d * 0.004, 0.03, 0.026), (guard_at + d * 0.035, 0.018, 0.016)], sides=8,
                            ref=flat, cap1=True, tip1=guard_at + d * 0.05)
         self.finish(collar, "Armour", bones, keep=1)
-        grip = self.loft([(g - d * 0.09, 0.014, 0.014), (g + d * 0.065, 0.016, 0.016)], sides=6, ref=flat)
+        grip = self.loft([(g - d * 0.07, 0.014, 0.014), (g - d * 0.02, 0.016, 0.016), (g + d * 0.03, 0.016, 0.016),
+                          (g + d * 0.058, 0.014, 0.014)], sides=8, ref=flat)
         self.finish(grip, "Glove", bones, keep=1)
-        pommel = self.blob(g - d * 0.105, (0.022, 0.022, 0.022), segs=6, rings=3)
+        pommel = self.blob(g - d * 0.085, (0.022, 0.022, 0.022), segs=8, rings=4)
         self.finish(pommel, "Armour", bones, keep=1)
         self.refresh()
 
@@ -707,13 +794,15 @@ class Builder:
     def set_pose(self, p):
         """Pose from angles in radians about the figure's own axes, at rest:
         thighS / armS swing forward, kneeS / elbowS bend, footS lifts the toes,
-        armDownS brings the arm in from the A-pose, legOutS spreads a leg;
+        armDownS brings the arm in from the A-pose (negative raises it out),
+        armAcrossS swings it across the chest, foreTwistS turns the forearm
+        thumb-out, wristS tips the fist's thumb side up, legOutS spreads a leg;
         spine / chest / neck / head lean forward, twistHips / twistChest /
-        headTurn turn to the figure's left; bob (m) raises the hips and sway (m)
-        moves them to the left; cape lifts the cape out behind, capeWave
-        ripples it down the chains, capeSide swings it to the left; tabardS
-        lifts a front flap; hood swings the hood's point back; swordX / swordZ
-        tip the sword's point back / out."""
+        headTurn turn to the figure's left; bob (m) raises the hips, sway (m)
+        moves them to the left and shift (m) forward; cape lifts the cape out
+        behind, capeWave ripples it down the chains, capeSide swings it to the
+        left; tabardS lifts a front flap; hood swings the hood's point back.
+        An arm swung back or raised out lifts the cape on its side clear of it."""
         rig = self.rig
         for pb in rig.pose.bones:
             pb.rotation_mode = "QUATERNION"
@@ -728,6 +817,7 @@ class Builder:
             pb.rotation_quaternion = Quaternion(local, angle) @ pb.rotation_quaternion
 
         g = p.get
+        clear = {}
         for s, S in ((1, "L"), (-1, "R")):
             turn(f"thigh.{S}", X, -g("thigh" + S, 0.0))
             turn(f"thigh.{S}", Y, -s * g("legOut" + S, 0.0))
@@ -735,9 +825,14 @@ class Builder:
             turn(f"foot.{S}", X, -g("foot" + S, 0.0))
             turn(f"upperarm.{S}", Y, s * g("armDown" + S, 0.0))
             turn(f"upperarm.{S}", X, -g("arm" + S, 0.0))
+            turn(f"upperarm.{S}", Z, -s * g("armAcross" + S, 0.0))
+            fh, ft, _ = BONES[f"forearm.{S}"]
+            turn(f"forearm.{S}", (ft - fh).normalized(), s * g("foreTwist" + S, 0.0))
             turn(f"forearm.{S}", X, -g("elbow" + S, 0.0))
+            turn(f"hand.{S}", X, -g("wrist" + S, 0.0))
             turn(f"tabard.{S}.1", X, -g("tabard" + S, 0.0))
             turn(f"tabard.{S}.2", X, -0.5 * g("tabard" + S, 0.0))
+            clear[S] = 0.45 * max(0.0, -g("arm" + S, 0.0)) + 0.3 * max(0.0, -g("armDown" + S, 0.3))
         turn("hips", Z, g("twistHips", 0.0))
         turn("spine", X, g("spine", 0.0))
         turn("chest", X, g("chest", 0.0))
@@ -746,14 +841,13 @@ class Builder:
         turn("head", X, g("head", 0.0))
         turn("head", Z, g("headTurn", 0.0))
         turn("hood", X, g("hood", 0.0))
-        turn("sword", X, g("swordX", 0.0))
-        turn("sword", Y, g("swordZ", 0.0))
         lift, wave, swing = g("cape", 0.0), g("capeWave", 0.0), g("capeSide", 0.0)
+        side_clear = {"L2": clear["L"], "L1": clear["L"] * 0.45, "C": 0.0, "R1": clear["R"] * 0.45, "R2": clear["R"]}
         for name, ang in CAPE_CHAINS:
             a = math.radians(ang)
             axis = v(math.cos(a), -math.sin(a), 0)  # turns a hanging chain out, away from the body
             for i in range(3):
-                amount = lift * (1.0 if i == 0 else 0.35) + wave * (0.0, 0.6, 1.0)[i] * (1 if i % 2 else -1)
+                amount = (lift + side_clear[name]) * (1.0 if i == 0 else 0.35) + wave * (0.0, 0.6, 1.0)[i] * (1 if i % 2 else -1)
                 turn(f"cape.{name}.{i + 1}", axis, amount)
                 turn(f"cape.{name}.{i + 1}", Y, -swing * (0.5 if i == 0 else 0.25))
         pb = rig.pose.bones["hips"]
@@ -763,33 +857,34 @@ class Builder:
         rig = self.rig
         bpy.context.scene.render.fps = FPS
         rig.animation_data_create()
-        made = []
-        for name, keys, frames in clips():
+        made = {}
+        for name, keys, frames, cyclic in clips():
             act = bpy.data.actions.new("HH_" + name)
             act.use_fake_user = True
             rig.animation_data.action = act
-            for frame, p in keys + [(frames, keys[0][1])]:
+            for frame, p in keys + ([(frames, keys[0][1])] if cyclic else []):
                 self.set_pose(p)
                 for pb in rig.pose.bones:
                     pb.keyframe_insert("rotation_quaternion", frame=frame, group=pb.name)
                     pb.keyframe_insert("location", frame=frame, group=pb.name)
-            # Smooth, seamless loops: Bezier keys whose handles see the cycle.
+            # Smooth curves: loops get Bezier handles that see the cycle, so
+            # they run on without a seam; one-shots ease in and out of each key.
             for fc in action_fcurves(act, rig):
-                if not any(m.type == "CYCLES" for m in fc.modifiers):
+                if cyclic and not any(m.type == "CYCLES" for m in fc.modifiers):
                     fc.modifiers.new("CYCLES")
                 for kp in fc.keyframe_points:
                     kp.interpolation = "BEZIER"
-                    kp.handle_left_type = kp.handle_right_type = "AUTO"
+                    kp.handle_left_type = kp.handle_right_type = "AUTO" if cyclic else "AUTO_CLAMPED"
                 fc.update()
             act.use_frame_range = True
             act.frame_start, act.frame_end = 0, frames
-            act.use_cyclic = True
-            made.append(act)
+            act.use_cyclic = cyclic
+            made[name] = act
             rig.animation_data.action = None
         # Leave Walk playing, for a look in the viewport.
-        rig.animation_data.action = made[1]
+        rig.animation_data.action = made["Walk"]
         bpy.context.scene.frame_start = 0
-        bpy.context.scene.frame_end = int(made[1].frame_range[1]) - 1
+        bpy.context.scene.frame_end = int(made["Walk"].frame_range[1]) - 1
         return made
 
     def build_all(self):
@@ -830,9 +925,9 @@ def mirror(p):
     return out
 
 
-# The right hand keeps the sword, so its arm swings less and the left takes
+# The right fist keeps the sword, so its arm swings less and the left takes
 # up the difference.
-HOLD = dict(armDownL=0.38, armDownR=0.30, elbowL=0.2, elbowR=0.3)
+HOLD = dict(armDownL=0.42, armDownR=0.36, elbowL=0.2, elbowR=0.35)
 
 
 def with_hold(p, hold=HOLD, sword_swing=0.0):
@@ -840,7 +935,7 @@ def with_hold(p, hold=HOLD, sword_swing=0.0):
     q.update(p)
     if "armR" in q:
         q["armR"] *= 0.55
-    q["swordX"] = q.get("swordX", 0.0) + sword_swing
+    q["wristR"] = q.get("wristR", 0.0) - sword_swing
     # The flaps follow the thighs forward (never back into the legs).
     for S in "LR":
         q.setdefault("tabard" + S, 0.08 + 0.75 * max(0.0, q.get("thigh" + S, 0.0)))
@@ -848,6 +943,7 @@ def with_hold(p, hold=HOLD, sword_swing=0.0):
 
 
 def clips():
+    """(name, [(frame, pose)], length in frames, loops)."""
     walk_half = [
         (0, dict(thighR=0.42, kneeR=0.05, footR=0.25, thighL=-0.30, kneeL=0.2, footL=-0.3,
                  armL=0.32, armR=-0.26, bob=-0.012, twistHips=0.09, twistChest=-0.1, sway=-0.006,
@@ -882,10 +978,48 @@ def clips():
     stand = dict(legOutL=0.03, legOutR=0.03, thighL=0.02, thighR=-0.03, kneeL=0.05, kneeR=0.04)
     idle = [
         (0, with_hold(dict(stand, chest=-0.01, head=0.02, bob=-0.004, sway=0.004, cape=0.02, hood=0.0))),
-        (60, with_hold(dict(stand, chest=-0.045, neck=-0.01, head=0.0, armDownL=0.35, armDownR=0.28,
+        (60, with_hold(dict(stand, chest=-0.045, neck=-0.01, head=0.0, armDownL=0.39, armDownR=0.33,
                             bob=0.003, sway=0.008, cape=0.035, capeWave=0.02, hood=0.03))),
     ]
-    return [("Idle", idle, 120), ("Walk", walk, 30), ("Run", run, 20)]
+    return [("Idle", idle, 120, True), ("Walk", walk, 30, True), ("Run", run, 20, True),
+            ("Attack", attack(stand), ATTACK_FRAMES, False)]
+
+
+# The attack: a diagonal cut from high on the right down across to the low
+# left, stepping into it. Wind up (anticipation), a fast strike, follow
+# through past the target, and settle back to the stance. ATTACK_HIT is the
+# frame the blade is at its fastest, where a hit would land.
+ATTACK_FRAMES = 22
+ATTACK_HIT = 8
+
+
+def attack(stand):
+    ready = dict(stand, armDownL=0.42, armDownR=0.36, elbowL=0.2, elbowR=0.35)
+    windup = dict(stand, twistChest=-0.5, twistHips=-0.22, spine=-0.04, head=0.02, headTurn=0.3,
+                  armDownR=-0.75, armR=0.15, armAcrossR=-0.2, elbowR=1.75, foreTwistR=0.3, wristR=0.6,
+                  armL=0.45, armDownL=0.25, armAcrossL=0.3, elbowL=0.7,
+                  thighL=0.22, kneeL=0.25, thighR=-0.18, kneeR=0.12, bob=-0.03, cape=0.03, capeSide=-0.08, hood=0.05)
+    strike = dict(stand, twistChest=0.4, twistHips=0.18, spine=0.16, chest=0.06, head=-0.08, headTurn=-0.1,
+                  armDownR=0.0, armR=1.05, armAcrossR=0.45, elbowR=0.25, foreTwistR=0.0, wristR=0.15,
+                  armL=-0.25, armDownL=0.15, armAcrossL=0.0, elbowL=0.4,
+                  thighR=0.42, kneeR=0.45, thighL=-0.32, kneeL=0.2, footL=-0.2, bob=-0.07, shift=0.07,
+                  cape=0.1, capeSide=0.1, capeWave=0.04, hood=0.15)
+    follow = dict(stand, twistChest=0.65, twistHips=0.26, spine=0.2, chest=0.08, head=-0.08, headTurn=-0.2,
+                  armDownR=0.2, armR=0.75, armAcrossR=1.0, elbowR=0.45, foreTwistR=-0.2, wristR=-0.35,
+                  armL=-0.35, armDownL=0.05, elbowL=0.45,
+                  thighR=0.45, kneeR=0.5, thighL=-0.35, kneeL=0.25, footL=-0.25, bob=-0.085, shift=0.08,
+                  cape=0.1, capeSide=0.16, capeWave=-0.04, hood=0.18)
+    settle = dict(stand, twistChest=0.2, twistHips=0.08, spine=0.08, armDownR=0.3, armR=0.35, armAcrossR=0.3,
+                  elbowR=0.5, wristR=0.0, armDownL=0.35, elbowL=0.3,
+                  thighR=0.2, kneeR=0.2, thighL=-0.12, kneeL=0.1, bob=-0.03, shift=0.03, cape=0.04, capeSide=0.06)
+    keys = [(0, ready), (5, windup), (ATTACK_HIT, strike), (11, follow), (16, settle), (ATTACK_FRAMES, ready)]
+    out = []
+    for f, p in keys:
+        q = dict(p)
+        for S in "LR":
+            q.setdefault("tabard" + S, 0.08 + 0.75 * max(0.0, q.get("thigh" + S, 0.0)))
+        out.append((f, q))
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -927,6 +1061,8 @@ def render_previews(b):
         shoot(f"walk{f:02d}", acts["Walk"], f, 70, 12)
     for f in (0, 2, 5, 7):
         shoot(f"run{f:02d}", acts["Run"], f, 70, 12)
+    for f in (0, 5, 8, 11, 16):
+        shoot(f"attack{f:02d}", acts["Attack"], f, 25, 20)
 
 
 def export():

@@ -55,6 +55,7 @@ class SecondOrder {
 struct HeroInput {
   glm::vec2 move{0.f};
   bool walk = false;
+  bool attack = false;  // pressed this frame
 };
 
 // The hooded hero, built, rigged and animated in Blender
@@ -67,6 +68,12 @@ struct HeroInput {
 // advances with the ground covered, so the feet don't slide. Over the clips
 // it leans into acceleration and banks into turns, and its cape and hood
 // follow through with second-order dynamics.
+//
+// It attacks with a diagonal cut (the Attack clip): standing, with its whole
+// body; on the move, with its upper body over its legs' stride. It steps
+// into the strike and turns to the stick as it starts, its blade leaves a
+// glowing smear through the swing, and pressing again late in the swing
+// cuts again.
 class Hero {
  public:
   // Load the model (needs the GL context); throws if it is missing.
@@ -79,24 +86,51 @@ class Hero {
   float size() const { return size_; }
   void update(const pxe::Scene& scene, float dt, const HeroInput& input);
   // Skin this frame's pose and hand the figure to the frame.
-  void pose(std::vector<const pxe::Mesh*>& actors, pxe::ActorMaterial (&materials)[pxe::kActorMaterials]);
+  void pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Mesh*>& effects,
+            pxe::ActorMaterial (&materials)[pxe::kActorMaterials]);
 
   glm::vec3 position() const { return {pos_.x, y_, pos_.y}; }
   float speed() const { return glm::length(vel_); }
+  bool attacking() const { return attackT_ >= 0.f; }
 
  private:
+  // The sword's glowing smear through a swing, into `effects`.
+  void smear(std::vector<const pxe::Mesh*>& effects);
+
   pxe::SkinnedModel model_;
   pxe::Mesh mesh_;
   pxe::SkinnedModel::Pose pose_, run_, idle_;
   std::vector<pxe::Vertex> verts_;
   bool built_ = false;
-  int idleClip_ = -1, walkClip_ = -1, runClip_ = -1;
+  int idleClip_ = -1, walkClip_ = -1, runClip_ = -1, attackClip_ = -1;
   int spine_ = -1, chest_ = -1, hips_ = -1, hood_ = -1, head_ = -1;
   struct Chain {
     int joints[3] = {-1, -1, -1};
     glm::vec3 out{0.f};  // the axis that swings it out from the body
   };
   std::vector<Chain> cape_;
+
+  // The attack: seconds into its clip (< 0 not attacking), and how much of
+  // each joint it takes over - the legs only while standing.
+  float attackT_ = -1.f;
+  bool lunged_ = false;
+  pxe::SkinnedModel::Pose attack_, last_, from_;
+  float fadeLeft_ = 0.f;  // seconds still easing out of from_ (a pose cut short)
+  std::vector<float> lower_;  // per joint: 1 legs and hips, 0.5 cape and flaps, 0 the rest
+  std::vector<float> mask_;
+  // The blade's smear: where its base and tip were each frame of the swing.
+  int sword_ = -1;
+  glm::vec3 bladeBase_{0.f}, bladeTip_{0.f}, grip_{0.f};  // at rest, in the model
+  struct Sample {
+    glm::vec3 grip, base, tip;
+    float age;
+  };
+  std::vector<Sample> trail_;
+  pxe::Mesh trailMesh_;
+  std::vector<pxe::Vertex> trailVerts_;
+  std::vector<std::uint32_t> trailIndices_;
+  int glow_ = -1;  // the model's glowing material
+  float dt_ = 0.f;  // the last update's step
 
   glm::vec2 pos_{0.f};
   float y_ = 0.f;

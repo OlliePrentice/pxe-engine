@@ -23,6 +23,20 @@ constexpr float kGravity = 30.f;
 constexpr float kFoot = 0.15f;   // half the footprint it stands on (m, at size 1)
 constexpr float kAhead = 0.2f;   // how far ahead it looks for walls
 
+// The attack clip, in seconds: the wind-up ends, the blade strikes, the
+// smear runs, and from when another press cuts again.
+constexpr float kWindup = 5.f / 30.f;
+constexpr float kSmearFrom = 4.5f / 30.f;
+constexpr float kSmearTo = 13.f / 30.f;
+constexpr float kChainFrom = 12.f / 30.f;
+constexpr float kAttackSlow = 0.3f;  // pace kept while cutting
+constexpr float kLunge = 2.4f;       // m/s of step into the strike, at size 1
+constexpr float kFadeIn = 0.06f;     // seconds to ease into the attack
+constexpr float kFadeOut = 0.2f;     // and back out of it at the end
+constexpr float kCut = 0.08f;        // easing out of a pose cut short
+constexpr float kSmearAge = 0.1f;    // seconds of the swing the smear shows
+constexpr int kSmearPoints = 40;     // points along it, at most
+
 float smooth01(float x) {
   x = std::clamp(x, 0.f, 1.f);
   return x * x * (3.f - 2.f * x);
@@ -35,6 +49,7 @@ void Hero::build() {
   idleClip_ = model_.clip("HH_Idle");
   walkClip_ = model_.clip("HH_Walk");
   runClip_ = model_.clip("HH_Run");
+  attackClip_ = model_.clip("HH_Attack");
   spine_ = model_.joint("spine");
   chest_ = model_.joint("chest");
   hips_ = model_.joint("hips");
@@ -54,7 +69,40 @@ void Hero::build() {
     chain.out = {std::cos(a), 0.f, std::sin(a)};
     cape_.push_back(chain);
   }
+  // How much of each joint the attack takes: all the upper body; the legs,
+  // hips and root only as much as it stands still; cape and flaps half.
+  lower_.assign(static_cast<std::size_t>(model_.jointCount()), 0.f);
+  for (const char* name : {"root", "hips", "thigh.L", "thigh.R", "shin.L", "shin.R", "foot.L", "foot.R", "toe.L", "toe.R"}) {
+    const int j = model_.joint(name);
+    if (j >= 0) lower_[static_cast<std::size_t>(j)] = 1.f;
+  }
+  for (const Chain& c : cape_)
+    for (int j : c.joints)
+      if (j >= 0) lower_[static_cast<std::size_t>(j)] = 0.5f;
+  for (const char* name : {"tabard.L.1", "tabard.L.2", "tabard.R.1", "tabard.R.2"}) {
+    const int j = model_.joint(name);
+    if (j >= 0) lower_[static_cast<std::size_t>(j)] = 0.5f;
+  }
+  mask_.assign(lower_.size(), 0.f);
+  // The blade at rest: its bone runs from the grip along it.
+  sword_ = model_.joint("sword");
+  if (sword_ >= 0) {
+    const glm::mat4 rest = model_.restJoint(sword_);
+    grip_ = glm::vec3(rest[3]);
+    const glm::vec3 along = glm::normalize(glm::vec3(rest[1]));
+    bladeBase_ = grip_ + along * 0.08f;
+    bladeTip_ = grip_ + along * 0.8f;
+  }
+  const auto& mats = model_.materials();
+  for (int i = 0; i < static_cast<int>(mats.size()); ++i)
+    if (mats[i].glow && glow_ < 0) glow_ = i;
+  trailVerts_.assign(kSmearPoints * 2, pxe::Vertex{});
+  for (int i = 0; i + 1 < kSmearPoints; ++i) {
+    const auto a = static_cast<std::uint32_t>(2 * i);
+    trailIndices_.insert(trailIndices_.end(), {a, a + 1, a + 3, a, a + 3, a + 2});
+  }
   model_.restPose(pose_);
+  last_ = pose_;
   model_.skin(pose_, glm::mat4{1.f}, verts_);
   mesh_.update(verts_, model_.indices());
   built_ = true;
@@ -67,7 +115,9 @@ void Hero::spawn(const pxe::Scene& scene, glm::vec2 xz, float yaw) {
   vel_ = glm::vec2{0.f};
   yaw_ = yaw;
   yawRate_ = 0.f;
-  phase_ = clock_ = runBlend_ = lastSpeed_ = fall_ = 0.f;
+  phase_ = clock_ = runBlend_ = lastSpeed_ = fall_ = fadeLeft_ = 0.f;
+  attackT_ = -1.f;
+  trail_.clear();
   turn_.reset(yaw);
   lagSpeed_.reset(0.f);
   lagYaw_.reset(yaw);
@@ -78,6 +128,28 @@ void Hero::spawn(const pxe::Scene& scene, glm::vec2 xz, float yaw) {
 void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
   if (!built_ || dt <= 0.f) return;
   clock_ += dt;
+  dt_ = dt;
+
+  // Attack: a press starts a cut, or another late in the last one. It turns
+  // to the stick as it starts.
+  const float attackLength = model_.clipDuration(attackClip_);
+  if (input.attack && attackClip_ >= 0 && (attackT_ < 0.f || attackT_ >= kChainFrom)) {
+    if (attackT_ >= 0.f) {
+      from_ = last_;  // cut short: ease out of where it was
+      fadeLeft_ = kCut;
+    }
+    attackT_ = 0.f;
+    lunged_ = false;
+    if (glm::length(input.move) > 0.1f) {
+      yaw_ = std::atan2(input.move.x, input.move.y);
+      yaw_ = turn_.value() + std::remainder(yaw_ - turn_.value(), 2.f * kPi);
+      turn_.reset(yaw_);
+    }
+  } else if (attackT_ >= 0.f) {
+    attackT_ += dt;
+    if (attackT_ >= attackLength) attackT_ = -1.f;
+  }
+  const bool cutting = attackT_ >= 0.f && attackT_ < kChainFrom;
   const float walkSpeed = kWalkCycle * size_ / std::max(model_.clipDuration(walkClip_), 1e-3f);
   const float runSpeed = kRunCycle * size_ / std::max(model_.clipDuration(runClip_), 1e-3f);
 
@@ -85,9 +157,14 @@ void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
   // over a few frames rather than jumping.
   const float tilt = std::min(glm::length(input.move), 1.f);
   const glm::vec2 dir = tilt > 1e-4f ? input.move / glm::length(input.move) : glm::vec2{0.f};
-  const glm::vec2 target = dir * tilt * (input.walk ? walkSpeed : runSpeed);
+  const glm::vec2 target = dir * tilt * (input.walk ? walkSpeed : runSpeed) * (cutting ? kAttackSlow : 1.f);
   const float rate = glm::length(target) > glm::length(vel_) ? kAccel : kStop;
   vel_ += (target - vel_) * (1.f - std::exp(-dt * rate));
+  // It steps into the strike.
+  if (attackT_ >= kWindup && !lunged_) {
+    vel_ += glm::vec2{std::sin(yaw_), std::cos(yaw_)} * kLunge * size_;
+    lunged_ = true;
+  }
 
   // One axis at a time, so it slides along a wall met at an angle. It steps
   // up anything within a knee of its feet and treats a bigger rise, deep
@@ -137,7 +214,7 @@ void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
 
   // Facing turns smoothly toward the way it moves.
   const float prevYaw = yaw_;
-  if (glm::length(vel_) > 0.05f * size_) {
+  if (glm::length(vel_) > 0.05f * size_ && !cutting) {
     float want = std::atan2(vel_.x, vel_.y);
     want = turn_.value() + std::remainder(want - turn_.value(), 2.f * kPi);
     yaw_ = turn_.update(dt, want);
@@ -161,7 +238,8 @@ void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
   hoodLag_.update(dt, speed / size_);
 }
 
-void Hero::pose(std::vector<const pxe::Mesh*>& actors, pxe::ActorMaterial (&materials)[pxe::kActorMaterials]) {
+void Hero::pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Mesh*>& effects,
+                pxe::ActorMaterial (&materials)[pxe::kActorMaterials]) {
   if (!built_) return;
   const float speed = glm::length(vel_);
   const float walkSpeed = kWalkCycle * size_ / std::max(model_.clipDuration(walkClip_), 1e-3f);
@@ -178,6 +256,22 @@ void Hero::pose(std::vector<const pxe::Mesh*>& actors, pxe::ActorMaterial (&mate
     model_.sample(idleClip_, clock_, idle_);
     pxe::SkinnedModel::blend(idle_, pose_, moving, pose_);
   }
+
+  // The attack over it all: the whole body standing, the upper body moving.
+  if (attackT_ >= 0.f) {
+    const float length = model_.clipDuration(attackClip_);
+    const float w = smooth01(attackT_ / kFadeIn) * smooth01((length - attackT_) / kFadeOut);
+    const float legs = w * (1.f - 0.9f * moving);
+    for (std::size_t j = 0; j < mask_.size(); ++j) mask_[j] = lower_[j] >= 1.f ? legs : lower_[j] > 0.f ? 0.5f * w : w;
+    model_.sample(attackClip_, attackT_, attack_, false);
+    pxe::SkinnedModel::blend(pose_, attack_, mask_, pose_);
+  }
+  // A pose cut short eases into the new one.
+  if (fadeLeft_ > 0.f) {
+    pxe::SkinnedModel::blend(from_, pose_, 1.f - smooth01(fadeLeft_ / kCut), pose_);
+    fadeLeft_ = std::max(0.f, fadeLeft_ - dt_);
+  }
+  last_ = pose_;
 
   // Over the clips: lean into speeding up (and back pulling up), bank into turns.
   const glm::vec3 X{1.f, 0.f, 0.f}, Z{0.f, 0.f, 1.f};
@@ -209,8 +303,55 @@ void Hero::pose(std::vector<const pxe::Mesh*>& actors, pxe::ActorMaterial (&mate
   model_.skin(pose_, world, verts_);
   mesh_.update(verts_, model_.indices());
   actors.push_back(&mesh_);
+  smear(effects);
   const auto& mats = model_.materials();
   for (int i = 0; i < pxe::kActorMaterials && i < static_cast<int>(mats.size()); ++i) materials[i] = mats[i];
+}
+
+void Hero::smear(std::vector<const pxe::Mesh*>& effects) {
+  // Through the swing, the blade's base and tip each frame; older ones age out.
+  for (Sample& s : trail_) s.age += dt_;
+  trail_.erase(std::remove_if(trail_.begin(), trail_.end(), [](const Sample& s) { return s.age > kSmearAge; }),
+               trail_.end());
+  if (sword_ < 0 || glow_ < 0) return;
+  if (attackT_ >= kSmearFrom && attackT_ <= kSmearTo)
+    trail_.push_back({model_.jointPoint(sword_, grip_), model_.jointPoint(sword_, bladeBase_),
+                      model_.jointPoint(sword_, bladeTip_), 0.f});
+  if (trail_.size() < 2) return;
+
+  // A fan between the blade's places, each gap filled with in-between
+  // blades swung round the grip (t3ssel8r's smear), narrowing to the tip as
+  // it ages, so it trails off in a crescent. Two points a sample: the
+  // smear's inner and outer edge.
+  const float surface = static_cast<float>(pxe::kActorSurface + glow_);
+  std::vector<glm::vec3> inner, outer;
+  for (std::size_t i = 0; i + 1 < trail_.size(); ++i) {
+    const Sample& a = trail_[i];
+    const Sample& b = trail_[i + 1];
+    const int steps = 4;
+    for (int k = 0; k < steps || (i + 2 == trail_.size() && k == steps); ++k) {
+      const float f = static_cast<float>(k) / steps;
+      const glm::vec3 grip = glm::mix(a.grip, b.grip, f);
+      const glm::vec3 da = a.tip - a.grip, db = b.tip - b.grip;
+      const float len = glm::mix(glm::length(da), glm::length(db), f);
+      const glm::vec3 dir = glm::normalize(glm::mix(glm::normalize(da), glm::normalize(db), f));
+      const float baseLen = glm::mix(glm::length(a.base - a.grip), glm::length(b.base - b.grip), f);
+      const float age = glm::mix(a.age, b.age, f) / kSmearAge;  // 0 now .. 1 gone
+      const float from = glm::mix(baseLen, len, 0.25f + 0.7f * age);
+      inner.push_back(grip + dir * from);
+      outer.push_back(grip + dir * len);
+    }
+  }
+  const int n = std::min(static_cast<int>(inner.size()), kSmearPoints);
+  const int skip = static_cast<int>(inner.size()) - n;
+  for (int i = 0; i < kSmearPoints; ++i) {
+    const int k = skip + std::min(i, n - 1);  // unused points fold onto the newest
+    const glm::vec3 p = inner[static_cast<std::size_t>(k)], q = outer[static_cast<std::size_t>(k)];
+    trailVerts_[static_cast<std::size_t>(2 * i)] = {p.x, p.y, p.z, 0.f, 1.f, 0.f, surface};
+    trailVerts_[static_cast<std::size_t>(2 * i + 1)] = {q.x, q.y, q.z, 0.f, 1.f, 0.f, surface};
+  }
+  trailMesh_.update(trailVerts_, trailIndices_);
+  effects.push_back(&trailMesh_);
 }
 
 }  // namespace game
