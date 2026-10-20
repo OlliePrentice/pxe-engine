@@ -36,6 +36,10 @@ class Mesh {
   Mesh& operator=(const Mesh&) = delete;
 
   void upload(const std::vector<Vertex>& vertices, const std::vector<std::uint32_t>& indices);
+  // For a mesh redrawn every frame (a posed character): the first upload
+  // makes the buffers, later ones rewrite the vertices in place. The vertex
+  // count and indices must not change.
+  void update(const std::vector<Vertex>& vertices, const std::vector<std::uint32_t>& indices);
   void draw() const;
   bool empty() const { return indexCount_ == 0; }
 

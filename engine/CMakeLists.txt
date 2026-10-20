@@ -5,6 +5,7 @@ add_library(pxe_engine
   src/camera.cpp
   src/renderer.cpp
   src/gltf.cpp
+  src/skinned.cpp
   src/lighting.cpp
   src/fire.cpp
   src/firegrid.cpp

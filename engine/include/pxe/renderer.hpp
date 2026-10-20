@@ -6,6 +6,7 @@
 #include "pxe/firegrid.hpp"
 #include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
+#include "pxe/skinned.hpp"
 
 #include <cstdint>
 #include <unordered_map>
@@ -80,6 +81,12 @@ struct FrameParams {
   float grassFireLife = 0.f;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
+  // Characters posed this frame, already in world space (SkinnedModel::skin),
+  // their vertices' surfaces kActorSurface + an index into actorMaterials.
+  // They draw, cast shadows and reflect like the scene's meshes; the
+  // scene's own shadows stay cached, with the characters' laid over them.
+  std::vector<const Mesh*> actors;
+  ActorMaterial actorMaterials[kActorMaterials];
 };
 
 // GPU milliseconds per pass for the last frame, when profiling is on.
@@ -132,7 +139,8 @@ class Renderer {
   int uploadPointLights(const CameraFrame& camera);
   void drawPresent(const CameraFrame& camera, const FrameParams& params);
   // Draw the scene's meshes (and sprites, if shown) with the given mirror.
-  void drawMeshes(const Scene& scene, const glm::mat4& viewProj, const glm::mat4& mirror, float clipBelow);
+  void drawMeshes(const Scene& scene, const std::vector<const Mesh*>& actors, const glm::mat4& viewProj,
+                  const glm::mat4& mirror, float clipBelow);
   void drawSprites(const Scene& scene, const CameraFrame& camera, const FrameParams& params,
                    const glm::mat4& viewProj, const glm::mat4& mirror, float spriteFlip, float clipBelow);
   unsigned makeColor(int w, int h);
@@ -140,6 +148,12 @@ class Renderer {
 
   unsigned fbo_ = 0;
   unsigned fboShadow_ = 0;
+  // The scene's own sun shadows, kept while nothing but characters moves;
+  // copied into shadow_ each frame a character is about, and drawn over.
+  unsigned shadowStatic_ = 0;
+  unsigned fboShadowStatic_ = 0;
+  bool shadowHadActors_ = false;
+  bool shadowStaticValid_ = false;  // shadowStatic_ holds the scene's map as it stands
   unsigned color_ = 0;
   unsigned normals_ = 0;  // normal + surface, for the edge pass
   unsigned final_ = 0;    // colour after the edge pass

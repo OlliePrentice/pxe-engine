@@ -1,5 +1,6 @@
 #include "audio.hpp"
 #include "fireball.hpp"
+#include "hero.hpp"
 #include "scene.hpp"
 #include "settings.hpp"
 
@@ -98,6 +99,14 @@ struct Options {
   float minDist = 0.34f;
   bool haveTarget = false;
   glm::vec3 target{0.f};
+  // The hooded hero: on when playing, off for captures unless asked for.
+  // -1 default, 0 --no-hero, 1 --hero.
+  int hero = -1;
+  float heroSize = 1.6f;
+  // Captures: move the hero first, toward compass bearing x for y seconds
+  // (walking if z is 1), with the view following.
+  bool haveHeroMove = false;
+  glm::vec3 heroMove{0.f};
 };
 
 void printUsage() {
@@ -138,6 +147,9 @@ void printUsage() {
                "  --yaw degrees            default from the scene\n"
                "  --slide metres           move the focus along horizontal forward\n"
                "  --target x,y,z\n"
+               "  --hero / --no-hero       the hooded hero (on when playing: WASD moves it, Shift walks)\n"
+               "  --hero-size S            the hero against a real person (default 1.6)\n"
+               "  --hero-move DEG,SECS[,WALK]  captures: run (WALK 1: walk) the hero toward compass DEG first\n"
                "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
@@ -190,6 +202,18 @@ Options parseArgs(int argc, char** argv) {
         std::exit(1);
       }
       opt.haveTarget = true;
+    } else if (a == "--hero") {
+      opt.hero = 1;
+    } else if (a == "--no-hero") {
+      opt.hero = 0;
+    } else if (a == "--hero-size") {
+      opt.heroSize = static_cast<float>(std::atof(need("--hero-size")));
+    } else if (a == "--hero-move") {
+      if (std::sscanf(need("--hero-move"), "%f,%f,%f", &opt.heroMove.x, &opt.heroMove.y, &opt.heroMove.z) < 2) {
+        std::fprintf(stderr, "bad --hero-move, expected DEG,SECS[,WALK]\n");
+        std::exit(1);
+      }
+      opt.haveHeroMove = true;
     } else if (a == "--hide-grass") {
       opt.hideGrass = true;
     } else if (a == "--magenta") {
@@ -309,6 +333,8 @@ bool writePng(const std::string& path, int w, int h, const std::vector<std::uint
 struct Input {
   float panX = 0.f;
   float panY = 0.f;
+  glm::vec2 move{0.f};  // WASD unscaled: x screen right, y screen up, for the hero
+  bool walk = false;    // Shift held
   int rotate = 0;
   bool toggleGrass = false;
   bool toggleMagenta = false;
@@ -345,7 +371,9 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken) {
   if (down(GLFW_KEY_D) || down(GLFW_KEY_RIGHT)) in.panX += 1.f;
   if (down(GLFW_KEY_W) || down(GLFW_KEY_UP)) in.panY += 1.f;
   if (down(GLFW_KEY_S) || down(GLFW_KEY_DOWN)) in.panY -= 1.f;
-  const float speed = (down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT)) ? 14.f : 6.f;
+  in.move = {in.panX, in.panY};
+  in.walk = down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT);
+  const float speed = in.walk ? 14.f : 6.f;
   in.panX *= speed;
   in.panY *= speed;
 
@@ -834,9 +862,29 @@ int main(int argc, char** argv) {
         }
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
+        game::Hero hero;
+        if (opt.hero == 1 || opt.haveHeroMove) {
+          // Stands at the view's focus facing the camera, then runs or walks
+          // the way asked, the view following.
+          hero.build();
+          hero.setSize(opt.heroSize);
+          const pxe::CameraFrame start = camera.frame(renderer.rtW(), renderer.rtH());
+          hero.spawn(scene, {camera.target().x, camera.target().z}, std::atan2(-start.forward.x, -start.forward.z));
+          const int frames = opt.haveHeroMove ? static_cast<int>(std::lround(opt.heroMove.y * 60.f)) : 0;
+          for (int f = 0; f < frames; ++f) {
+            game::HeroInput in;
+            in.move = compass(opt.heroMove.x);
+            in.walk = opt.heroMove.z > 0.5f;
+            hero.update(scene, 1.f / 60.f, in);
+          }
+          if (frames > 0) std::fprintf(stderr, "pxe: hero at %.2f %.2f %.2f, %.2f m/s\n", hero.position().x,
+                                       hero.position().y, hero.position().z, hero.speed());
+          camera.setTarget(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
+        }
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
+        hero.pose(params.actors, params.actorMaterials);
         if (opt.settle > 0.f) {
           params.time = opt.time + std::ceil(opt.settle * 60.f) / 60.f;
           scriptFireball(opt, ball, clock, scene, static_cast<int>(std::ceil(opt.settle * 60.f)), 1.f / 60.f,
@@ -913,6 +961,19 @@ int main(int argc, char** argv) {
         // --ui-shot: the frame to save; with --brush, once the strokes are done.
         const int uiFrames = opt.brushes.empty() ? 8 : static_cast<int>(std::ceil((brushesEnd(opt) + 1.f) * 60.f));
         pxe::CameraFrame lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
+        // The hero stands at the view's focus facing the camera; WASD moves
+        // it (Shift walks) and the view follows it.
+        game::Hero hero;
+        if (opt.hero != 0) {
+          try {
+            hero.build();
+            hero.setSize(opt.heroSize);
+            hero.spawn(scene, {camera.target().x, camera.target().z},
+                       std::atan2(-lastFrame.forward.x, -lastFrame.forward.z));
+          } catch (const std::exception& ex) {
+            std::fprintf(stderr, "pxe: no hero: %s\n", ex.what());
+          }
+        }
         if (opt.haveFireball) {
           ball.launch(clock, scene, {opt.fireball.x, opt.fireball.y}, compass(opt.fireball.z));
           following = true;
@@ -960,9 +1021,19 @@ int main(int argc, char** argv) {
               following = true;
             }
             if (input.follow) following = !following;
-            if (input.panX != 0.f || input.panY != 0.f) following = false;
+            if (!hero.built() && (input.panX != 0.f || input.panY != 0.f)) following = false;
             ball.update(clock, scene, dt, right * input.steer.x + up * input.steer.y, ignite);
             if (ball.alive() && following) camera.follow(ball.position());
+            if (hero.built()) {
+              game::HeroInput in;
+              in.move = right * input.move.x + up * input.move.y;
+              if (glm::length(in.move) > 1.f) in.move = glm::normalize(in.move);
+              in.walk = input.walk;
+              hero.update(scene, dt, in);
+              if (glm::length(in.move) > 0.f) following = false;
+              if (!(ball.alive() && following)) camera.follow(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
+              input.panX = input.panY = 0.f;
+            }
           }
           if (input.toggleGrass) view.grass = !view.grass;
           if (input.toggleMagenta) magenta = !magenta;
@@ -1057,6 +1128,7 @@ int main(int argc, char** argv) {
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
           params.lighting = lightingFor(scene, clock);
+          hero.pose(params.actors, params.actorMaterials);
           const pxe::CameraFrame frame = draw(params);
           lastFrame = frame;
           // Weather sound follows the settings; each new flash queues its
@@ -1083,7 +1155,7 @@ int main(int argc, char** argv) {
           char title[200];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD pan   Q/E yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD move (Shift walk)   Q/E yaw   G grass fire   1/2/3 fire, water, regrow brush   F fireball, IJKL roll   F4 capture",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
           (void)frame;
