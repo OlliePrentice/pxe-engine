@@ -34,6 +34,8 @@ A fire does not burn for ever: each burning cell carries how much longer its fir
 
 A fireball, like the one t3ssel8r rolls through his grass, spreads the fire wherever you take it. F sets one rolling from the middle of the view, away up the screen; I, J, K and L push it up, left, down and right on screen, and the view follows it (C toggles that; panning stops it). It rolls over the ground and down slopes of its own accord, slides along and bounces off anything standing more than a step high, and sets the grass alight along its track. It is a small fire whose base moves with it, so its flames trail behind and its light moves smoothly with it. Rain puts it out in about two seconds, and rolling into the pond at once; it rolls to a stop, smokes and is gone. `--fireball X,Z,DEG[,TURN]` rolls one for captures and the bench, from X,Z pushed toward compass bearing DEG and turning TURN degrees a second (`-6,-1,90,-50` loops round the campfire).
 
+Two characters, each built, rigged and animated by a Blender script and skinned on the CPU, so they cast shadows, take outlines and reflect in the pond like the scene. The hooded hero (`--hero` / `--no-hero`: on when playing, off in captures) is moved with WASD or the left stick and swings its sword with X. A red fox lies curled asleep on the lawn on the pond side of the ruins' campfire, a little under two metres from it and a little behind it in the default view, its face to the fire and its curl tilted to lie along the slope, breathing slowly through its looping clip, `Fox_Rest`, with a flick of an ear and a stir of the tail tip now and then. Every 20 to 40 seconds (a random rest, rounded up to the end of a breath; the first at least 20 seconds after the game starts) it wakes: it stands up, turning a quarter-turn left as it rises so it stands side-on to the fire and faces the default view's camera, looks around with its ears up (away from the fire, then toward it, then a sniff at the ground), lies back down into its curl, and sleeps again, forever. That is four clips strung together (`Fox_StandUp`, `Fox_LookAround`, `Fox_LieDown`, back to `Fox_Rest`), each join crossfaded briefly; the rests come from a fixed seed, so every run wakes at the same moments. It runs on a timer alone: it never notices the hero, the fire or the weather, never leaves its spot, takes no input and nothing collides with it, though its rig is a full quadruped's, ready for walk and run clips. It is drawn at 2.4 times real size (half as big again as the hero's 1.6, so it reads at pixel scale), and the grass rooted under its curl is cleared when it is shown, so the blades don't draw over it; runs without the fox keep every blade. It is there whenever you play the ruins; `--no-fox` leaves it out, captures leave it out unless given `--fox` (so existing comparison captures do not change), and it is never in the hills. In captures it is always asleep, at `--time`'s point in its breath, unless given `--fox-wake SECS`, which shows it SECS seconds into its wake sequence (0 is the first frame of standing up, 1.5 standing, 5.5 starting to lie down, 7.5 curled again) and implies `--fox` (`--no-fox` still wins); given when playing, the fox starts that far into waking, so you can watch it without waiting. The characters share one table of sixteen colours a frame: the hero takes slots 0 to 7 (its sword's white-hot smear the last of them) and the fox from 8 up, so neither's colours touch the other's.
+
 No lightning or god rays.
 
 ## The Blender scene
@@ -49,6 +51,12 @@ Material names are the contract with the engine. Rebuild the asset after editing
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/build_ruins.py
+```
+
+The characters are built the same way: [`tools/blender/build_hooded_hero.py`](tools/blender/build_hooded_hero.py) writes `assets/characters/hooded_hero.glb`, and [`tools/blender/build_fox.py`](tools/blender/build_fox.py) writes `assets/characters/fox.glb` (one skinned mesh, a quadruped skeleton and the `Fox_Rest`, `Fox_StandUp`, `Fox_LookAround` and `Fox_LieDown` clips; its glTF material order is its colour slots' order):
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_fox.py
 ```
 
 ## Build
@@ -106,6 +114,7 @@ xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 ```text
 pxe [--capture out.png] [--window-png out.png]
     [--scene ruins|hills] [--hour H] [--clouds C] [--rain R] [--no-fire] [--fire-level L,S] [--no-rays] [--fireflies] [--no-lightning] [--flash AZ,EL[,LEVEL]] [--mute] [--audio-wav out.wav] [--wind DEG] [--wind-strength S]
+    [--hero] [--no-hero] [--fox] [--no-fox] [--fox-wake SECS]
     [--shelter-test] [--extra-fires N] [--candles] [--grass-fire X,Z] [--fireball X,Z,DEG[,TURN]] [--settle S] [--rain-from S]
     [--menu] [--ui-shot out.png]
     [--bench N] [--bench-paused]

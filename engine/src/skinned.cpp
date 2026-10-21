@@ -10,6 +10,7 @@
 #include <cmath>
 #include <filesystem>
 #include <stdexcept>
+#include <string>
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -40,7 +41,9 @@ glm::mat4 trs(glm::vec3 t, glm::quat r, glm::vec3 s) {
 
 }  // namespace
 
-SkinnedModel SkinnedModel::load(const std::string& path) {
+SkinnedModel SkinnedModel::load(const std::string& path, int firstMaterial) {
+  if (firstMaterial < 0 || firstMaterial >= kActorMaterials)
+    throw std::invalid_argument("first actor material out of range: " + std::to_string(firstMaterial));
   if (!std::filesystem::exists(path)) throw std::runtime_error("model not found: " + path);
   cgltf_options options{};
   cgltf_data* data = nullptr;
@@ -60,6 +63,8 @@ SkinnedModel SkinnedModel::load(const std::string& path) {
   const cgltf_skin& skin = *meshNode->skin;
 
   SkinnedModel m;
+  m.firstMaterial_ = firstMaterial;
+  const int slots = kActorMaterials - firstMaterial;  // the table's slots from firstMaterial on
   // Joints, parents first: sort the skin's joints by depth, and keep a map
   // from the skin's order (which the vertices use) to ours.
   auto depth = [](const cgltf_node* n) {
@@ -106,7 +111,7 @@ SkinnedModel SkinnedModel::load(const std::string& path) {
   }
 
   // Materials: base colour to display values; anything emissive glows.
-  for (cgltf_size i = 0; i < data->materials_count && i < kActorMaterials; ++i) {
+  for (cgltf_size i = 0; i < data->materials_count && i < static_cast<cgltf_size>(slots); ++i) {
     const cgltf_material& mat = data->materials[i];
     ActorMaterial a;
     const float* c = mat.has_pbr_metallic_roughness ? mat.pbr_metallic_roughness.base_color_factor : nullptr;
@@ -130,7 +135,7 @@ SkinnedModel SkinnedModel::load(const std::string& path) {
       SkinVertex v{};
       cgltf_accessor_read_float(pos, i, glm::value_ptr(v.pos), 3);
       cgltf_accessor_read_float(nrm, i, glm::value_ptr(v.normal), 3);
-      v.surface = static_cast<float>(kActorSurface + std::min(material, kActorMaterials - 1));
+      v.surface = static_cast<float>(kActorSurface + firstMaterial + std::min(material, slots - 1));
       cgltf_uint ji[4] = {};
       cgltf_accessor_read_uint(jts, i, ji, 4);
       cgltf_accessor_read_float(wts, i, v.weights, 4);

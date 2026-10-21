@@ -12,15 +12,17 @@ uniform int uShowNdl;
 layout(location = 0) out vec4 oColor;
 layout(location = 1) out vec4 oNormal;
 
-// Characters: surface kActorSurface + a material, whose base colour comes
-// from uActorColour. They take the scene's light through its stone ramp -
-// uActorTint is the stone's shadow, mid and lit colours now over its mid
-// colour by day - so they darken and cool with the evening as the ruins do.
+// Characters: surface kActorSurface + an actor-material slot, whose base
+// colour comes from uActorColour. They take the scene's light through its
+// stone ramp - uActorTint is the stone's shadow, mid and lit colours now over
+// its mid colour by day - so they darken and cool with the evening as the
+// ruins do.
 // Their bands sit lower than the ground's, since most of a figure faces
 // sideways. Glowing materials (eyes, the blade) ignore the light.
 const int kActorSurface = 16;
-uniform vec3 uActorColour[8];
-uniform int uActorGlow[8];
+const int kActorMaterials = 16;  // pxe::kActorMaterials
+uniform vec3 uActorColour[kActorMaterials];
+uniform int uActorGlow[kActorMaterials];
 uniform vec3 uActorTint[3];
 uniform vec3 uActorFire;  // a base colour's tint in full firelight
 
@@ -66,7 +68,7 @@ void main() {
     if (vSurface >= kActorSurface) {
         // Outlined and rimmed in the edge pass as stone is.
         oNormal = vec4(n * 0.5 + 0.5, float(kSurfStone + 1) / 8.0);
-        oColor = vec4(actorColour(clamp(vSurface - kActorSurface, 0, 7), n), 1.0);
+        oColor = vec4(actorColour(clamp(vSurface - kActorSurface, 0, kActorMaterials - 1), n), 1.0);
         return;
     }
     oNormal = vec4(n * 0.5 + 0.5, float(vSurface + 1) / 8.0);

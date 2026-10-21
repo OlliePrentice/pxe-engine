@@ -13,10 +13,12 @@
 namespace pxe {
 
 // Characters are drawn as a surface of their own: every vertex's surface is
-// kActorSurface + its material's index in the model, and FrameParams::actorMaterials
-// gives each index its base colour and whether it glows.
+// kActorSurface + an actor-material slot, and FrameParams::actorMaterials
+// gives each slot its base colour and whether it glows. The characters share
+// the table each frame, each in slots of its own: a model's materials take
+// the slots from the first it was loaded with (SkinnedModel::load).
 constexpr int kActorSurface = 16;
-constexpr int kActorMaterials = 8;
+constexpr int kActorMaterials = 16;
 
 struct ActorMaterial {
   glm::vec3 colour{0.f};  // base colour, display (sRGB) values
@@ -39,13 +41,19 @@ class SkinnedModel {
   };
 
   // Throws std::runtime_error on a missing file or one with no skinned mesh.
-  static SkinnedModel load(const std::string& path);
+  // The model's material i takes actor-material slot firstMaterial + i
+  // (0 <= firstMaterial < kActorMaterials; materials past the table's end
+  // share its last slot).
+  static SkinnedModel load(const std::string& path, int firstMaterial = 0);
 
   int jointCount() const { return static_cast<int>(joints_.size()); }
   int joint(const std::string& name) const;  // -1 when absent
   int clip(const std::string& name) const;   // -1 when absent
   float clipDuration(int clip) const;
+  // The model's materials, in glTF order; materials()[i] belongs in actor
+  // slot firstMaterial() + i.
   const std::vector<ActorMaterial>& materials() const { return materials_; }
+  int firstMaterial() const { return firstMaterial_; }
 
   void restPose(Pose& pose) const;
   // One clip at `time` seconds over the rest pose: wrapped round its length
@@ -60,7 +68,7 @@ class SkinnedModel {
   // rest (y up, facing +z), after its animation; its children follow.
   void turn(Pose& pose, int joint, glm::vec3 axis, float angle) const;
   // Skin a pose placed by `model` into world-space vertices (same count and
-  // order every call), surfaces kActorSurface + material.
+  // order every call), surfaces kActorSurface + firstMaterial() + material.
   void skin(const Pose& pose, const glm::mat4& model, std::vector<Vertex>& out) const;
   const std::vector<std::uint32_t>& indices() const { return indices_; }
   // A joint's place and axes at rest, in the model (y up, facing +z).
@@ -104,6 +112,7 @@ class SkinnedModel {
   std::vector<SkinVertex> vertices_;
   std::vector<std::uint32_t> indices_;
   std::vector<ActorMaterial> materials_;
+  int firstMaterial_ = 0;
   glm::mat4 base_{1.f};  // world transform of the skeleton's parent node
   mutable std::vector<glm::mat4> world_, skinMats_;
 };

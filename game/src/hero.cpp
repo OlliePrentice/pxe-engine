@@ -53,6 +53,10 @@ constexpr float kCut = 0.06f;         // easing out of a pose cut short
 constexpr float kSmearAge = 0.09f;
 constexpr int kSmearPoints = 48;
 constexpr int kShards = 96;
+// The hero's actor-material slots are 0-7 (other characters take theirs from
+// 8 up): its model's materials from 0, and the smear's white-hot core in the
+// last of them.
+constexpr int kCoreSlot = 7;
 
 float smooth01(float x) {
   x = std::clamp(x, 0.f, 1.f);
@@ -433,9 +437,9 @@ void Hero::pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Me
   mesh_.update(verts_, model_.indices());
   actors.push_back(&mesh_);
   const auto& mats = model_.materials();
-  for (int i = 0; i < pxe::kActorMaterials && i < static_cast<int>(mats.size()); ++i) materials[i] = mats[i];
-  // The smear's white-hot core, in the last slot.
-  materials[pxe::kActorMaterials - 1] = {glm::vec3{0.93f, 1.f, 1.f}, true};
+  for (int i = 0; i < kCoreSlot && i < static_cast<int>(mats.size()); ++i) materials[i] = mats[i];
+  // The smear's white-hot core, in the last of the hero's slots.
+  materials[kCoreSlot] = {glm::vec3{0.93f, 1.f, 1.f}, true};
   this->effects(effects);
 }
 
@@ -450,7 +454,7 @@ void Hero::spark(glm::vec3 at, float spread, float size, float life, bool white)
 void Hero::effects(std::vector<const pxe::Mesh*>& out) {
   if (sword_ < 0 || glow_ < 0) return;
   const float dt = dt_;
-  const float coreSurface = static_cast<float>(pxe::kActorSurface + pxe::kActorMaterials - 1);
+  const float coreSurface = static_cast<float>(pxe::kActorSurface + kCoreSlot);
   const float cyanSurface = static_cast<float>(pxe::kActorSurface + glow_);
 
   // Where the blade is through a sweep (a cut from just before its wind-up
