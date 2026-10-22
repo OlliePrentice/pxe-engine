@@ -668,7 +668,7 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   // The campfire sits on open lawn left of the pond.
   const GroundIndex ground(std::move(lawn), 1.f);
   std::mt19937 fireRng(11);
-  const glm::vec2 campfire{-5.f, -6.f};
+  const glm::vec2 campfire = kRuinsCampfire;
   scene.fires.push_back({addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng)});
   if (options.shelterTest) {
     // A second fire under a stone shelter, and a third under a tree crown
@@ -849,6 +849,16 @@ pxe::Scene buildRuins(const BuildOptions& options) {
       if (glm::length(glm::vec2{g.px, g.pz} - glm::vec2{f.base.x, f.base.z}) < (f.size < 1.f ? 0.3f : 1.05f)) return true;
     return false;
   });
+  // Nor under the sleeping fox, when it is shown: blades rooted under it
+  // drew over its curl and broke up its outline. Dropped after scattering,
+  // so the rest of the lawn is exactly as without it.
+  if (options.foxRadius > 0.f) {
+    const std::size_t before = scene.grass.size();
+    std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
+      return glm::length(glm::vec2{g.px, g.pz} - options.foxSpot) < options.foxRadius;
+    });
+    std::fprintf(stderr, "pxe: %zu grass sprites under the fox dropped\n", before - scene.grass.size());
+  }
 
   // Leaves grow in clumps, as in the video: clump centres are scattered over
   // every crown, and leaves gather around them with gaps between where the
