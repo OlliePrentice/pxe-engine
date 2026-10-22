@@ -81,6 +81,10 @@ struct HeroInput {
 // full ring, and lunges.
 class Hero {
  public:
+  // The highest step it climbs or drops (m): the ruins' stairs are up to
+  // half a metre. The fox's walks keep to ground it could climb too.
+  static constexpr float kStep = 0.55f;
+
   // Load the model (needs the GL context); throws if it is missing.
   void build();
   bool built() const { return built_; }

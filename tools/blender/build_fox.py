@@ -6,7 +6,9 @@ Run headless (builds everything and exports):
     PXE_FOX_PREVIEW=/some/dir ... also renders preview images there (see
     render_previews), fox.png among them.
 The build checks the fox holds together (see check) in the bind pose and
-through all four clips, and that every clip moves smoothly between its keys
+through all five clips, that the walk's planted paws move back at the
+walk's speed without slipping and its legs bend the standing way (see
+check_walk), and that every clip moves smoothly between its keys
 as the engine plays it - no joint turning more than 45 degrees from one key
 to the next, nothing more than 1 cm below the ground at half-keys (see
 check_motion) - and stops if not.
@@ -32,7 +34,7 @@ The rig, a full quadruped skeleton:
     hips > tail.1 > tail.2 > tail.3 > tail.4 > tail.5
 The fox faces -y; its left is +x.
 
-Four clips. Fox_Rest (4 s, loops seamlessly): curled up asleep in a tight
+Five clips. Fox_Rest (4 s, loops seamlessly): curled up asleep in a tight
 ball on its right side, legs folded in, the head on the ground with its nose
 at the root of the brush, and the brush wrapped round the outside, across
 the face; breathing slowly, with a flick of the ear and a stir of the tail
@@ -49,6 +51,9 @@ StandUp -> LookAround -> LieDown -> Rest (see "Waking" below):
         last pose; the paws and body don't move.
     Fox_LieDown (2 s): hind end down, then the front, onto its belly, then it
         rolls and curls back into exactly Fox_Rest's first pose.
+One more loops: Fox_Walk (1.2 s), an unhurried four-beat walk in place,
+turned as standing; see "Walking" below.
+
 Standing paws are planted (Builder.plant): they don't slide or lift, and
 the legs bend as they do standing (elbows behind the forepaws, knees in front
 of the hind paws) all the while.
@@ -204,6 +209,7 @@ class Builder:
         self.obj = None
         self.rig = None
         self.coll = None
+        self.walk_contact = None  # each paw's contact point in its bone's rest frame (walk_clip)
 
     # ---- scene plumbing ---------------------------------------------------
 
@@ -901,9 +907,10 @@ class Builder:
         return made
 
     def animate_once(self):
-        """The one-shot clips (once_clips), keyed on every frame from 0 to
-        their length inclusive, linear between keys, not cyclic, so the
-        export samples exactly the designed poses and nothing past the end.
+        """The one-shot clips and Fox_Walk (once_clips), keyed on every frame
+        from 0 to their length inclusive, linear between keys, so the
+        export samples exactly the designed poses and nothing past the end
+        (Fox_Walk's last key is its first, so it loops).
         Quaternion signs carry on from Fox_Rest's first key through the
         clips in order, so each key takes the short way from the last."""
         rig = self.rig
@@ -911,7 +918,7 @@ class Builder:
         self.set_pose(rest_at(0.0))
         bpy.context.view_layer.update()
         prev = {pb.name: pb.rotation_quaternion.copy() for pb in rig.pose.bones}
-        for name, pose_at, frames in once_clips(self):
+        for name, pose_at, frames, cyclic in once_clips(self):
             act = bpy.data.actions.new(PREFIX + name)
             act.use_fake_user = True
             rig.animation_data.action = act
@@ -931,7 +938,7 @@ class Builder:
                 fc.update()
             act.use_frame_range = True
             act.frame_start, act.frame_end = 0, frames
-            act.use_cyclic = False
+            act.use_cyclic = cyclic
             made[name] = act
             rig.animation_data.action = None
         return made
@@ -991,13 +998,14 @@ def parts_of(mesh):
 
 def check_frames():
     """The frames check() samples in each clip: every 6th through the loop
-    and the look, every 3rd through standing up and lying down, both ends
-    always."""
+    and the look, every 3rd through standing up and lying down, every frame
+    of the walk, both ends always."""
     return {
         "Rest": list(range(0, REST_FRAMES + 1, 6)),
         "StandUp": list(range(0, STAND_FRAMES + 1, 3)),
         "LookAround": list(range(0, LOOK_FRAMES + 1, 6)),
         "LieDown": list(range(0, DOWN_FRAMES + 1, 3)),
+        "Walk": list(range(0, WALK_FRAMES + 1)),
     }
 
 
@@ -1120,6 +1128,138 @@ def check_motion(b, clip):
             problems.append(f"{clip} key {first + k + 0.5}: {-low * 1000:.0f} mm below the ground")
     rig.animation_data.action = act
     return problems, (math.degrees(worst_turn[0]), worst_turn[1], worst_turn[2]), worst_low
+
+
+WALK_SPEED_TOL = 0.03  # how far a stance paw's speed may stray from WALK_SPEED (fraction)
+WALK_SLIP = 0.001  # how far a planted paw may stray from a point fixed on the ground (m)
+WALK_TRACK_TOL = 0.001  # how far a stance paw may miss its track at a key (m)
+
+
+def keys_of(b, clip):
+    """A clip's keys: each bone's local (rotation, location, scale)."""
+    rig, scene = b.rig, bpy.context.scene
+    act = bpy.data.actions[PREFIX + clip]
+    rig.animation_data.action = act
+    first, last = (int(round(f)) for f in act.frame_range)
+    keys = []
+    for frame in range(first, last + 1):
+        scene.frame_set(frame)
+        keys.append(b.snapshot())
+    rig.animation_data.action = None
+    return keys
+
+
+def between(keys, t):
+    """The pose `t` keys in, as the engine samples it: local rotations
+    slerped the short way, translation and scale lerped."""
+    k = min(int(math.floor(t)), len(keys) - 2)
+    f = t - k
+    a, c = keys[k], keys[k + 1]
+    out = {}
+    for name in a:
+        q0, l0, s0 = a[name]
+        q1, l1, s1 = c[name]
+        q1 = -q1 if q0.dot(q1) < 0 else q1
+        out[name] = (q0.slerp(q1, f), l0.lerp(l1, f), s0.lerp(s1, f))
+    return out
+
+
+def check_walk(b, rate=240):
+    """Check Fox_Walk as the engine plays it, sampled `rate` times a second
+    (rotations slerped between keys):
+      - while a paw is on the ground its contact point moves back at
+        WALK_SPEED, within WALK_SPEED_TOL; it strays no more than WALK_SLIP
+        from a point that moves straight back at exactly WALK_SPEED (a point
+        fixed on the ground once the engine moves the fox), and at the keys
+        it is on its track (walk_track) within WALK_TRACK_TOL (so the IK
+        reached it);
+      - every leg bends the way it bends standing: each elbow stands off the
+        line from shoulder to forepaw toward the back, each knee off the
+        line from hip to hind paw toward the front.
+    Returns the problems and a dict of figures for the record."""
+    rig = b.rig
+    keys = keys_of(b, "Walk")
+    n = len(keys) - 1
+    fwd = Matrix.Rotation(STAND["face"], 3, Z) @ FWD
+    stand_keys = keys_of(b, "StandUp")
+    b.apply(stand_keys[-1])
+    stand_planted = b.legs_planted()
+    stand_contact = {paw: stand_planted[paw][0] @ b.walk_contact[paw] for paw in WALK_FOOTFALL}
+    problems = []
+    figs = {"speed": {}, "track": 0.0, "bend": {}, "ahead": {}, "slip": {}}
+
+    def contacts():
+        return {paw: rig.pose.bones[paw].matrix @ b.walk_contact[paw] for paw in WALK_FOOTFALL}
+
+    def bends():
+        out = {}
+        for leg in LEGS:
+            upper, lower, paw = (rig.pose.bones[x] for x in leg)
+            line = (paw.head - upper.head).normalized()
+            off = lower.head - upper.head
+            off -= line * off.dot(line)
+            pole = upper.parent.matrix.to_3x3() @ stand_planted[leg[2]][1]
+            pole -= line * pole.dot(line)
+            # How far the joint stands off the line the standing way (m), and
+            # how far it is ahead of the paw joint along the heading (m).
+            out[leg[2]] = (off.dot(pole.normalized()), (lower.head - paw.head).dot(fwd))
+        return out
+
+    # Keys: on the track while planted.
+    for k in range(n + 1):
+        b.apply(keys[k])
+        got = contacts()
+        g = (k / n + WALK_START) % 1.0
+        for paw in WALK_FOOTFALL:
+            x, h, th = walk_track(paw, g)
+            if (g - WALK_FOOTFALL[paw]) % 1.0 <= WALK_DUTY + 1e-9:
+                err = (got[paw] - (stand_contact[paw] + fwd * x + Z * h)).length
+                figs["track"] = max(figs["track"], err)
+                if err > WALK_TRACK_TOL:
+                    problems.append(f"Walk key {k}: {paw} {err * 1000:.1f} mm off its track")
+    # Sampled as the engine plays it.
+    steps = int(round(n / FPS * rate))
+    prev = None
+    speeds = {paw: [] for paw in WALK_FOOTFALL}
+    for i in range(steps + 1):
+        t = i / rate
+        b.apply(between(keys, t * FPS))
+        now = contacts()
+        for paw, (off, ahead) in bends().items():
+            lo = figs["bend"].get(paw, 1.0)
+            figs["bend"][paw] = min(lo, off)
+            span = figs["ahead"].get(paw, (1.0, -1.0))
+            figs["ahead"][paw] = (min(span[0], ahead), max(span[1], ahead))
+            if off <= 0.0:
+                problems.append(f"Walk {t:.4f} s: {paw}'s leg bends the wrong way")
+        g = (i / steps + WALK_START) % 1.0
+        for paw in WALK_FOOTFALL:
+            phi = (g - WALK_FOOTFALL[paw]) % 1.0
+            if phi <= WALK_DUTY:
+                x, h, th = walk_track(paw, g)
+                slip = (now[paw] - (stand_contact[paw] + fwd * x)).length
+                figs["slip"][paw] = max(figs["slip"].get(paw, 0.0), slip)
+                if slip > WALK_SLIP:
+                    problems.append(f"Walk {t:.4f} s: {paw} {slip * 1000:.1f} mm off the ground's point")
+        if prev is not None:
+            g0 = ((i - 1) / steps + WALK_START) % 1.0
+            g1 = (i / steps + WALK_START) % 1.0
+            for paw in WALK_FOOTFALL:
+                p0 = (g0 - WALK_FOOTFALL[paw]) % 1.0
+                p1 = (g1 - WALK_FOOTFALL[paw]) % 1.0
+                if p0 < WALK_DUTY and 0 < p1 <= WALK_DUTY and p1 > p0:  # on the ground throughout
+                    d = (now[paw] - prev[paw]) * rate
+                    speeds[paw].append((-d.dot(fwd), (d - fwd * d.dot(fwd)).length))
+        prev = now
+    for paw, sp in speeds.items():
+        back = [a for a, _ in sp]
+        cross = max(c for _, c in sp)
+        figs["speed"][paw] = (min(back), max(back), cross, len(sp))
+        if min(back) < WALK_SPEED * (1 - WALK_SPEED_TOL) or max(back) > WALK_SPEED * (1 + WALK_SPEED_TOL):
+            problems.append(f"Walk: {paw} planted moves back at {min(back):.4f}..{max(back):.4f} m/s, "
+                            f"not {WALK_SPEED:.4f}")
+    rig.animation_data.action = bpy.data.actions[PREFIX + "Walk"]
+    return problems, figs
 
 
 # --------------------------------------------------------------------------
@@ -1307,7 +1447,9 @@ CROUCH = dict(face=math.pi / 2, cx=0.08, cy=-0.05, drop=0.12, pitch=0.2,
 
 
 def once_clips(b):
-    """The one-shot clips: (name, pose(u) setting the rig, frames)."""
+    """The clips built from key poses and planted paws: (name, pose(u)
+    setting the rig, frames, loops?). The three waking clips play once;
+    Fox_Walk loops (its last key is its first)."""
     curl = b.pose_of(rest_at(0.0))
     uncurl = b.pose_of(UNCURL)
     lie = b.pose_of(LIE)
@@ -1357,7 +1499,9 @@ def once_clips(b):
                      head=[0.0, 0.25, 0.5, 0.75, 1.0], tail=[0.0, 0.25, 0.52, 0.76, 1.0],
                      fore=[0.0, 0.2, 0.47, 0.7, 0.92], hind=[0.0, 0.22, 0.47, 0.7, 0.92]),
                 lambda u: 1.0 - ramp(0.26, 0.46)(u), lambda u: 1.0 - ramp(0.24, 0.45)(u))
-    return [("StandUp", up, STAND_FRAMES), ("LookAround", look, LOOK_FRAMES), ("LieDown", down, DOWN_FRAMES)]
+    walk, b.walk_contact = walk_clip(b, planted)
+    return [("StandUp", up, STAND_FRAMES, False), ("LookAround", look, LOOK_FRAMES, False),
+            ("LieDown", down, DOWN_FRAMES, False), ("Walk", walk, WALK_FRAMES, True)]
 
 
 def plateau(u, a, b, ramp):
@@ -1391,6 +1535,126 @@ def look_at(u):
 
 
 # --------------------------------------------------------------------------
+# Walking: Fox_Walk, an unhurried four-beat lateral-sequence walk, in place,
+# looping. One clip is one gait cycle: each paw steps once (left hind, left
+# fore, right hind, right fore, a quarter cycle apart), so it holds two
+# strides, a left and a right. It stands turned as STAND (the quarter turn
+# left on root), so it walks toward the standing facing (model +x in
+# Blender, +X in the engine), and the root doesn't move: the engine moves
+# the fox. While a paw is on the ground its contact point (the front of the
+# pad, WALK_CONTACT) moves straight back at WALK_SPEED, so with the fox
+# moving forward at that speed the paw stays put on the ground. Late in
+# each stance the heel lifts and the paw rolls over that point.
+
+WALK_FRAMES = 36            # Fox_Walk: 1.2 s
+WALK_DUTY = 24 / WALK_FRAMES  # the fraction of the cycle each paw is on the ground (lift-off on a key)
+WALK_REACH = 0.27           # how far a planted paw travels back, touchdown to lift-off (m)
+WALK_STRIDE = WALK_REACH / WALK_DUTY  # how far the fox goes per cycle (m)
+WALK_SPEED = WALK_STRIDE / (WALK_FRAMES / FPS)  # m/s, real size
+# When each paw touches down, as a fraction of the cycle.
+WALK_FOOTFALL = {"hindpaw.L": 0.0, "forepaw.L": 0.25, "hindpaw.R": 0.5, "forepaw.R": 0.75}
+WALK_START = 0.25           # the clip starts on the left forepaw's contact, its pose nearest standing
+# Per leg kind: centre of the paw's reach ahead of where it stands (m); how
+# high the pad's front lifts in the swing (m); the fraction of the stance
+# after which the heel lifts, and how far (radians) by lift-off; how far
+# the paw folds in the swing; how far the shoulder or hip slides forward
+# with the paw (m, at the ends of the reach).
+WALK_LEG = {
+    "fore": dict(centre=-0.055, lift=0.035, heel_off=0.35, heel=0.95, fold=1.9, slide=0.012),
+    "hind": dict(centre=-0.03, lift=0.03, heel_off=0.5, heel=0.55, fold=0.9, slide=0.0),
+}
+# The contact point: the front of the pad, from the paw bone's tail (m,
+# forward and down, in the bind pose).
+WALK_CONTACT = {"fore": (0.012, 0.008), "hind": (0.014, 0.008)}
+
+
+def leg_kind(paw):
+    return "fore" if paw.startswith("forepaw") else "hind"
+
+
+def walk_track(paw, g):
+    """Where a paw is at gait phase g: (forward offset of its contact point
+    from where it stands, height of the contact point, heel lift in
+    radians: positive turns the toes down about the contact point)."""
+    P, E, beta = WALK_LEG[leg_kind(paw)], WALK_REACH, WALK_DUTY
+    phi = (g - WALK_FOOTFALL[paw]) % 1.0
+    if phi < beta:  # stance: straight back at constant speed
+        f = phi / beta
+        return P["centre"] + E / 2 - E * f, 0.0, P["heel"] * smooth((f - P["heel_off"]) / (1 - P["heel_off"]))
+    s = (phi - beta) / (1 - beta)  # swing: forward, lifted and folded
+    x = P["centre"] - E / 2 + E * smooth(s)
+    h = P["lift"] * math.sin(math.pi * s)
+    if s < 0.35:
+        th = P["heel"] + (P["fold"] - P["heel"]) * smooth(s / 0.35)
+    else:
+        th = P["fold"] * (1 - smooth((s - 0.35) / 0.45))
+    return x, h, th
+
+
+def walk_body(g):
+    """The body's pose at gait phase g: STAND, a little lower, with a small
+    bob twice a cycle, the hips swaying over the hind paw on the ground,
+    the back flexing a touch side to side, the head carried low and level
+    with a small nod, ears up, the brush held out low behind and swaying."""
+    p = dict(STAND)
+    two = 4 * math.pi
+    p["drop"] = 0.015 - 0.004 * math.cos(two * (g - WALK_DUTY / 2))
+    p["pitch"] = 0.01 * math.cos(two * (g - 0.25 - WALK_DUTY / 2))
+    p["sway"] = 0.006 * math.cos(2 * math.pi * (g - WALK_DUTY / 2))
+    bend = 0.02 * math.sin(2 * math.pi * (g - WALK_DUTY / 2))
+    p["bend"] = bend
+    p["neckBend"] = -2.0 * bend
+    p["headBend"] = -1.0 * bend
+    nod = math.cos(two * (g - 0.25 - WALK_DUTY / 2))
+    p["neckDip"] = 0.2 + 0.03 * nod
+    p["headDip"] = -0.15 - 0.02 * nod
+    p["earL"] = p["earR"] = -0.15
+    sway = math.sin(2 * math.pi * (g - WALK_DUTY / 2 - 0.15))
+    p["tailCurl"] = [0.03 * sway, 0.05 * sway, 0.07 * sway, 0.08 * sway, 0.08 * sway]
+    lift = 0.02 * math.cos(two * (g - WALK_DUTY / 2 - 0.1))
+    p["tailPitch"] = [-0.08 + lift, -0.02 + lift, 0.0, 0.03, 0.05]
+    return p
+
+
+def walk_clip(b, planted):
+    """Fox_Walk's pose(u), from the standing paws (legs_planted): the body
+    from walk_body, each paw planted (Builder.plant) on its track
+    (walk_track). Also returns the paws' contact points in their bones'
+    rest frames."""
+    rig = b.rig
+    fwd = Matrix.Rotation(STAND["face"], 3, Z) @ FWD  # the standing facing
+    side = Z.cross(fwd)  # the fox's left: heel lift turns about it
+    stand, contact = {}, {}
+    for leg in LEGS:
+        paw = leg[2]
+        h, t, _ = BONES[paw]
+        ahead, down = WALK_CONTACT[leg_kind(paw)]
+        local = rig.data.bones[paw].matrix_local.inverted() @ (t + FWD * ahead - Z * down)
+        contact[paw] = local
+        stand[paw] = planted[paw][0] @ local  # where it touches the ground, standing
+
+    def pose(u):
+        g = (u + WALK_START) % 1.0
+        b.set_pose(walk_body(g))
+        tracks = {leg[2]: walk_track(leg[2], g) for leg in LEGS}
+        for leg in LEGS:
+            P = WALK_LEG[leg_kind(leg[2])]
+            if P["slide"]:
+                x = (tracks[leg[2]][0] - P["centre"]) / (WALK_REACH / 2)
+                pb = rig.pose.bones[leg[0]]
+                pb.location = b.rest_rot(leg[0]).inverted() @ (FWD * (P["slide"] * x))
+        bpy.context.view_layer.update()
+        for leg in LEGS:
+            paw = leg[2]
+            x, hgt, th = tracks[paw]
+            S, T0 = planted[paw][0], stand[paw]
+            T = T0 + fwd * x + Z * hgt
+            m = Matrix.Translation(T) @ Matrix.Rotation(th, 4, side) @ Matrix.Translation(-T0) @ S
+            b.plant(leg, (m, planted[paw][1]), 1.0)
+    return pose, contact
+
+
+# --------------------------------------------------------------------------
 # Headless: build, preview, export
 
 
@@ -1406,6 +1670,17 @@ WAKE_SHOTS = [("StandUp", 15), ("StandUp", 27), ("StandUp", 45), ("LookAround", 
               ("LookAround", 106), ("LieDown", 24), ("LieDown", 42),
               ("StandUp", 22.5), ("StandUp", 26.5), ("StandUp", 34.5), ("LieDown", 9.5), ("LieDown", 13.5),
               ("LieDown", 22.5)]
+# fox_walk.png: the standing pose (StandUp's end, where the walk starts
+# from), then Fox_Walk's contacts and passing positions in order: (frame,
+# what happens). The clip starts on the left forepaw's contact; each paw
+# passes its planted partner halfway through its swing.
+WALK_SHOTS = [(0, "LF contact"), (3, "RH passing"), (9, "RH contact"), (12, "RF passing"), (18, "RF contact"),
+              (21, "LH passing"), (27, "LH contact"), (30, "LF passing")]
+# The ruins' default view of the fox standing at its bed (game::kRuinsFoxSpot,
+# 30 degrees down, the standing fox facing 19.4 degrees off straight at the
+# camera), as a preview yaw: degrees from the fox's original front toward its
+# right.
+WALK_GAME_YAW, WALK_GAME_PITCH = 70.6, 30
 
 
 def render_previews(b):
@@ -1415,8 +1690,10 @@ def render_previews(b):
     low from the side (the legs folded in, the ball on the ground), and the
     standing bind pose. fox_wake.png shows key poses of the waking clips
     (WAKE_SHOTS) in two rows: as the game's default view first sees them
-    (GAME_YAW), and from the side away from the fire. Each is also saved on
-    its own."""
+    (GAME_YAW), and from the side away from the fire. fox_walk.png shows the
+    standing pose and the walk's contacts and passing positions
+    (WALK_SHOTS), from the side and from the game's view. Each is also saved
+    on its own."""
     os.makedirs(PREVIEW, exist_ok=True)
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_WORKBENCH"
@@ -1497,6 +1774,20 @@ def render_previews(b):
         shoot(f"wake_{name}_{frame}_side", act, frame, 180, 4, v(0, 0, 0.25), 1.5)
         wake.append(shots[n0:])
     sheet([w[0] for w in wake] + [w[1] for w in wake], len(wake), "fox_wake.png")
+
+    # fox_walk.png: the standing pose, then the walk's key poses (WALK_SHOTS),
+    # from the fox's left side (top row) and as the game's default view sees
+    # the fox at its bed (bottom row).
+    walk = []
+    stand_up = bpy.data.actions[PREFIX + "StandUp"]
+    walking = bpy.data.actions[PREFIX + "Walk"]
+    for act, frame in [(stand_up, STAND_FRAMES)] + [(walking, f) for f, _ in WALK_SHOTS]:
+        n0 = len(shots)
+        tag = "stand" if act is stand_up else f"{frame}"
+        shoot(f"walk_{tag}_side", act, frame, 180, 3, v(0.08, 0, 0.27), 1.35)
+        shoot(f"walk_{tag}_game", act, frame, WALK_GAME_YAW, WALK_GAME_PITCH, v(0.08, 0, 0.25), 1.35)
+        walk.append(shots[n0:])
+    sheet([w[0] for w in walk] + [w[1] for w in walk], len(walk), "fox_walk.png")
     print("wrote previews to", PREVIEW)
 
 
@@ -1541,6 +1832,14 @@ def main():
         problems += more
         print(f"fox: {clip} between keys: largest turn {turn[0]:.1f} degrees ({turn[1]}, key {turn[2]}), "
               f"lowest half-key point {sink[0]:.3f} m (key {sink[1]})")
+    more, figs = check_walk(b)
+    problems += more
+    print(f"fox: Walk {WALK_FRAMES / FPS:.3f} s, stride {WALK_STRIDE:.4f} m per cycle, planted paws back at "
+          f"{WALK_SPEED:.4f} m/s (real size)")
+    for paw, (lo, hi, cross, n) in figs["speed"].items():
+        print(f"fox: Walk {paw} planted: back at {lo:.4f}..{hi:.4f} m/s over {n} samples, slip at most "
+              f"{figs['slip'][paw] * 1000:.2f} mm; bends the standing way by at least {figs['bend'][paw]:.3f} m; "
+              f"elbow/knee {figs['ahead'][paw][0]:+.3f}..{figs['ahead'][paw][1]:+.3f} m ahead of the paw joint")
     if problems:
         raise RuntimeError("the fox comes apart:\n  " + "\n  ".join(problems))
     if PREVIEW:

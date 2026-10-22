@@ -118,6 +118,9 @@ struct Options {
   // The fox this many seconds into its wake sequence (0 starting to stand),
   // in captures and at the start of play; implies --fox. -1: asleep.
   float foxWake = -1.f;
+  // The fox's next wake (--fox-wake's, or in play the first) takes a walk;
+  // implies --fox.
+  bool foxWalk = false;
 };
 
 void printUsage() {
@@ -166,7 +169,11 @@ void printUsage() {
                "  --hero-charge SECS       ...holding X that long first (a charged spin)\n"
                "  --fox / --no-fox         ruins: the fox asleep by the campfire (on when playing, off in captures)\n"
                "  --fox-wake SECS          ...the fox SECS into its wake sequence (0 starting to stand; 7.5 lying\n"
-               "                           back down), in captures and at the start of play; implies --fox\n"
+               "                           back down, or later after a walk), in captures and at the start of\n"
+               "                           play; implies --fox\n"
+               "  --fox-walk               ...its next wake (--fox-wake's, or in play the first) takes a short walk\n"
+               "                           out and back if a route is clear (unforced, about one wake in five\n"
+               "                           walks); implies --fox\n"
                "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
@@ -229,6 +236,8 @@ Options parseArgs(int argc, char** argv) {
       opt.fox = 0;
     } else if (a == "--fox-wake") {
       opt.foxWake = std::max(0.f, static_cast<float>(std::atof(need("--fox-wake"))));
+    } else if (a == "--fox-walk") {
+      opt.foxWalk = true;
     } else if (a == "--hero-size") {
       opt.heroSize = static_cast<float>(std::atof(need("--hero-size")));
     } else if (a == "--hero-charge") {
@@ -584,13 +593,13 @@ glm::vec2 compass(float degrees) {
 }
 
 // Whether this run shows the fox: in the ruins when playing unless
-// --no-fox, in captures only with --fox or --fox-wake, never in the hills
-// (buildScene builds the ruins for any other name), the bench or the
-// self-test.
+// --no-fox, in captures only with --fox, --fox-wake or --fox-walk, never in
+// the hills (buildScene builds the ruins for any other name), the bench or
+// the self-test.
 bool foxShown(const Options& opt) {
   if (opt.scene == "hills" || opt.bench > 0 || opt.selfTest || opt.fox == 0) return false;
   const bool capture = !opt.capture.empty() || !opt.windowPng.empty();
-  return capture ? opt.fox == 1 || opt.foxWake >= 0.f : true;
+  return capture ? opt.fox == 1 || opt.foxWake >= 0.f || opt.foxWalk : true;
 }
 
 // The --fireball roll for captures and the bench: launched on the first
@@ -814,11 +823,14 @@ int main(int argc, char** argv) {
       }
       renderer.upload(scene);
       if (fox.built()) {
-        // Asleep by the campfire, its face toward the fire; or, with
-        // --fox-wake, that far into waking.
+        // Asleep by the campfire, its face toward the fire, its walks keeping
+        // clear of it; or, with --fox-wake, that far into waking (and with
+        // --fox-walk, that wake or the first takes a walk).
         const glm::vec2 toFire = game::kRuinsCampfire - game::kRuinsFoxSpot;
         fox.spawn(scene, game::kRuinsFoxSpot, std::atan2(toFire.x, toFire.y));
-        if (opt.foxWake >= 0.f) fox.wake(opt.foxWake);
+        fox.setFire(game::kRuinsCampfire, game::kCampfireReach);
+        if (opt.foxWalk) fox.forceWalk();
+        if (opt.foxWake >= 0.f) fox.wake(scene, opt.foxWake);
       }
 
       pxe::Camera camera;
@@ -1136,7 +1148,7 @@ int main(int argc, char** argv) {
               input.panX = input.panY = 0.f;
             }
           }
-          fox.update(dt);
+          fox.update(scene, dt);
           if (input.toggleGrass) view.grass = !view.grass;
           if (input.toggleMagenta) magenta = !magenta;
           if (input.toggleNdl) ndl = !ndl;

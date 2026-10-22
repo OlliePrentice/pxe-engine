@@ -18,7 +18,6 @@ constexpr float kWalkCycle = 1.4f;
 constexpr float kRunCycle = 2.5f;
 constexpr float kAccel = 9.f;    // how fast it reaches the speed asked for (1/s)
 constexpr float kStop = 11.f;    // and comes to rest
-constexpr float kStep = 0.55f;   // highest step it climbs or drops (m): the ruins' stairs are up to half a metre
 constexpr float kGravity = 30.f;
 constexpr float kFoot = 0.15f;   // half the footprint it stands on (m, at size 1)
 constexpr float kAhead = 0.2f;   // how far ahead it looks for walls

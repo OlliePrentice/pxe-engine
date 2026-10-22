@@ -10,18 +10,23 @@ namespace game {
 
 // The ruins' campfire, on open lawn left of the pond (world xz).
 constexpr glm::vec2 kRuinsCampfire{-5.f, -6.f};
-// Where the fox sleeps in the ruins (world xz): on open lawn 1.8 m from the
-// campfire, on its pond side (+x) and a little behind it in the default view
-// (yaw 180, looking toward -z). Curled, it faces the fire. Standing, it has
-// turned a quarter-turn left (in its clips), so it faces about 19 degrees
-// right of straight at that view's camera: its face shows as it looks round.
-// Every vertex of every frame of all four of its clips, at 2.4x and tilted
-// to the slope, stays at least 0.42 m clear of the fire's stones, logs and
-// dirt patch and of everything in ruins.glb (nearest: the paving to its
-// right, then the dirt patch, 0.47 m). The ground there is planar: standing,
-// all four paws are the same 9 mm over it as on flat ground, so the curl's
-// tilt suits the standing fox too.
-constexpr glm::vec2 kRuinsFoxSpot{-3.3f, -6.6f};
+// How far a campfire's scorched dirt patch reaches from its middle at most
+// (its ragged rim is 0.82-0.96 m out; see addCampfire).
+constexpr float kCampfireReach = 0.96f;
+// Where the fox sleeps in the ruins (world xz): on open lawn 3.2 m from the
+// campfire, on its pond side (+x) and behind it in the default view (yaw
+// 180, looking toward -z), between the bank and the paving. Curled, it faces
+// the fire. Standing, it has turned a quarter-turn left (in its clips), so it
+// faces about 18 degrees right of straight at that view's camera: its face
+// shows as it looks round. Every vertex of every frame of all five of its
+// clips, at 2.4x and tilted to the slope, stays at least 0.2 m clear of the
+// fire's stones, logs and dirt patch and of everything in ruins.glb
+// (nearest: the paving to its right, 0.204 m as it lies down, then 0.309 m;
+// the fire more than 1 m). The ground there is near planar: standing, its
+// paws are 10-16 mm over it (9 mm on flat ground), so the curl's tilt suits
+// the standing fox too. There is room ahead and to its left for its short
+// walks (fox.hpp); to its right the fire and behind it the bank leave none.
+constexpr glm::vec2 kRuinsFoxSpot{-2.f, -7.f};
 
 struct BuildOptions {
   // "ruins" (the Blender pond-and-pillars scene) or "hills".
