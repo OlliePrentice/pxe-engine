@@ -20,7 +20,7 @@ layout(location = 1) out vec4 oNormal;
 // Their bands sit lower than the ground's, since most of a figure faces
 // sideways. Glowing materials (eyes, the blade) ignore the light.
 const int kActorSurface = 16;
-const int kActorMaterials = 16;  // pxe::kActorMaterials
+const int kActorMaterials = 64;  // pxe::kActorMaterials
 uniform vec3 uActorColour[kActorMaterials];
 uniform int uActorGlow[kActorMaterials];
 uniform vec3 uActorTint[3];

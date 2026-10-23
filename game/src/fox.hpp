@@ -1,15 +1,20 @@
 #pragma once
 
-#include "pxe/mesh.hpp"
+#include "hero.hpp"
+#include "scene.hpp"
+
+#include "pxe/renderer.hpp"
 #include "pxe/scene.hpp"
 #include "pxe/skinned.hpp"
 
 #include <glm/gtc/quaternion.hpp>
+#include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <cstdint>
 #include <random>
+#include <span>
 #include <vector>
 
 namespace game {
@@ -31,13 +36,20 @@ namespace game {
 // lies down just as on a wake without a walk; it never turns on the spot.
 // Each wake has an even chance of wanting a walk, but a walk must leave and
 // come home facing the same way within 2 x the target's distance + 4 m and
-// keep to clear ground, so few targets can be reached (from its bed, only
-// ahead and to its left): about one wake in five walks. The whole walk is
-// checked before it sets off, with the same route it then walks. It has no
-// AI: no awareness of anything, no input, and nothing touches it.
+// keep to clear ground, so few targets can be reached (from the first fox's
+// bed, only ahead and to its left): about one wake in five walks. The whole
+// walk is checked before it sets off, with the same route it then walks.
 //
-// Its colours take the actor-material slots from kFirstMaterial up, clear of
-// the hero's 0-7, so the two characters never share a colour.
+// Several foxes share one model (loadModel) and keep out of each other's
+// way by reservation: a fox sets off only on a walk whose whole route keeps
+// its body clear of every other fox's bed and of every route another fox
+// has set off on and not yet lain down from, so foxes never meet and never
+// have to give way mid-walk. Beyond that they have no AI: no awareness of
+// anything else, the hero included, and no input. The hero is pushed out of
+// their bodies (body()); they never react to it.
+//
+// Every fox's colours take the actor-material slots from kFirstMaterial up,
+// clear of the hero's 0-7, so the hero and the foxes never share a colour.
 class Fox {
  public:
   static constexpr int kFirstMaterial = 8;
@@ -57,39 +69,72 @@ class Fox {
   // clips already meet pose for pose.
   static constexpr float kFade = 0.2f;
 
-  // Load the model (needs the GL context); throws if it is missing or lacks
-  // any of its five clips.
-  void build();
-  bool built() const { return built_; }
+  // Standing or walking, a circle this wide round the line from its hips to
+  // its head covers its body, but for the brush: the walking body is 0.58 m
+  // across (assets.md). The hero is kept out of it.
+  static constexpr float kBodyRadius = 0.3f;
+
+  // The model every fox is drawn from, loaded once (needs the GL context);
+  // throws if it is missing.
+  static pxe::SkinnedModel loadModel();
+  // Take up `model` (loadModel's, which must outlive it) as fox number
+  // `index`, which picks its seeds; throws if the model lacks any of its
+  // five clips.
+  void build(const pxe::SkinnedModel& model, int index);
+  bool built() const { return model_ != nullptr; }
   // Lie at xz on the ground, the curl's face toward `yaw` (radians; 0 faces
   // +z), tilted to lie along the slope there, at the start of a rest. The
-  // rests and walks are drawn from fixed seeds, so every run wakes and walks
-  // alike.
+  // rests and walks are drawn from fixed seeds, kSeed and kWalkSeed plus its
+  // index, so every run wakes and walks alike.
   void spawn(const pxe::Scene& scene, glm::vec2 xz, float yaw);
-  // The campfire it sleeps by: the middle (xz) and how far its dirt patch
-  // reaches. Its walks keep clear of it. Without one it never walks.
-  void setFire(glm::vec2 centre, float reach);
+  // The scene's campfires: their middles (xz), and how far their dirt
+  // patches reach. Its walks keep clear of them all.
+  void setFires(const std::vector<glm::vec2>& centres, float reach);
   // On through the rest loop and, when a rest is over, the wake sequence
-  // (with any walk, which follows the ground in `scene`).
-  void update(const pxe::Scene& scene, float dt);
+  // (with any walk, which follows the ground in `scene` and keeps clear of
+  // `foxes` - all the foxes, this one among them).
+  void update(const pxe::Scene& scene, float dt, std::span<const Fox> foxes);
   // Captures: hold it asleep `seconds` into the rest loop, never waking.
   void holdRest(float seconds);
-  // Start the wake sequence now (no crossfade) and run it on `seconds`:
-  // 0 is the first frame of Fox_StandUp. Past its end (StandUp, LookAround
-  // and LieDown, 7.5 s in all, or longer with a walk) it rests again.
-  void wake(const pxe::Scene& scene, float seconds);
+  // Start the wake sequence now (no crossfade), at the first frame of
+  // Fox_StandUp, deciding on any walk against `foxes`; update() runs it on
+  // (StandUp, LookAround and LieDown, 7.5 s in all, or longer with a walk),
+  // and then it rests again.
+  void wake(const pxe::Scene& scene, std::span<const Fox> foxes);
   // The next wake takes a walk, if any route is clear (--fox-walk).
   void forceWalk() { forceWalk_ = true; }
-  // Skin this frame's pose and hand the figure to the frame (actors), its
-  // colours into its own slots of `materials`.
-  void pose(std::vector<const pxe::Mesh*>& actors, pxe::ActorMaterial (&materials)[pxe::kActorMaterials]);
+  // How long until it may next decide on a walk, at the soonest (update()
+  // decides at each wake): for running several foxes on together in long
+  // steps that each see the others as they are when they decide.
+  float untilWalkDecided() const;
+  // Hand this moment's figure to the frame (actors: its joint matrices must
+  // outlive the frame's draw), its colours into its own slots of `materials`.
+  void pose(std::vector<pxe::ActorDraw>& actors, pxe::ActorMaterial (&materials)[pxe::kActorMaterials]) const;
+  // The ground its body takes up this moment, for keeping the hero out:
+  // the kFootprint circle round its curl while it rests or lies down, and
+  // otherwise kBodyRadius round its hips-to-head line as it stands and walks.
+  Blocker body() const;
+
+  // The beds for `count` foxes in a scene laid out as `layout` (with `model`
+  // as loadModel's), tried over its bed area in a fixed order so every run
+  // finds the same: each on open lawn (lawn under all of the curl, and no
+  // part of the fox sunk into the ground), with the whole fox through every
+  // frame of its five clips, at kSize and tilted to the slope, at least
+  // kBedClearance from everything standing in the scene (every campfire's
+  // dirt patch, stones and logs among it) and from the fox in every other
+  // bed. Each curl faces the nearest campfire within kFaceFire, or else a
+  // yaw drawn from the same fixed seed. Fewer than `count` if no more fit.
+  static std::vector<FoxBed> findBeds(const pxe::SkinnedModel& model, const SceneLayout& layout, int count);
+  static constexpr float kBedClearance = 0.2f;
+  static constexpr float kFaceFire = 6.f;
 
  private:
-  pxe::SkinnedModel model_;
-  pxe::Mesh mesh_;
+  const pxe::SkinnedModel* model_ = nullptr;
+  int index_ = 0;
   pxe::SkinnedModel::Pose pose_;
-  std::vector<pxe::Vertex> verts_;
-  bool built_ = false;
+  std::vector<glm::mat4> joints_;  // pose_, placed
+  int hips_ = -1, head_ = -1;      // the line body() runs along...
+  glm::vec3 hipsRest_{0.f}, headRest_{0.f};  // ...between these joints' places at rest
 
   // Where it is in its cycle; each state plays its clip of clip_[state]. A
   // walking wake goes LookAround, WalkOut, LookOut (Fox_LookAround at the
@@ -108,6 +153,13 @@ class Fox {
   // Where it is and how it is turned and tilted this moment (pos_, y_,
   // yaw_, tilt_): in its bed, or along the walk.
   void place(const pxe::Scene& scene);
+  // This moment's pose, placed (pose_, joints_).
+  void skin();
+  // Where it lies on the ground at xz: its height there, and its tilt to the
+  // ground's slope (the normal it is turned to).
+  static void lie(const pxe::HeightMap& ground, glm::vec2 xz, float& y, glm::quat& tilt, glm::vec3& normal);
+  // The model's place in the world, at kSize.
+  static glm::mat4 world(glm::vec2 xz, float y, glm::quat tilt, float yaw);
 
   State state_ = kRest;
   float clock_ = 0.f;      // seconds into the current state's clip
@@ -118,7 +170,8 @@ class Fox {
   // into it the new clip is (kFade or more: done).
   pxe::SkinnedModel::Pose fadeFrom_;
   float fade_ = kFade;
-  // Its rests come from this seed, so captures and runs are repeatable.
+  // Its rests come from this seed (plus its index), so captures and runs are
+  // repeatable.
   static constexpr std::uint32_t kSeed = 20261021u;
   std::mt19937 rng_{kSeed};
 
@@ -184,6 +237,9 @@ class Fox {
     float out = 0.f, total = 0.f;   // length to the target, and there and back
     std::vector<glm::vec3> normal;  // ground normal for the lean every kCheckStep, smoothed
     float normalStep = 0.f;
+    // Its body as checked, every kCheckStep and at the target: where the
+    // model's origin is (x, z) and its yaw; what other foxes keep clear of.
+    std::vector<glm::vec3> body;
     float yawOffset = 0.f;          // so its heading at the start is bedYaw_ exactly
     float phaseOut = 0.f, phaseBack = 0.f;  // Fox_Walk's phase at the start of each leg
     float timeOut = 0.f, timeBack = 0.f;    // each leg's length in seconds
@@ -194,7 +250,7 @@ class Fox {
     float length, curvature;
   };
   // Decide at the start of a wake whether it walks, and if so where.
-  void planWalk(const pxe::Scene& scene);
+  void planWalk(const pxe::Scene& scene, std::span<const Fox> foxes);
   // Lay out the loop through `target`; false if none fits (no turn tighter
   // than kMinTurn, no longer than 2 x the target's distance + kSpare).
   bool layRoute(glm::vec2 target, Route& route) const;
@@ -204,8 +260,12 @@ class Fox {
   bool layLeg(const std::vector<Piece>& pieces, glm::vec2 from, float heading, glm::vec2 to, float toHeading,
               Route& route) const;
   // Whether every sample of the walk is on walkable ground, clear of the
-  // fire and within kMaxReach of the bed; fills in the lean.
+  // fires and within kMaxReach of the bed; fills in the lean and the body.
   bool routeClear(const pxe::Scene& scene, Route& route) const;
+  // Whether its body along the walk keeps clear of every other fox's bed
+  // (curled, and standing in it) and of every route another has set off on
+  // and not yet lain down from.
+  bool routeFree(const Route& route, std::span<const Fox> foxes) const;
   // A point `s` metres along the walk: where the model's origin is, and its
   // yaw there.
   void routeAt(const Route& route, float s, glm::vec2& pos, float& yaw) const;
@@ -217,20 +277,20 @@ class Fox {
   float startPhase(float length) const;
   float walkSpeed() const;
 
-  glm::vec2 fire_{0.f};
-  float fireReach_ = -1.f;  // < 0: no fire, no walks
+  std::vector<glm::vec2> fires_;  // the campfires' middles...
+  float fireReach_ = 0.f;        // ...and how far their dirt patches reach
   float standTurn_ = 0.f;   // the standing heading, from the curl's yaw (radians)
   glm::vec2 pivot_{0.f};    // what the walk steers: model x (heading) and z (right) at kSize
   bool forceWalk_ = false;
-  bool walking_ = false;    // this wake walks, along route_
+  bool walking_ = false;    // this wake walks, along route_, from the wake until it lies down
   Route route_;
   pxe::SkinnedModel::Pose fadeTo_, walkPose_;
   // How far each phase of Fox_Walk is from standing (sum of joint turns).
   std::vector<float> walkGap_;
-  // The walks come from a stream of their own, so the rests are drawn
-  // exactly as before. With this seed the first wake stays put (so it wakes
-  // exactly as before this walk was added) and the second walks; after that
-  // about one wake in five does.
+  // The walks come from a stream of their own (plus its index), so the rests
+  // are drawn exactly as before. With this seed the first fox's first wake
+  // stays put (so it wakes exactly as before this walk was added) and its
+  // second walks; after that about one wake in five does.
   static constexpr std::uint32_t kWalkSeed = 20261022u;
   std::mt19937 walkRng_{kWalkSeed};
 };

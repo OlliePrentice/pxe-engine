@@ -36,10 +36,44 @@ class Mesh {
   Mesh& operator=(const Mesh&) = delete;
 
   void upload(const std::vector<Vertex>& vertices, const std::vector<std::uint32_t>& indices);
-  // For a mesh redrawn every frame (a posed character): the first upload
-  // makes the buffers, later ones rewrite the vertices in place. The vertex
-  // count and indices must not change.
+  // For a mesh rebuilt every frame (a sword's smear): the first upload makes
+  // the buffers, later ones rewrite the vertices in place. The vertex count
+  // and indices must not change.
   void update(const std::vector<Vertex>& vertices, const std::vector<std::uint32_t>& indices);
+  void draw() const;
+  bool empty() const { return indexCount_ == 0; }
+
+ private:
+  void destroy();
+  unsigned vao_ = 0;
+  unsigned vbo_ = 0;
+  unsigned ebo_ = 0;
+  int indexCount_ = 0;
+};
+
+// A skinned character's vertex at rest, in its model: the vertex shaders
+// place it by up to four of the model's joints, whose weights sum to 1.
+struct SkinVertex {
+  float px, py, pz;
+  float nx, ny, nz;
+  float surface;
+  std::uint8_t joints[4];
+  float weights[4];
+};
+
+// A skinned character's mesh, uploaded once at rest. Every character drawn
+// from it hands the renderer its own joint matrices (FrameParams::actors),
+// so one upload serves any number of them.
+class SkinnedMesh {
+ public:
+  SkinnedMesh() = default;
+  ~SkinnedMesh();
+  SkinnedMesh(SkinnedMesh&& other) noexcept;
+  SkinnedMesh& operator=(SkinnedMesh&& other) noexcept;
+  SkinnedMesh(const SkinnedMesh&) = delete;
+  SkinnedMesh& operator=(const SkinnedMesh&) = delete;
+
+  void upload(const std::vector<SkinVertex>& vertices, const std::vector<std::uint32_t>& indices);
   void draw() const;
   bool empty() const { return indexCount_ == 0; }
 

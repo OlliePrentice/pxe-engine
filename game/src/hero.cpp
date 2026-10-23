@@ -132,8 +132,7 @@ void Hero::build() {
   }
   model_.restPose(pose_);
   last_ = pose_;
-  model_.skin(pose_, glm::mat4{1.f}, verts_);
-  mesh_.update(verts_, model_.indices());
+  model_.skin(pose_, glm::mat4{1.f}, joints_);
   built_ = true;
 }
 
@@ -190,7 +189,7 @@ void Hero::endAct(bool cut) {
   spin_ = 0.f;
 }
 
-void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
+void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input, const std::vector<Blocker>& blockers) {
   if (!built_ || dt <= 0.f) return;
   clock_ += dt;
   dt_ = dt;
@@ -311,6 +310,29 @@ void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
     }
     pos_ = next;
   }
+  // Out of any blocker its footprint overlaps: straight out to where it just
+  // touches, an axis at a time like a step, so a wall still holds it; and no
+  // longer moving into it, so it slides round.
+  for (const Blocker& b : blockers) {
+    const glm::vec2 along = b.b - b.a;
+    const float length2 = glm::dot(along, along);
+    const float t = length2 > 1e-8f ? std::clamp(glm::dot(pos_ - b.a, along) / length2, 0.f, 1.f) : 0.f;
+    const glm::vec2 nearest = b.a + along * t;
+    const float reach = b.radius + foot;
+    glm::vec2 out = pos_ - nearest;
+    const float d = glm::length(out);
+    if (d >= reach) continue;
+    if (d > 1e-5f) out /= d;
+    else out = length2 > 1e-8f ? glm::normalize(glm::vec2{-along.y, along.x}) : glm::vec2{0.f, 1.f};
+    const glm::vec2 to = nearest + out * reach;
+    for (int axis = 0; axis < 2; ++axis) {
+      glm::vec2 next = pos_;
+      next[axis] = to[axis];
+      if (!blocked(pos_, next)) pos_ = next;
+    }
+    const float into = glm::dot(vel_, out);
+    if (into < 0.f) vel_ -= out * into;
+  }
   // Feet onto each step's top quickly; a drop deeper than a step is a fall.
   const float top = groundAt(pos_);
   if (top > pxe::HeightMap::kNone) {
@@ -354,7 +376,7 @@ void Hero::update(const pxe::Scene& scene, float dt, const HeroInput& input) {
   hoodLag_.update(dt, speed / size_);
 }
 
-void Hero::pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Mesh*>& effects,
+void Hero::pose(std::vector<pxe::ActorDraw>& actors, std::vector<const pxe::Mesh*>& effects,
                 pxe::ActorMaterial (&materials)[pxe::kActorMaterials]) {
   if (!built_) return;
   const float speed = glm::length(vel_);
@@ -432,9 +454,8 @@ void Hero::pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Me
   const glm::mat4 world = glm::scale(glm::rotate(glm::translate(glm::mat4{1.f}, glm::vec3{pos_.x, y_, pos_.y}),
                                                  yaw_ + spin_, glm::vec3{0.f, 1.f, 0.f}),
                                      glm::vec3{size_});
-  model_.skin(pose_, world, verts_);
-  mesh_.update(verts_, model_.indices());
-  actors.push_back(&mesh_);
+  model_.skin(pose_, world, joints_);
+  actors.push_back({&model_.mesh(), joints_});
   const auto& mats = model_.materials();
   for (int i = 0; i < kCoreSlot && i < static_cast<int>(mats.size()); ++i) materials[i] = mats[i];
   // The smear's white-hot core, in the last of the hero's slots.
@@ -445,7 +466,8 @@ void Hero::pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Me
 void Hero::spark(glm::vec3 at, float spread, float size, float life, bool white) {
   if (static_cast<int>(shards_.size()) >= kShards) return;
   // A spark off the blade (at is an offset from somewhere along it, or zero).
-  glm::vec3 base = model_.jointPoint(sword_, glm::mix(bladeBase_, bladeTip_, 0.25f + 0.75f * rand01()));
+  glm::vec3 base =
+      pxe::SkinnedModel::jointPoint(joints_, sword_, glm::mix(bladeBase_, bladeTip_, 0.25f + 0.75f * rand01()));
   const glm::vec3 r{rand01() - 0.5f, rand01() * 0.8f, rand01() - 0.5f};
   shards_.push_back({base + at, r * spread * 6.f, size * (0.6f + 0.8f * rand01()), 0.f, life * (0.6f + 0.8f * rand01()), white});
 }
@@ -481,8 +503,9 @@ void Hero::effects(std::vector<const pxe::Mesh*>& out) {
     sweeping = actT_ <= kSpinTurn + 0.04f;
   }
   if (sweeping)
-    trail_.push_back({model_.jointPoint(sword_, grip_), model_.jointPoint(sword_, bladeBase_),
-                      model_.jointPoint(sword_, bladeTip_), 0.f});
+    trail_.push_back({pxe::SkinnedModel::jointPoint(joints_, sword_, grip_),
+                      pxe::SkinnedModel::jointPoint(joints_, sword_, bladeBase_),
+                      pxe::SkinnedModel::jointPoint(joints_, sword_, bladeTip_), 0.f});
   // Charging: sparks run along the blade, quicker once it is ready.
   if (act_ == kCharge) {
     sparkClock_ += dt;

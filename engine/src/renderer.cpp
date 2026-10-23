@@ -53,6 +53,21 @@ void umat(unsigned prog, const char* name, const glm::mat4& m) {
   glUniformMatrix4fv(uloc(prog, name), 1, GL_FALSE, &m[0][0]);
 }
 
+// The characters, each skinned in the vertex shader by its own joints, in
+// the program in use (mesh.vert or shadow.vert); one draw each.
+void drawActors(unsigned prog, const std::vector<ActorDraw>& actors) {
+  if (actors.empty()) return;
+  u1i(prog, "uSkinned", 1);
+  const int joints = uloc(prog, "uJoints");
+  for (const ActorDraw& a : actors) {
+    if (!a.mesh || a.joints.empty()) continue;
+    const auto count = static_cast<int>(std::min<std::size_t>(a.joints.size(), kMaxJoints));
+    glUniformMatrix4fv(joints, count, GL_FALSE, &a.joints[0][0][0]);
+    a.mesh->draw();
+  }
+  u1i(prog, "uSkinned", 0);
+}
+
 void requireFbo(const char* what) {
   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
     std::fprintf(stderr, "pxe: framebuffer incomplete (%s)\n", what);
@@ -588,7 +603,7 @@ void Renderer::drawMeshes(const Scene& scene, const FrameParams& params, const g
   umat(progMesh_, "uMirror", mirror);
   u1f(progMesh_, "uClipBelow", clipBelow);
   for (const Mesh& m : scene.meshes) m.draw();
-  for (const Mesh* m : params.actors) m->draw();
+  drawActors(progMesh_, params.actors);
   glDisable(GL_CULL_FACE);
   for (const Mesh* m : params.actorEffects) m->draw();
   glEnable(GL_CULL_FACE);
@@ -933,7 +948,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
     glUseProgram(progShadow);
     umat(progShadow, "uLightViewProj", light.viewProj);
-    for (const Mesh* m : params.actors) m->draw();
+    drawActors(progShadow, params.actors);
     shadowHadActors_ = actors;
   }
   // Lightning's map: drawn once when a flash strikes from a new direction.

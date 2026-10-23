@@ -8,7 +8,10 @@
 #include "pxe/scene.hpp"
 #include "pxe/skinned.hpp"
 
+#include <glm/mat4x4.hpp>
+
 #include <cstdint>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -41,6 +44,14 @@ struct PointLight {
   float radius = 1.f;
   float strength = 1.f;
   Kind kind = kFire;
+};
+
+// A character posed this frame: its model's mesh, drawn through every pass
+// with its own joint matrices (SkinnedModel::skin), which must last until
+// the frame is drawn. Any number of characters may share one mesh.
+struct ActorDraw {
+  const SkinnedMesh* mesh = nullptr;
+  std::span<const glm::mat4> joints;
 };
 
 struct FrameParams {
@@ -81,13 +92,14 @@ struct FrameParams {
   float grassFireLife = 0.f;
   // Sun or moon, palettes and clouds for this frame (see lightingAt).
   Lighting lighting;
-  // Characters posed this frame, already in world space (SkinnedModel::skin),
-  // their vertices' surfaces kActorSurface + an index into actorMaterials.
-  // They draw, cast shadows and reflect like the scene's meshes; the
-  // scene's own shadows stay cached, with the characters' laid over them.
-  std::vector<const Mesh*> actors;
+  // Characters posed this frame, skinned in the vertex shaders, their
+  // vertices' surfaces kActorSurface + an index into actorMaterials. They
+  // draw, cast shadows and reflect like the scene's meshes; the scene's own
+  // shadows stay cached, with the characters' laid over them.
+  std::vector<ActorDraw> actors;
   ActorMaterial actorMaterials[kActorMaterials];
-  // Drawn with the characters but casting no shadow: a sword's glowing smear.
+  // Drawn with the characters but casting no shadow, already in world space:
+  // a sword's glowing smear.
   std::vector<const Mesh*> actorEffects;
 };
 

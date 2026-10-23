@@ -18,6 +18,9 @@ class HeightMap {
   // above add nothing.
   void build(const std::vector<glm::vec3>& triangles, float cell = 0.2f);
   bool empty() const { return heights_.empty(); }
+  // The grid's corners (xz).
+  glm::vec2 min() const { return min_; }
+  glm::vec2 max() const { return min_ + cell_ * glm::vec2{static_cast<float>(w_), static_cast<float>(h_)}; }
   // The highest surface over the cell holding xz, or kNone.
   float cellTop(glm::vec2 xz) const;
   // Smooth height at xz, blended from the cells round it, so something

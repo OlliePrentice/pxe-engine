@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -112,13 +113,17 @@ struct Options {
   float heroAttack = -1.f;  // captures: this many seconds into an attack (after any move)
   int heroPresses = 1;      // ...pressing X this many times, a fifth of a second apart
   float heroHold = 0.f;     // ...holding the first press this many seconds (a charge)
-  // The sleeping fox by the ruins' campfire: on when playing, off for
-  // captures unless asked for, never in the hills. -1 default, 0 --no-fox, 1 --fox.
+  // The foxes in the ruins: the three hand-placed ones when playing; in
+  // captures, the first of them only when asked for; never in the hills.
+  // -1 default, 0 --no-fox, 1 --fox.
   int fox = -1;
-  // The fox this many seconds into its wake sequence (0 starting to stand),
-  // in captures and at the start of play; implies --fox. -1: asleep.
+  // --foxes N: N foxes placed where they fit, in place of the hand-placed
+  // ones, in play, captures and the bench. -1: not asked for.
+  int foxes = -1;
+  // Every fox shown this many seconds into its wake sequence (0 starting to
+  // stand), in captures and at the start of play; implies --fox. -1: asleep.
   float foxWake = -1.f;
-  // The fox's next wake (--fox-wake's, or in play the first) takes a walk;
+  // Every fox's next wake (--fox-wake's, or in play the first) takes a walk;
   // implies --fox.
   bool foxWalk = false;
 };
@@ -167,13 +172,17 @@ void printUsage() {
                "  --hero-attack SECS       captures: the hero SECS into an attack (X; then on toward DEG if moving)\n"
                "  --hero-combo N           ...pressing X N times, 0.2 s apart, to chain the combo\n"
                "  --hero-charge SECS       ...holding X that long first (a charged spin)\n"
-               "  --fox / --no-fox         ruins: the fox asleep by the campfire (on when playing, off in captures)\n"
-               "  --fox-wake SECS          ...the fox SECS into its wake sequence (0 starting to stand; 7.5 lying\n"
-               "                           back down, or later after a walk), in captures and at the start of\n"
-               "                           play; implies --fox\n"
-               "  --fox-walk               ...its next wake (--fox-wake's, or in play the first) takes a short walk\n"
-               "                           out and back if a route is clear (unforced, about one wake in five\n"
-               "                           walks); implies --fox\n"
+               "  --fox / --no-fox         ruins: when playing, three foxes asleep on the lawn (--no-fox: none);\n"
+               "                           in captures, --fox shows the first of them, by the campfire, alone\n"
+               "  --foxes N                ruins: N foxes instead, each bed found clear of the scene and the\n"
+               "                           others (the same every run), in play, captures and --bench; prints\n"
+               "                           how many fit when fewer than N do\n"
+               "  --fox-wake SECS          ...every fox shown SECS into its wake sequence (0 starting to stand;\n"
+               "                           7.5 lying back down, or later after a walk), in captures and at the\n"
+               "                           start of play; implies --fox\n"
+               "  --fox-walk               ...every fox's next wake (--fox-wake's, or in play the first) takes a\n"
+               "                           short walk out and back if a route is clear (unforced, about one wake\n"
+               "                           in five walks); implies --fox\n"
                "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
@@ -234,6 +243,8 @@ Options parseArgs(int argc, char** argv) {
       opt.fox = 1;
     } else if (a == "--no-fox") {
       opt.fox = 0;
+    } else if (a == "--foxes") {
+      opt.foxes = std::max(0, std::atoi(need("--foxes")));
     } else if (a == "--fox-wake") {
       opt.foxWake = std::max(0.f, static_cast<float>(std::atof(need("--fox-wake"))));
     } else if (a == "--fox-walk") {
@@ -592,14 +603,44 @@ glm::vec2 compass(float degrees) {
   return {std::sin(a), -std::cos(a)};
 }
 
-// Whether this run shows the fox: in the ruins when playing unless
-// --no-fox, in captures only with --fox, --fox-wake or --fox-walk, never in
-// the hills (buildScene builds the ruins for any other name), the bench or
-// the self-test.
-bool foxShown(const Options& opt) {
-  if (opt.scene == "hills" || opt.bench > 0 || opt.selfTest || opt.fox == 0) return false;
+// Which foxes this run shows. None in the hills (buildScene builds the
+// ruins for any other name), the self-test or with --no-fox. --foxes N
+// places N where they fit, in play, captures and the bench alike. Without
+// it, play shows the three hand-placed foxes, captures the first of them
+// alone and only with --fox, --fox-wake or --fox-walk, and the bench none.
+enum class FoxSet { kNone, kFirst, kHandPlaced, kFound };
+FoxSet foxesShown(const Options& opt) {
+  if (opt.scene == "hills" || opt.selfTest || opt.fox == 0) return FoxSet::kNone;
+  if (opt.foxes >= 0) return opt.foxes > 0 ? FoxSet::kFound : FoxSet::kNone;
+  if (opt.bench > 0) return FoxSet::kNone;
   const bool capture = !opt.capture.empty() || !opt.windowPng.empty();
-  return capture ? opt.fox == 1 || opt.foxWake >= 0.f || opt.foxWalk : true;
+  if (!capture) return FoxSet::kHandPlaced;
+  return opt.fox == 1 || opt.foxWake >= 0.f || opt.foxWalk ? FoxSet::kFirst : FoxSet::kNone;
+}
+
+// Every fox on `seconds` together, with --fox-wake. A lone fox takes it in
+// one step, as it always did. Several are stopped wherever one of them may
+// decide on a walk, so that it decides against the others' beds and routes
+// as they are then.
+void runFoxes(std::vector<game::Fox>& foxes, const pxe::Scene& scene, float seconds) {
+  if (foxes.size() == 1) {
+    foxes[0].update(scene, seconds, foxes);
+    return;
+  }
+  while (seconds > 0.f) {
+    float step = seconds;
+    for (const game::Fox& f : foxes) step = std::min(step, f.untilWalkDecided());
+    if (step <= 0.f) step = std::min(seconds, 1e-3f);
+    for (game::Fox& f : foxes) f.update(scene, step, foxes);
+    seconds -= step;
+  }
+}
+
+// Where the hero may not stand this frame: every fox's body.
+std::vector<game::Blocker> foxBodies(const std::vector<game::Fox>& foxes) {
+  std::vector<game::Blocker> out;
+  for (const game::Fox& f : foxes) out.push_back(f.body());
+  return out;
 }
 
 // The --fireball roll for captures and the bench: launched on the first
@@ -784,17 +825,6 @@ int main(int argc, char** argv) {
       exitCode = 1;
     }
     if (exitCode == 0) {
-      // The fox, loaded before the scene is built so the grass under it is
-      // only cleared once it is sure to be there; a missing model is logged
-      // and the game goes on without it.
-      game::Fox fox;
-      if (foxShown(opt)) {
-        try {
-          fox.build();
-        } catch (const std::exception& ex) {
-          std::fprintf(stderr, "pxe: no fox: %s\n", ex.what());
-        }
-      }
       game::BuildOptions build;
       // Grass and leaf sprites are sized in pixels and their spacing was tuned
       // at 16 px/m, so scale it to keep the same density per pixel.
@@ -808,10 +838,44 @@ int main(int argc, char** argv) {
       build.extraFires = opt.extraFires;
       build.candles = opt.candles;
       build.scene = opt.scene;
-      if (fox.built()) {
-        build.foxSpot = game::kRuinsFoxSpot;
-        build.foxRadius = game::Fox::kFootprint;
+      // The foxes: their one model loaded and their beds settled before the
+      // scene is built, so the grass under them is only cleared once they
+      // are sure to be there; a missing model is logged and the game goes
+      // on without them. The first two lie by the campfire, their faces
+      // toward it; the third and any found by --foxes as their beds say.
+      std::optional<pxe::SkinnedModel> foxModel;
+      std::vector<game::Fox> foxes;
+      std::vector<game::FoxBed> beds;
+      game::SceneLayout layout;
+      const FoxSet foxSet = foxesShown(opt);
+      if (foxSet != FoxSet::kNone) {
+        try {
+          foxModel = game::Fox::loadModel();
+          layout = game::laidOut(build);
+          if (foxSet == FoxSet::kFound) {
+            beds = game::Fox::findBeds(*foxModel, layout, opt.foxes);
+            if (static_cast<int>(beds.size()) < opt.foxes)
+              std::fprintf(stderr, "pxe: only %zu of %d foxes fit\n", beds.size(), opt.foxes);
+          } else {
+            auto facingFire = [](glm::vec2 xz) {
+              const glm::vec2 toFire = game::kRuinsCampfire - xz;
+              return game::FoxBed{xz, std::atan2(toFire.x, toFire.y)};
+            };
+            beds.push_back(facingFire(game::kRuinsFoxSpot));
+            if (foxSet == FoxSet::kHandPlaced) {
+              beds.push_back(facingFire(game::kRuinsFoxSpot2));
+              beds.push_back({game::kRuinsFoxSpot3, game::kRuinsFoxYaw3});
+            }
+          }
+          foxes.resize(beds.size());
+          for (std::size_t i = 0; i < foxes.size(); ++i) foxes[i].build(*foxModel, static_cast<int>(i));
+        } catch (const std::exception& ex) {
+          std::fprintf(stderr, "pxe: no fox: %s\n", ex.what());
+          foxes.clear();
+          beds.clear();
+        }
       }
+      for (const game::FoxBed& b : beds) build.beds.push_back({b.xz, game::Fox::kFootprint});
       pxe::Scene scene;
       try {
         scene = game::buildScene(build);
@@ -822,15 +886,17 @@ int main(int argc, char** argv) {
         return 1;
       }
       renderer.upload(scene);
-      if (fox.built()) {
-        // Asleep by the campfire, its face toward the fire, its walks keeping
-        // clear of it; or, with --fox-wake, that far into waking (and with
-        // --fox-walk, that wake or the first takes a walk).
-        const glm::vec2 toFire = game::kRuinsCampfire - game::kRuinsFoxSpot;
-        fox.spawn(scene, game::kRuinsFoxSpot, std::atan2(toFire.x, toFire.y));
-        fox.setFire(game::kRuinsCampfire, game::kCampfireReach);
-        if (opt.foxWalk) fox.forceWalk();
-        if (opt.foxWake >= 0.f) fox.wake(scene, opt.foxWake);
+      // Asleep in their beds, their walks keeping clear of every campfire;
+      // or, with --fox-wake, that far into waking (and with --fox-walk, that
+      // wake or the first takes a walk).
+      for (std::size_t i = 0; i < foxes.size(); ++i) {
+        foxes[i].spawn(scene, beds[i].xz, beds[i].yaw);
+        foxes[i].setFires(layout.campfires, game::kCampfireReach);
+        if (opt.foxWalk) foxes[i].forceWalk();
+      }
+      if (opt.foxWake >= 0.f && !foxes.empty()) {
+        for (game::Fox& f : foxes) f.wake(scene, foxes);
+        runFoxes(foxes, scene, opt.foxWake);
       }
 
       pxe::Camera camera;
@@ -861,6 +927,15 @@ int main(int argc, char** argv) {
         clock.cloudSpeed = opt.windStrength;
         clock.placeFires(scene.fires);
         game::Fireball ball;
+        // With --hero, the hero stands at the view's focus facing the camera,
+        // idling, kept out of any foxes (--foxes), which wake and walk as in play.
+        game::Hero hero;
+        if (opt.hero == 1) {
+          hero.build();
+          hero.setSize(opt.heroSize);
+          const pxe::CameraFrame start = camera.frame(renderer.rtW(), renderer.rtH());
+          hero.spawn(scene, {camera.target().x, camera.target().z}, std::atan2(-start.forward.x, -start.forward.z));
+        }
         // Per-pass GPU timers block every frame and, on macOS's GL-on-Metal,
         // under-report; they are opt-in. The wall-clock figure is the one to trust.
         const bool passes = std::getenv("PXE_BENCH_PASSES") != nullptr;
@@ -884,6 +959,10 @@ int main(int argc, char** argv) {
           brushFires(clock, params.gridStrokes);
           params.fires = fireDraws(clock);
           params.lighting = lightingFor(scene, clock);
+          for (game::Fox& fox : foxes) fox.update(scene, 1.f / 60.f, foxes);
+          hero.update(scene, 1.f / 60.f, game::HeroInput{}, foxBodies(foxes));
+          hero.pose(params.actors, params.actorEffects, params.actorMaterials);
+          for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
           draw(params);
           glfwSwapBuffers(window);
           if (f >= warmup)
@@ -951,6 +1030,13 @@ int main(int argc, char** argv) {
         }
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
+        // The moment shown: --time, after any --settle.
+        const float shotTime = opt.settle > 0.f ? opt.time + std::ceil(opt.settle * 60.f) / 60.f : opt.time;
+        // The foxes asleep, their breath as of then; or as --fox-wake put
+        // them at spawn. The hero moves round them as they are.
+        if (opt.foxWake < 0.f)
+          for (game::Fox& fox : foxes) fox.holdRest(shotTime);
+        const std::vector<game::Blocker> blockers = foxBodies(foxes);
         game::Hero hero;
         if (opt.hero == 1 || opt.haveHeroMove || opt.heroAttack >= 0.f) {
           // Stands at the view's focus facing the camera, then runs or walks
@@ -964,7 +1050,7 @@ int main(int argc, char** argv) {
             game::HeroInput in;
             in.move = compass(opt.heroMove.x);
             in.walk = opt.heroMove.z > 0.5f;
-            hero.update(scene, 1.f / 60.f, in);
+            hero.update(scene, 1.f / 60.f, in, blockers);
           }
           if (opt.heroAttack >= 0.f) {
             const int attackFrames = static_cast<int>(std::lround(opt.heroAttack * 60.f));
@@ -974,10 +1060,11 @@ int main(int argc, char** argv) {
               in.walk = opt.heroMove.z > 0.5f;
               in.attack = f % 12 == 0 && f / 12 < opt.heroPresses;
               in.attackHeld = in.attack || static_cast<float>(f) / 60.f < opt.heroHold;
-              hero.update(scene, 1.f / 60.f, in);
+              hero.update(scene, 1.f / 60.f, in, blockers);
               // The smear samples the blade as it is drawn; keep it fed.
               if (f < attackFrames) {
-                std::vector<const pxe::Mesh*> a, e;
+                std::vector<pxe::ActorDraw> a;
+                std::vector<const pxe::Mesh*> e;
                 pxe::ActorMaterial m[pxe::kActorMaterials];
                 hero.pose(a, e, m);
               }
@@ -1003,10 +1090,7 @@ int main(int argc, char** argv) {
           scriptBrushes(opt, 0.f, 1.f / 60.f, params.gridStrokes);
           brushFires(clock, params.gridStrokes);
         }
-        // Asleep, its breath as of the capture's time; or as --fox-wake put
-        // it at spawn.
-        if (opt.foxWake < 0.f) fox.holdRest(params.time);
-        fox.pose(params.actors, params.actorMaterials);
+        for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
         params.fires = fireDraws(clock);
         params.lighting = lightingFor(scene, clock);
         const pxe::CameraFrame frame = draw(params);
@@ -1119,6 +1203,8 @@ int main(int argc, char** argv) {
             clock.hoursPerMinute = std::clamp(clock.hoursPerMinute * std::pow(2.f, static_cast<float>(input.speedSteps)),
                                               1.f / 60.f, 120.f);
           clock.advance(dt);
+          // The foxes first, so the hero is kept out of where they are now.
+          for (game::Fox& fox : foxes) fox.update(scene, dt, foxes);
           // The fireball: F sets one rolling from the middle of the view,
           // away up the screen; I J K L push it up, left, down and right on
           // screen; the view follows it (C toggles) until you pan away.
@@ -1142,13 +1228,12 @@ int main(int argc, char** argv) {
               in.walk = input.walk;
               in.attack = input.attack;
               in.attackHeld = input.attackHeld;
-              hero.update(scene, dt, in);
+              hero.update(scene, dt, in, foxBodies(foxes));
               if (glm::length(in.move) > 0.f) following = false;
               if (!(ball.alive() && following)) camera.follow(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
               input.panX = input.panY = 0.f;
             }
           }
-          fox.update(scene, dt);
           if (input.toggleGrass) view.grass = !view.grass;
           if (input.toggleMagenta) magenta = !magenta;
           if (input.toggleNdl) ndl = !ndl;
@@ -1243,7 +1328,7 @@ int main(int argc, char** argv) {
           params.time = static_cast<float>(now);
           params.lighting = lightingFor(scene, clock);
           hero.pose(params.actors, params.actorEffects, params.actorMaterials);
-          fox.pose(params.actors, params.actorMaterials);
+          for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
           const pxe::CameraFrame frame = draw(params);
           lastFrame = frame;
           // Weather sound follows the settings; each new flash queues its
