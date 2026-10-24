@@ -96,9 +96,11 @@ struct ViewToggles {
 
 // Spell brushes, painted into the grass fire with the left mouse button:
 // fire sets it alight, water soaks it and puts fire out, regrowth brings
-// burnt grass back. Kinds are pxe::FireGrid::Stroke's.
+// burnt grass back. Kinds are pxe::FireGrid::Stroke's. Or the fox tool in
+// their place: a click adds a fox at the nearest bed that fits.
 struct BrushSettings {
   static constexpr int kNone = -1;
+  static constexpr int kFox = 3;
   int kind = kNone;
   float radius = 1.f;  // metres
 };
@@ -118,11 +120,12 @@ class SettingsMenu {
   // True while the pointer is over the panel, so a click is not a brush stroke.
   bool wantsMouse() const;
 
-  // Build and draw the panel, and round the cursor the brush's outline on
-  // the ground (window points) if any. Call after the scene is presented,
+  // Build and draw the panel, and round the cursor the brush's (or the fox
+  // tool's) outline on the ground (window points) if any, and `note` (if
+  // any) by `notePoint` (window points). Call after the scene is presented,
   // before swap.
   void draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
-            const std::vector<glm::vec2>& brushOutline, float fps);
+            const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint, float fps);
 
  private:
   bool ready_ = false;

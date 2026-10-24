@@ -2,6 +2,8 @@
 
 #include "gl.hpp"
 
+#include <cstddef>
+
 namespace pxe {
 
 Mesh::~Mesh() { destroy(); }
@@ -71,6 +73,71 @@ void Mesh::update(const std::vector<Vertex>& vertices, const std::vector<std::ui
 }
 
 void Mesh::draw() const {
+  if (!vao_ || indexCount_ == 0) return;
+  glBindVertexArray(vao_);
+  glDrawElements(GL_TRIANGLES, indexCount_, GL_UNSIGNED_INT, nullptr);
+}
+
+SkinnedMesh::~SkinnedMesh() { destroy(); }
+
+SkinnedMesh::SkinnedMesh(SkinnedMesh&& other) noexcept
+    : vao_(other.vao_), vbo_(other.vbo_), ebo_(other.ebo_), indexCount_(other.indexCount_) {
+  other.vao_ = other.vbo_ = other.ebo_ = 0;
+  other.indexCount_ = 0;
+}
+
+SkinnedMesh& SkinnedMesh::operator=(SkinnedMesh&& other) noexcept {
+  if (this != &other) {
+    destroy();
+    vao_ = other.vao_;
+    vbo_ = other.vbo_;
+    ebo_ = other.ebo_;
+    indexCount_ = other.indexCount_;
+    other.vao_ = other.vbo_ = other.ebo_ = 0;
+    other.indexCount_ = 0;
+  }
+  return *this;
+}
+
+void SkinnedMesh::destroy() {
+  if (ebo_) glDeleteBuffers(1, &ebo_);
+  if (vbo_) glDeleteBuffers(1, &vbo_);
+  if (vao_) glDeleteVertexArrays(1, &vao_);
+  vao_ = vbo_ = ebo_ = 0;
+  indexCount_ = 0;
+}
+
+// Attributes 0-2 as a Mesh's; 3 the joints (integers) and 4 their weights.
+void SkinnedMesh::upload(const std::vector<SkinVertex>& vertices, const std::vector<std::uint32_t>& indices) {
+  destroy();
+  indexCount_ = static_cast<int>(indices.size());
+  if (vertices.empty() || indices.empty()) return;
+
+  glGenVertexArrays(1, &vao_);
+  glGenBuffers(1, &vbo_);
+  glGenBuffers(1, &ebo_);
+  glBindVertexArray(vao_);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(SkinVertex)), vertices.data(),
+               GL_STATIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size() * sizeof(std::uint32_t)),
+               indices.data(), GL_STATIC_DRAW);
+  const auto stride = static_cast<GLsizei>(sizeof(SkinVertex));
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(SkinVertex, px)));
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(SkinVertex, nx)));
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(SkinVertex, surface)));
+  glEnableVertexAttribArray(3);
+  glVertexAttribIPointer(3, 4, GL_UNSIGNED_BYTE, stride, reinterpret_cast<void*>(offsetof(SkinVertex, joints)));
+  glEnableVertexAttribArray(4);
+  glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(offsetof(SkinVertex, weights)));
+  glBindVertexArray(0);
+}
+
+void SkinnedMesh::draw() const {
   if (!vao_ || indexCount_ == 0) return;
   glBindVertexArray(vao_);
   glDrawElements(GL_TRIANGLES, indexCount_, GL_UNSIGNED_INT, nullptr);

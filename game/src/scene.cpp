@@ -611,8 +611,8 @@ void addShelter(VertexLists verts, IndexLists indices, const GroundIndex& ground
 
 // Ruins: the pond-and-pillars scene from tools/blender/build_ruins.py.
 
-pxe::Scene buildRuins(const BuildOptions& options) {
-  pxe::Scene scene;
+// Its camera, sun, ridge and colours.
+void setUpRuins(pxe::Scene& scene) {
   setPhasePalettes(scene);
   scene.tLit = 0.6f;
   scene.tMid = 0.18f;
@@ -632,15 +632,35 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   scene.horizonRadius = 46.f;
   scene.horizonHeight = 12.f;
   scene.horizonRelief = 9.f;
+}
 
-  const auto prims = pxe::loadGltf(std::string(PXE_ASSET_DIR) + "/scenes/ruins.glb");
-
-  // One mesh per surface keeps draw calls low.
+// The ruins before anything grows on them: ruins.glb, with the campfires
+// (and any test shelter and candles) added, one vertex list per surface.
+// Laying them out also gives the scene its fires, bounds, shelter, ground
+// and water.
+struct RuinsGeometry {
   std::vector<pxe::Vertex> verts[pxe::kSurfCount];
   std::vector<std::uint32_t> indices[pxe::kSurfCount];
-  std::vector<Triangle> lawn;
+  std::optional<GroundIndex> lawn;  // under the grass
+  std::vector<glm::vec3> lawnCorners;
   std::vector<Triangle> leaves;
   std::vector<float> leafArea;
+  std::size_t prims = 0;
+  std::size_t candles = 0;
+  int candlesOnStone = 0, candlesOnLawn = 0;
+  std::vector<glm::vec2> campfires;
+  std::vector<glm::vec3> solids;  // see SceneLayout
+};
+
+void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& geo) {
+  const auto prims = pxe::loadGltf(std::string(PXE_ASSET_DIR) + "/scenes/ruins.glb");
+  geo.prims = prims.size();
+
+  // One mesh per surface keeps draw calls low.
+  auto& verts = geo.verts;
+  auto& indices = geo.indices;
+  std::vector<Triangle> lawn;
+  std::vector<Triangle>& leaves = geo.leaves;
   for (const auto& prim : prims) {
     auto& v = verts[prim.surface];
     auto& idx = indices[prim.surface];
@@ -648,6 +668,11 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     v.insert(v.end(), prim.vertices.begin(), prim.vertices.end());
     for (std::uint32_t i : prim.indices) idx.push_back(base + i);
     computeBounds(scene, prim.vertices);
+    if (prim.node != "Ground")
+      for (std::uint32_t i : prim.indices) {
+        const pxe::Vertex& pv = prim.vertices[i];
+        geo.solids.push_back({pv.px, pv.py, pv.pz});
+      }
 
     if (prim.surface != pxe::kSurfGrass && prim.surface != pxe::kSurfLeaf) continue;
     for (std::size_t i = 0; i + 2 < prim.indices.size(); i += 3) {
@@ -659,17 +684,23 @@ pxe::Scene buildRuins(const BuildOptions& options) {
       }
       if (prim.surface == pxe::kSurfGrass) {
         lawn.push_back(t);
+        if (prim.node == "Ground") geo.lawnCorners.insert(geo.lawnCorners.end(), {t.p[0], t.p[1], t.p[2]});
       } else {
         leaves.push_back(t);
-        leafArea.push_back(0.5f * glm::length(glm::cross(t.p[1] - t.p[0], t.p[2] - t.p[0])));
+        geo.leafArea.push_back(0.5f * glm::length(glm::cross(t.p[1] - t.p[0], t.p[2] - t.p[0])));
       }
     }
   }
+  // Everything added from here on stands in the scene.
+  std::size_t added[pxe::kSurfCount];
+  for (int s = 0; s < pxe::kSurfCount; ++s) added[s] = indices[s].size();
   // The campfire sits on open lawn left of the pond.
-  const GroundIndex ground(std::move(lawn), 1.f);
+  geo.lawn.emplace(std::move(lawn), 1.f);
+  const GroundIndex& ground = *geo.lawn;
   std::mt19937 fireRng(11);
   const glm::vec2 campfire = kRuinsCampfire;
   scene.fires.push_back({addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng)});
+  geo.campfires.push_back(campfire);
   if (options.shelterTest) {
     // A second fire under a stone shelter, and a third under a tree crown
     // (the nearest bit of open lawn to the middle with a full crown over it
@@ -677,6 +708,7 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     const glm::vec2 roofed{kShelterTestX, kShelterTestZ};
     addShelter(verts, indices, ground, roofed.x, roofed.y);
     scene.fires.push_back({addCampfire(verts, indices, ground, roofed.x, roofed.y, fireRng)});
+    geo.campfires.push_back(roofed);
     std::vector<glm::vec3> crownCorners;
     for (const Triangle& t : leaves) crownCorners.insert(crownCorners.end(), {t.p[0], t.p[1], t.p[2]});
     pxe::ShelterMap crowns;
@@ -699,7 +731,10 @@ pxe::Scene buildRuins(const BuildOptions& options) {
           under = hit->pos;
         }
       }
-    if (under) scene.fires.push_back({addCampfire(verts, indices, ground, under->x, under->z, fireRng)});
+    if (under) {
+      scene.fires.push_back({addCampfire(verts, indices, ground, under->x, under->z, fireRng)});
+      geo.campfires.push_back({under->x, under->z});
+    }
   }
   if (options.candles) {
     // Candles on flat stone tops - a ledge, a plinth, a fallen block, from
@@ -719,7 +754,8 @@ pxe::Scene buildRuins(const BuildOptions& options) {
       for (float x = scene.focus.x - 12.f; x <= scene.focus.x + 12.f; x += 0.25f) spots.push_back({x, z});
     std::mt19937 candleRng(41);
     std::shuffle(spots.begin(), spots.end(), candleRng);
-    int onStone = 0, onLawn = 0;
+    int& onStone = geo.candlesOnStone;
+    int& onLawn = geo.candlesOnLawn;
     for (const glm::vec2& at : spots) {
       if (onStone >= 7 && onLawn >= 3) break;
       const auto lawnHit = ground.at(at.x, at.y);
@@ -748,8 +784,13 @@ pxe::Scene buildRuins(const BuildOptions& options) {
         if (hit) feet.push_back(hit->pos);
       }
     for (const glm::vec3& foot : feet) scene.fires.push_back({addCandle(verts, indices, foot), false, kCandleSize});
-    std::fprintf(stderr, "pxe: %zu candles, %d on stone, %d on the lawn\n", feet.size(), onStone, onLawn);
+    geo.candles = feet.size();
   }
+  for (int s = 0; s < pxe::kSurfCount; ++s)
+    for (std::size_t i = added[s]; i < indices[s].size(); ++i) {
+      const pxe::Vertex& v = verts[s][indices[s][i]];
+      geo.solids.push_back({v.px, v.py, v.pz});
+    }
   // Only built structure keeps the rain off: the stone. A tree crown lets
   // it through.
   scene.shelter.build(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
@@ -762,11 +803,25 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     scene.ground.build(solid);
     scene.waterTop.build(cornersOf(verts[pxe::kSurfWater], indices[pxe::kSurfWater]));
   }
-  for (pxe::FireSite& f : scene.fires) {
-    f.sheltered = scene.shelter.sheltered(f.base);
+  for (pxe::FireSite& f : scene.fires) f.sheltered = scene.shelter.sheltered(f.base);
+}
+
+pxe::Scene buildRuins(const BuildOptions& options) {
+  pxe::Scene scene;
+  setUpRuins(scene);
+  RuinsGeometry geo;
+  layOutRuins(options, scene, geo);
+  auto& verts = geo.verts;
+  auto& indices = geo.indices;
+  const GroundIndex& ground = *geo.lawn;
+  const std::vector<Triangle>& leaves = geo.leaves;
+  const std::vector<float>& leafArea = geo.leafArea;
+  if (options.candles)
+    std::fprintf(stderr, "pxe: %zu candles, %d on stone, %d on the lawn\n", geo.candles, geo.candlesOnStone,
+                 geo.candlesOnLawn);
+  for (const pxe::FireSite& f : scene.fires)
     std::fprintf(stderr, "pxe: %s at %.1f, %.1f %s\n", f.size < 1.f ? "candle" : "fire", f.base.x, f.base.z,
                  f.sheltered ? "sheltered" : "open to the rain");
-  }
 
   for (int s = 0; s < pxe::kSurfCount; ++s) {
     if (indices[s].empty()) continue;
@@ -852,12 +907,15 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   // Nor under the sleeping fox, when it is shown: blades rooted under it
   // drew over its curl and broke up its outline. Dropped after scattering,
   // so the rest of the lawn is exactly as without it.
-  if (options.foxRadius > 0.f) {
+  if (!options.beds.empty()) {
     const std::size_t before = scene.grass.size();
     std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
-      return glm::length(glm::vec2{g.px, g.pz} - options.foxSpot) < options.foxRadius;
+      for (const BedFootprint& b : options.beds)
+        if (glm::length(glm::vec2{g.px, g.pz} - b.xz) < b.radius) return true;
+      return false;
     });
-    std::fprintf(stderr, "pxe: %zu grass sprites under the fox dropped\n", before - scene.grass.size());
+    std::fprintf(stderr, "pxe: %zu grass sprites under %zu fox%s dropped\n", before - scene.grass.size(),
+                 options.beds.size(), options.beds.size() == 1 ? "" : "es");
   }
 
   // Leaves grow in clumps, as in the video: clump centres are scattered over
@@ -959,7 +1017,7 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     }
     std::fprintf(stderr, "pxe: %d extra fires\n", options.extraFires);
   }
-  std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters\n", prims.size(), leafCount);
+  std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters\n", geo.prims, leafCount);
   return scene;
 }
 
@@ -969,6 +1027,22 @@ pxe::Scene buildScene(const BuildOptions& options) {
   pxe::Scene scene = (options.scene == "hills") ? buildHills(options) : buildRuins(options);
   std::fprintf(stderr, "pxe: scene %s, %zu sprites\n", options.scene.c_str(), scene.grass.size());
   return scene;
+}
+
+SceneLayout laidOut(const BuildOptions& options) {
+  SceneLayout layout;
+  if (options.scene == "hills") return layout;
+  pxe::Scene scene;
+  setUpRuins(scene);
+  RuinsGeometry geo;
+  layOutRuins(options, scene, geo);
+  layout.campfires = std::move(geo.campfires);
+  layout.solids = std::move(geo.solids);
+  layout.ground = std::move(scene.ground);
+  layout.lawn.build(geo.lawnCorners);
+  layout.bedsLo = glm::vec2{scene.focus.x, scene.focus.z} - 20.f;
+  layout.bedsHi = glm::vec2{scene.focus.x, scene.focus.z} + 20.f;
+  return layout;
 }
 
 }  // namespace game

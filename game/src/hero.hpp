@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pxe/mesh.hpp"
+#include "pxe/renderer.hpp"
 #include "pxe/scene.hpp"
 #include "pxe/skinned.hpp"
 
@@ -60,6 +61,13 @@ struct HeroInput {
   bool attackHeld = false;
 };
 
+// Somewhere the hero may not stand, on the ground (world xz): a capsule round
+// the segment from a to b, `radius` out from it (a circle when a == b).
+struct Blocker {
+  glm::vec2 a{0.f}, b{0.f};
+  float radius = 0.f;
+};
+
 // The hooded hero, built, rigged and animated in Blender
 // (tools/blender/build_hooded_hero.py) and loaded from
 // assets/characters/hooded_hero.glb.
@@ -93,10 +101,12 @@ class Hero {
   // How big against a real person (1). Stride and speed scale with it.
   void setSize(float size) { size_ = std::clamp(size, 0.5f, 3.f); }
   float size() const { return size_; }
-  void update(const pxe::Scene& scene, float dt, const HeroInput& input);
-  // Skin this frame's pose and hand the figure (actors) and its sword's
+  // Each frame it is pushed out of every blocker (a fox's body) that its
+  // footprint overlaps, as far as the ground lets it go, after it moves.
+  void update(const pxe::Scene& scene, float dt, const HeroInput& input, const std::vector<Blocker>& blockers);
+  // Place this frame's pose and hand the figure (actors) and its sword's
   // smear and fragments (effects, which cast no shadow) to the frame.
-  void pose(std::vector<const pxe::Mesh*>& actors, std::vector<const pxe::Mesh*>& effects,
+  void pose(std::vector<pxe::ActorDraw>& actors, std::vector<const pxe::Mesh*>& effects,
             pxe::ActorMaterial (&materials)[pxe::kActorMaterials]);
 
   glm::vec3 position() const { return {pos_.x, y_, pos_.y}; }
@@ -127,9 +137,8 @@ class Hero {
   float rand01();
 
   pxe::SkinnedModel model_;
-  pxe::Mesh mesh_;
   pxe::SkinnedModel::Pose pose_, run_, idle_, actPose_, last_, from_;
-  std::vector<pxe::Vertex> verts_;
+  std::vector<glm::mat4> joints_;  // the last pose(), placed
   bool built_ = false;
   int idleClip_ = -1, walkClip_ = -1, runClip_ = -1;
   int slashClips_[3] = {-1, -1, -1};

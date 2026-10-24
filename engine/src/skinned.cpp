@@ -61,6 +61,9 @@ SkinnedModel SkinnedModel::load(const std::string& path, int firstMaterial) {
     if (data->nodes[i].mesh && data->nodes[i].skin) meshNode = &data->nodes[i];
   if (!meshNode) throw std::runtime_error("no skinned mesh in " + path);
   const cgltf_skin& skin = *meshNode->skin;
+  if (skin.joints_count > static_cast<cgltf_size>(kMaxJoints))
+    throw std::runtime_error(path + " has " + std::to_string(skin.joints_count) + " joints, more than " +
+                             std::to_string(kMaxJoints));
 
   SkinnedModel m;
   m.firstMaterial_ = firstMaterial;
@@ -122,6 +125,7 @@ SkinnedModel SkinnedModel::load(const std::string& path, int firstMaterial) {
   }
 
   // Vertices, every primitive of the mesh.
+  std::vector<std::uint32_t> indices;
   for (cgltf_size p = 0; p < meshNode->mesh->primitives_count; ++p) {
     const cgltf_primitive& prim = meshNode->mesh->primitives[p];
     const cgltf_accessor* pos = attribute(prim, cgltf_attribute_type_position);
@@ -133,15 +137,15 @@ SkinnedModel SkinnedModel::load(const std::string& path, int firstMaterial) {
     const auto first = static_cast<std::uint32_t>(m.vertices_.size());
     for (cgltf_size i = 0; i < pos->count; ++i) {
       SkinVertex v{};
-      cgltf_accessor_read_float(pos, i, glm::value_ptr(v.pos), 3);
-      cgltf_accessor_read_float(nrm, i, glm::value_ptr(v.normal), 3);
+      cgltf_accessor_read_float(pos, i, &v.px, 3);
+      cgltf_accessor_read_float(nrm, i, &v.nx, 3);
       v.surface = static_cast<float>(kActorSurface + firstMaterial + std::min(material, slots - 1));
       cgltf_uint ji[4] = {};
       cgltf_accessor_read_uint(jts, i, ji, 4);
       cgltf_accessor_read_float(wts, i, v.weights, 4);
       float total = 0.f;
       for (int k = 0; k < 4; ++k) {
-        v.joints[k] = ji[k] < fromSkin.size() ? fromSkin[ji[k]] : 0;
+        v.joints[k] = static_cast<std::uint8_t>(ji[k] < fromSkin.size() ? fromSkin[ji[k]] : 0);
         total += v.weights[k];
       }
       for (float& w : v.weights) w = total > 0.f ? w / total : 0.f;
@@ -149,12 +153,13 @@ SkinnedModel SkinnedModel::load(const std::string& path, int firstMaterial) {
     }
     if (prim.indices) {
       for (cgltf_size i = 0; i < prim.indices->count; ++i)
-        m.indices_.push_back(first + static_cast<std::uint32_t>(cgltf_accessor_read_index(prim.indices, i)));
+        indices.push_back(first + static_cast<std::uint32_t>(cgltf_accessor_read_index(prim.indices, i)));
     } else {
-      for (cgltf_size i = 0; i < pos->count; ++i) m.indices_.push_back(first + static_cast<std::uint32_t>(i));
+      for (cgltf_size i = 0; i < pos->count; ++i) indices.push_back(first + static_cast<std::uint32_t>(i));
     }
   }
   if (m.vertices_.empty()) throw std::runtime_error("skinned mesh has no vertices: " + path);
+  m.mesh_.upload(m.vertices_, indices);
 
   // Clips: every channel that drives one of the joints.
   for (cgltf_size a = 0; a < data->animations_count; ++a) {
@@ -286,9 +291,9 @@ glm::mat4 SkinnedModel::restJoint(int joint) const {
   return glm::inverse(joints_[joint].inverseBind);
 }
 
-glm::vec3 SkinnedModel::jointPoint(int joint, glm::vec3 restPoint) const {
-  if (joint < 0 || joint >= static_cast<int>(skinMats_.size())) return restPoint;
-  return glm::vec3(skinMats_[joint] * glm::vec4(restPoint, 1.f));
+glm::vec3 SkinnedModel::jointPoint(const std::vector<glm::mat4>& joints, int joint, glm::vec3 restPoint) {
+  if (joint < 0 || joint >= static_cast<int>(joints.size())) return restPoint;
+  return glm::vec3(joints[static_cast<std::size_t>(joint)] * glm::vec4(restPoint, 1.f));
 }
 
 void SkinnedModel::turn(Pose& pose, int joint, glm::vec3 axis, float angle) const {
@@ -297,25 +302,28 @@ void SkinnedModel::turn(Pose& pose, int joint, glm::vec3 axis, float angle) cons
   pose.r[joint] = glm::normalize(pose.r[joint] * glm::angleAxis(angle, local));
 }
 
-void SkinnedModel::skin(const Pose& pose, const glm::mat4& model, std::vector<Vertex>& out) const {
+void SkinnedModel::skin(const Pose& pose, const glm::mat4& model, std::vector<glm::mat4>& joints) const {
   const std::size_t n = joints_.size();
-  world_.resize(n);
-  skinMats_.resize(n);
+  joints.resize(n);
+  // Each joint's world transform, parents first; then each after its
+  // inverse bind, once nothing needs the world transforms any more.
   const glm::mat4 root = model * base_;
   for (std::size_t i = 0; i < n; ++i) {
     const glm::mat4 local = trs(pose.t[i], pose.r[i], pose.s[i]);
-    world_[i] = joints_[i].parent >= 0 ? world_[joints_[i].parent] * local : root * local;
-    skinMats_[i] = world_[i] * joints_[i].inverseBind;
+    const int parent = joints_[i].parent;
+    joints[i] = parent >= 0 ? joints[static_cast<std::size_t>(parent)] * local : root * local;
   }
+  for (std::size_t i = 0; i < n; ++i) joints[i] = joints[i] * joints_[i].inverseBind;
+}
+
+void SkinnedModel::vertexPoints(const std::vector<glm::mat4>& joints, std::vector<glm::vec3>& out) const {
   out.resize(vertices_.size());
   for (std::size_t i = 0; i < vertices_.size(); ++i) {
     const SkinVertex& v = vertices_[i];
-    glm::mat4 m{0.f};
+    glm::vec4 p{0.f};
     for (int k = 0; k < 4; ++k)
-      if (v.weights[k] > 0.f) m += skinMats_[v.joints[k]] * v.weights[k];
-    const glm::vec3 p = glm::vec3(m * glm::vec4(v.pos, 1.f));
-    const glm::vec3 nrm = glm::normalize(glm::mat3(m) * v.normal);
-    out[i] = {p.x, p.y, p.z, nrm.x, nrm.y, nrm.z, v.surface};
+      if (v.weights[k] > 0.f) p += joints[v.joints[k]] * glm::vec4(v.px, v.py, v.pz, 1.f) * v.weights[k];
+    out[i] = glm::vec3(p);
   }
 }
 

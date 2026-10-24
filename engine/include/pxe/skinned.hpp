@@ -15,10 +15,14 @@ namespace pxe {
 // Characters are drawn as a surface of their own: every vertex's surface is
 // kActorSurface + an actor-material slot, and FrameParams::actorMaterials
 // gives each slot its base colour and whether it glows. The characters share
-// the table each frame, each in slots of its own: a model's materials take
-// the slots from the first it was loaded with (SkinnedModel::load).
+// the table each frame, each kind in slots of its own: a model's materials
+// take the slots from the first it was loaded with (SkinnedModel::load), and
+// every character drawn from one model shares them.
 constexpr int kActorSurface = 16;
-constexpr int kActorMaterials = 16;
+constexpr int kActorMaterials = 64;
+// The most joints a model may have: the vertex shaders take a character's
+// joint matrices as a uniform array this long (uJoints).
+constexpr int kMaxJoints = 64;
 
 struct ActorMaterial {
   glm::vec3 colour{0.f};  // base colour, display (sRGB) values
@@ -28,9 +32,11 @@ struct ActorMaterial {
 // A skinned character from glTF 2.0: one skinned mesh, its skeleton and its
 // animation clips. Clips are sampled at any time, with joints interpolated
 // between keys (slerped rotations), and poses blend, so motion is smooth
-// rather than stepped. Skinning runs on the CPU straight into world-space
-// vertices, so a posed character draws through every pass - shadows,
-// reflections, edges - exactly as the scene's own meshes do.
+// rather than stepped. Skinning runs in the vertex shaders: the mesh is
+// uploaded once, at rest, and a posed character is drawn from it with its
+// own joint matrices (skin), through every pass - shadows, reflections,
+// edges - as the scene's own meshes are. A model keeps nothing of any one
+// character, so any number of them can share it.
 class SkinnedModel {
  public:
   // Each joint's local transform.
@@ -40,7 +46,8 @@ class SkinnedModel {
     std::vector<glm::vec3> s;
   };
 
-  // Throws std::runtime_error on a missing file or one with no skinned mesh.
+  // Needs the GL context, to upload the mesh. Throws std::runtime_error on a
+  // missing file, one with no skinned mesh or more than kMaxJoints joints.
   // The model's material i takes actor-material slot firstMaterial + i
   // (0 <= firstMaterial < kActorMaterials; materials past the table's end
   // share its last slot).
@@ -54,6 +61,9 @@ class SkinnedModel {
   // slot firstMaterial() + i.
   const std::vector<ActorMaterial>& materials() const { return materials_; }
   int firstMaterial() const { return firstMaterial_; }
+  // The mesh at rest, its vertices' surfaces kActorSurface + firstMaterial()
+  // + material, to draw with a character's joint matrices.
+  const SkinnedMesh& mesh() const { return mesh_; }
 
   void restPose(Pose& pose) const;
   // One clip at `time` seconds over the rest pose: wrapped round its length
@@ -67,15 +77,18 @@ class SkinnedModel {
   // Turn a joint by `angle` radians about `axis`, an axis of the model at
   // rest (y up, facing +z), after its animation; its children follow.
   void turn(Pose& pose, int joint, glm::vec3 axis, float angle) const;
-  // Skin a pose placed by `model` into world-space vertices (same count and
-  // order every call), surfaces kActorSurface + firstMaterial() + material.
-  void skin(const Pose& pose, const glm::mat4& model, std::vector<Vertex>& out) const;
-  const std::vector<std::uint32_t>& indices() const { return indices_; }
+  // A pose placed by `model`: each joint's matrix from the model at rest to
+  // the world (its world transform after its inverse bind), for drawing
+  // (FrameParams::actors) and jointPoint.
+  void skin(const Pose& pose, const glm::mat4& model, std::vector<glm::mat4>& joints) const;
   // A joint's place and axes at rest, in the model (y up, facing +z).
   glm::mat4 restJoint(int joint) const;
-  // Where a point of the model at rest, carried by `joint`, is in the world
-  // as of the last skin().
-  glm::vec3 jointPoint(int joint, glm::vec3 restPoint) const;
+  // Where a point of the model at rest, carried by `joint`, is under a
+  // character's joint matrices (skin).
+  static glm::vec3 jointPoint(const std::vector<glm::mat4>& joints, int joint, glm::vec3 restPoint);
+  // For measuring, not drawing: where every vertex of the mesh is under
+  // joint matrices from skin(), in the mesh's order.
+  void vertexPoints(const std::vector<glm::mat4>& joints, std::vector<glm::vec3>& out) const;
 
  private:
   struct Joint {
@@ -99,22 +112,13 @@ class SkinnedModel {
     float duration = 0.f;
     std::vector<Channel> channels;
   };
-  struct SkinVertex {
-    glm::vec3 pos;
-    glm::vec3 normal;
-    float surface;
-    int joints[4];
-    float weights[4];
-  };
-
   std::vector<Joint> joints_;
   std::vector<Clip> clips_;
-  std::vector<SkinVertex> vertices_;
-  std::vector<std::uint32_t> indices_;
+  std::vector<SkinVertex> vertices_;  // as uploaded, for vertexPoints
   std::vector<ActorMaterial> materials_;
   int firstMaterial_ = 0;
   glm::mat4 base_{1.f};  // world transform of the skeleton's parent node
-  mutable std::vector<glm::mat4> world_, skinMats_;
+  SkinnedMesh mesh_;
 };
 
 }  // namespace pxe
