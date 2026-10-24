@@ -502,6 +502,10 @@ void Renderer::upload(const Scene& scene) {
   for (LightSlot& slot : slots_) slot = LightSlot{};
   fireLights_.clear();
   fireTime_ = -1.f;
+  uploadGrass(scene);
+}
+
+void Renderer::uploadGrass(const Scene& scene) {
   grassCount_ = static_cast<int>(scene.grass.size());
   glBindBuffer(GL_ARRAY_BUFFER, grassInst_);
   glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(scene.grass.size() * sizeof(GrassInstance)),

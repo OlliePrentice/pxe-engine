@@ -206,7 +206,8 @@ bool SettingsMenu::wantsKeyboard() const { return ready_ && open_ && ImGui::GetI
 bool SettingsMenu::wantsMouse() const { return ready_ && open_ && ImGui::GetIO().WantCaptureMouse; }
 
 void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
-                        const std::vector<glm::vec2>& brushOutline, float fps) {
+                        const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint,
+                        float fps) {
   if (!ready_) return;
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
@@ -335,8 +336,11 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
       ImGui::RadioButton("Water  (2)", &brush.kind, 1);
       ImGui::SameLine();
       ImGui::RadioButton("Regrow  (3)", &brush.kind, 2);
+      ImGui::SameLine();
+      ImGui::RadioButton("Fox  (4)", &brush.kind, BrushSettings::kFox);
       ImGui::SliderFloat("Brush size", &brush.radius, 0.4f, 3.f, "%.1f m");
-      ImGui::TextDisabled("Hold the left mouse button to paint; fire and water also\nlight and put out campfires");
+      ImGui::TextDisabled("Hold the left mouse button to paint; fire and water also\nlight and put out campfires. "
+                          "Fox: click to add one in the\nnearest bed that fits");
 
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms), capped by vsync; --bench measures uncapped", fps, 1000.f / fps);
@@ -346,14 +350,25 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
     ImGui::End();
   }
 
-  // The brush's outline where it lies on the ground, in its colour.
+  // The brush's outline where it lies on the ground, in its colour; the fox
+  // tool's in a fox's cream.
   if (brushOutline.size() > 2) {
-    static const ImU32 colours[3] = {IM_COL32(255, 150, 70, 220), IM_COL32(120, 190, 255, 220),
-                                     IM_COL32(150, 230, 110, 220)};
+    static const ImU32 colours[4] = {IM_COL32(255, 150, 70, 220), IM_COL32(120, 190, 255, 220),
+                                     IM_COL32(150, 230, 110, 220), IM_COL32(245, 225, 200, 220)};
     std::vector<ImVec2> points;
     for (const glm::vec2& p : brushOutline) points.emplace_back(p.x, p.y);
     ImGui::GetForegroundDrawList()->AddPolyline(points.data(), static_cast<int>(points.size()),
-                                                colours[std::clamp(brush.kind, 0, 2)], ImDrawFlags_Closed, 2.f);
+                                                colours[std::clamp(brush.kind, 0, 3)], ImDrawFlags_Closed, 2.f);
+  }
+
+  // A word by the cursor, on a dark plate so it reads over any ground.
+  if (note) {
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    const ImVec2 at{notePoint.x + 18.f, notePoint.y + 10.f};
+    const ImVec2 size = ImGui::CalcTextSize(note);
+    list->AddRectFilled(ImVec2(at.x - 6.f, at.y - 4.f), ImVec2(at.x + size.x + 6.f, at.y + size.y + 4.f),
+                        IM_COL32(20, 18, 24, 210), 4.f);
+    list->AddText(at, IM_COL32(255, 235, 220, 255), note);
   }
 
   ImGui::Render();

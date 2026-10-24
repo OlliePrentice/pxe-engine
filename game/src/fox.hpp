@@ -115,8 +115,33 @@ class Fox {
   // otherwise kBodyRadius round its hips-to-head line as it stands and walks.
   Blocker body() const;
 
-  // The beds for `count` foxes in a scene laid out as `layout` (with `model`
-  // as loadModel's), tried over its bed area in a fixed order so every run
+  // The fox through every frame of its five clips, at kSize in the model (y
+  // up, the curl facing +z), for checking beds: every vertex of every pose,
+  // sorted into the voxels it passes through. Built once per model (sweep()),
+  // and shared by every bed search, findBeds' and findBed's.
+  struct Sweep {
+    struct Voxel {
+      glm::vec3 centre;
+      std::uint32_t first, count;  // its vertices in `vertices`
+    };
+    // The voxels in blocks, each with bounds round all its vertices, so a
+    // triangle need only look at the voxels near it.
+    struct Block {
+      glm::vec3 lo{1e9f}, hi{-1e9f};
+      std::vector<std::uint32_t> voxels;
+    };
+    std::vector<glm::vec3> vertices;  // by voxel
+    std::vector<Voxel> voxels;
+    std::vector<Block> blocks;
+    std::vector<glm::vec3> fox;  // every voxel's middle
+    float reach = 0.f;           // how far any vertex reaches from the origin, seen from above
+    float radius = 0.f;          // and at all
+  };
+  // Sweep `model` (loadModel's); throws if it lacks any of the five clips.
+  static Sweep sweep(const pxe::SkinnedModel& model);
+
+  // The beds for `count` foxes in a scene laid out as `layout` (with `sweep`
+  // as sweep()'s), tried over its bed area in a fixed order so every run
   // finds the same: each on open lawn (lawn under all of the curl, and no
   // part of the fox sunk into the ground), with the whole fox through every
   // frame of its five clips, at kSize and tilted to the slope, at least
@@ -124,9 +149,22 @@ class Fox {
   // dirt patch, stones and logs among it) and from the fox in every other
   // bed. Each curl faces the nearest campfire within kFaceFire, or else a
   // yaw drawn from the same fixed seed. Fewer than `count` if no more fit.
-  static std::vector<FoxBed> findBeds(const pxe::SkinnedModel& model, const SceneLayout& layout, int count);
+  static std::vector<FoxBed> findBeds(const Sweep& sweep, const SceneLayout& layout, int count);
   static constexpr float kBedClearance = 0.2f;
   static constexpr float kFaceFire = 6.f;
+  // A bed for this fox (built, not yet spawned) as near `at` (world xz) as
+  // one fits, among `foxes` as they are now (this fox not among them): the
+  // spots of findBeds' 0.25 m grid within kAddReach of it, nearest first, under
+  // findBeds' rules, clear of the fox in each of their beds, and with its
+  // curl and its standing body in the bed clear of every route one of them
+  // is out on. The curl faces the nearest campfire within kFaceFire, or else
+  // turns so that the standing fox faces `toCamera` (xz). False if none fits.
+  bool findBed(const Sweep& sweep, const SceneLayout& layout, glm::vec2 at, glm::vec2 toCamera,
+               std::span<const Fox> foxes, FoxBed& bed) const;
+  static constexpr float kAddReach = 2.f;
+  // Where it lies, as spawn() put it.
+  glm::vec2 bedPos() const { return bedPos_; }
+  float bedYaw() const { return bedYaw_; }
 
  private:
   const pxe::SkinnedModel* model_ = nullptr;
@@ -266,6 +304,21 @@ class Fox {
   // (curled, and standing in it) and of every route another has set off on
   // and not yet lain down from.
   bool routeFree(const Route& route, std::span<const Fox> foxes) const;
+  // The body as routeFree checks it: a box on the ground with its middle, its
+  // axes (x the heading, z its right) and boxHalf_ along them, for the model's
+  // origin at x, z and its yaw.
+  struct BodyBox {
+    glm::vec2 centre, ax, az;
+  };
+  BodyBox bodyBox(glm::vec3 at) const;
+  // Whether two boxes overlap, and a box and a circle.
+  bool overlaps(const BodyBox& a, const BodyBox& b) const;
+  bool touches(const BodyBox& a, glm::vec2 centre, float radius) const;
+  // Whether a bed at xz, its curl facing `yaw`, keeps clear of every route
+  // one of `foxes` is out on: its kFootprint circle and its standing body box.
+  bool bedFree(glm::vec2 xz, float yaw, std::span<const Fox> foxes) const;
+  // The bed rules over a laid-out scene, for findBeds and findBed.
+  class Beds;
   // A point `s` metres along the walk: where the model's origin is, and its
   // yaw there.
   void routeAt(const Route& route, float s, glm::vec2& pos, float& yaw) const;
@@ -281,6 +334,10 @@ class Fox {
   float fireReach_ = 0.f;        // ...and how far their dirt patches reach
   float standTurn_ = 0.f;   // the standing heading, from the curl's yaw (radians)
   glm::vec2 pivot_{0.f};    // what the walk steers: model x (heading) and z (right) at kSize
+  // A body box's half sizes, grown so that the boxes every kCheckStep cover
+  // the whole walk between them (routeFree), and how far its corners reach.
+  glm::vec2 boxHalf_{0.f};
+  float boxCorner_ = 0.f;
   bool forceWalk_ = false;
   bool walking_ = false;    // this wake walks, along route_, from the wake until it lies down
   Route route_;

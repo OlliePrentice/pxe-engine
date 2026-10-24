@@ -67,10 +67,12 @@ constexpr const char* kClips[5] = {"Fox_Rest", "Fox_StandUp", "Fox_LookAround", 
 // vertices of every pose that fall in it, at most half its diagonal from its
 // middle, and every check on its middle allows for that.
 constexpr float kVoxel = 0.01f;
+const float kVoxelSlack = 0.5f * std::sqrt(3.f) * kVoxel;  // a vertex from its voxel's middle, at most
 // Seen from above, the fox in an accepted bed is kept as distances on a grid
 // of this many metres, every cell's middle as far from it as its nearest
 // occupied cell's middle.
 constexpr float kPlan = 0.02f;
+const float kPlanSlack = 0.5f * std::sqrt(2.f) * kPlan;  // a point from its plan cell's middle, at most
 // No vertex of the fox may be more than this far under the ground's smooth
 // height: it lies and stands on the lawn, not in it.
 constexpr float kSink = 0.03f;
@@ -203,6 +205,15 @@ void Fox::build(const pxe::SkinnedModel& model, int index) {
     ++paws;
   }
   if (paws > 0) pivot_ /= static_cast<float>(paws);
+  // Half a check along the walk, a corner of the body moves at most as far
+  // as the pivot plus its turn at the tightest; grown by that, the boxes
+  // every kCheckStep cover the whole walk between them.
+  float swing = 0.f;  // the farthest corner from the pivot
+  for (const float x : {kBodyBack, kBodyFront})
+    for (const float z : {kBodyLeft, kBodyRight}) swing = std::max(swing, glm::length(glm::vec2{x, z} - pivot_));
+  const float grow = 0.5f * kCheckStep * (1.f + swing / kMinTurn);
+  boxHalf_ = glm::vec2{0.5f * (kBodyFront - kBodyBack), 0.5f * (kBodyRight - kBodyLeft)} + grow;
+  boxCorner_ = glm::length(boxHalf_);
   // How far each phase of the walk is from standing: the sum of every
   // joint's turn between the two.
   walkGap_.assign(kPhases, 0.f);
@@ -729,57 +740,63 @@ bool Fox::routeClear(const pxe::Scene& scene, Route& route) const {
   return true;
 }
 
-bool Fox::routeFree(const Route& route, std::span<const Fox> foxes) const {
-  // The body at each check as a box on the ground: its middle, its axes (x
-  // the heading, z its right) and its half sizes along them. Between checks
-  // it moves on: half a check along, a corner moves at most as far as the
-  // pivot plus its turn at the tightest, so every box is grown by that and
-  // the boxes cover the whole walk between them.
-  struct Box {
-    glm::vec2 centre, ax, az;
-  };
-  float swing = 0.f;  // the farthest corner from the pivot
-  for (const float x : {kBodyBack, kBodyFront})
-    for (const float z : {kBodyLeft, kBodyRight}) swing = std::max(swing, glm::length(glm::vec2{x, z} - pivot_));
-  const float grow = 0.5f * kCheckStep * (1.f + swing / kMinTurn);
-  const glm::vec2 half = glm::vec2{0.5f * (kBodyFront - kBodyBack), 0.5f * (kBodyRight - kBodyLeft)} + grow;
-  const float corner = glm::length(half);
-  auto box = [&](glm::vec3 at) {
-    const glm::vec2 ax{std::cos(at.z), -std::sin(at.z)}, az{std::sin(at.z), std::cos(at.z)};
-    return Box{glm::vec2{at.x, at.y} + ax * (0.5f * (kBodyBack + kBodyFront)) + az * (0.5f * (kBodyLeft + kBodyRight)),
-               ax, az};
-  };
+Fox::BodyBox Fox::bodyBox(glm::vec3 at) const {
+  const glm::vec2 ax{std::cos(at.z), -std::sin(at.z)}, az{std::sin(at.z), std::cos(at.z)};
+  return BodyBox{glm::vec2{at.x, at.y} + ax * (0.5f * (kBodyBack + kBodyFront)) + az * (0.5f * (kBodyLeft + kBodyRight)),
+                 ax, az};
+}
+
+bool Fox::overlaps(const BodyBox& a, const BodyBox& b) const {
   // Two boxes overlap unless one of their four axes parts them.
-  auto overlap = [&](const Box& a, const Box& b) {
-    const glm::vec2 d = b.centre - a.centre;
-    if (glm::dot(d, d) >= 4.f * corner * corner) return false;
-    for (const glm::vec2 axis : {a.ax, a.az, b.ax, b.az}) {
-      const float ra = half.x * std::fabs(glm::dot(a.ax, axis)) + half.y * std::fabs(glm::dot(a.az, axis));
-      const float rb = half.x * std::fabs(glm::dot(b.ax, axis)) + half.y * std::fabs(glm::dot(b.az, axis));
-      if (std::fabs(glm::dot(d, axis)) >= ra + rb) return false;
-    }
-    return true;
-  };
+  const glm::vec2 d = b.centre - a.centre;
+  if (glm::dot(d, d) >= 4.f * boxCorner_ * boxCorner_) return false;
+  for (const glm::vec2 axis : {a.ax, a.az, b.ax, b.az}) {
+    const float ra = boxHalf_.x * std::fabs(glm::dot(a.ax, axis)) + boxHalf_.y * std::fabs(glm::dot(a.az, axis));
+    const float rb = boxHalf_.x * std::fabs(glm::dot(b.ax, axis)) + boxHalf_.y * std::fabs(glm::dot(b.az, axis));
+    if (std::fabs(glm::dot(d, axis)) >= ra + rb) return false;
+  }
+  return true;
+}
+
+bool Fox::touches(const BodyBox& a, glm::vec2 centre, float radius) const {
   // A box and a circle overlap when the box's nearest point is inside it.
-  auto touches = [&](const Box& a, glm::vec2 centre, float radius) {
-    const glm::vec2 d = centre - a.centre;
-    const float x = std::clamp(glm::dot(d, a.ax), -half.x, half.x), z = std::clamp(glm::dot(d, a.az), -half.y, half.y);
-    return glm::length(d - a.ax * x - a.az * z) < radius;
-  };
-  std::vector<Box> mine, theirs;
-  for (const glm::vec3& at : route.body) mine.push_back(box(at));
+  const glm::vec2 d = centre - a.centre;
+  const float x = std::clamp(glm::dot(d, a.ax), -boxHalf_.x, boxHalf_.x);
+  const float z = std::clamp(glm::dot(d, a.az), -boxHalf_.y, boxHalf_.y);
+  return glm::length(d - a.ax * x - a.az * z) < radius;
+}
+
+bool Fox::routeFree(const Route& route, std::span<const Fox> foxes) const {
+  // The body at each check as a box on the ground, grown so the boxes cover
+  // the whole walk between them (build()).
+  std::vector<BodyBox> mine, theirs;
+  for (const glm::vec3& at : route.body) mine.push_back(bodyBox(at));
   for (const Fox& other : foxes) {
     if (&other == this || !other.model_) continue;
     // Its bed: curled up in it, and standing in it as it wakes (the body as
     // it sets off on a walk, which starts there).
-    const Box bed = box({other.bedPos_.x, other.bedPos_.y, other.bedYaw_});
+    const BodyBox bed = bodyBox({other.bedPos_.x, other.bedPos_.y, other.bedYaw_});
     theirs.clear();
     if (other.walking_)
-      for (const glm::vec3& at : other.route_.body) theirs.push_back(box(at));
-    for (const Box& b : mine) {
-      if (touches(b, other.bedPos_, kFootprint) || overlap(b, bed)) return false;
-      for (const Box& t : theirs)
-        if (overlap(b, t)) return false;
+      for (const glm::vec3& at : other.route_.body) theirs.push_back(bodyBox(at));
+    for (const BodyBox& b : mine) {
+      if (touches(b, other.bedPos_, kFootprint) || overlaps(b, bed)) return false;
+      for (const BodyBox& t : theirs)
+        if (overlaps(b, t)) return false;
+    }
+  }
+  return true;
+}
+
+bool Fox::bedFree(glm::vec2 xz, float yaw, std::span<const Fox> foxes) const {
+  // As routeFree, the other way about: every box of every route out now
+  // against the curl and the standing body in the bed.
+  const BodyBox standing = bodyBox({xz.x, xz.y, yaw});
+  for (const Fox& other : foxes) {
+    if (&other == this || !other.model_ || !other.walking_) continue;
+    for (const glm::vec3& at : other.route_.body) {
+      const BodyBox t = bodyBox(at);
+      if (touches(t, xz, kFootprint) || overlaps(t, standing)) return false;
     }
   }
   return true;
@@ -867,9 +884,8 @@ Blocker Fox::body() const {
   return {{hips.x, hips.z}, {head.x, head.z}, kBodyRadius};
 }
 
-std::vector<FoxBed> Fox::findBeds(const pxe::SkinnedModel& model, const SceneLayout& layout, int count) {
-  std::vector<FoxBed> beds;
-  if (count <= 0 || layout.lawn.empty() || layout.ground.empty()) return beds;
+Fox::Sweep Fox::sweep(const pxe::SkinnedModel& model) {
+  Sweep out;
   // The fox, every vertex in every 1/60 s of its five clips and at each
   // clip's end, at kSize in the model (y up, the curl facing +z), as the
   // middles of the voxels it passes through.
@@ -911,86 +927,61 @@ std::vector<FoxBed> Fox::findBeds(const pxe::SkinnedModel& model, const SceneLay
   std::vector<std::uint64_t> order(swept.size());
   for (std::size_t i = 0; i < swept.size(); ++i) order[i] = (voxelOf(swept[i]) << kIndexBits) | i;
   std::sort(order.begin(), order.end());
-  struct Voxel {
-    glm::vec3 centre;
-    std::uint32_t first, count;  // its vertices in `vertices`
-  };
-  std::vector<glm::vec3> vertices(swept.size());
-  std::vector<Voxel> voxels;
+  out.vertices.resize(swept.size());
   for (std::size_t i = 0; i < order.size(); ++i) {
     const std::uint64_t v = order[i] >> kIndexBits;
-    vertices[i] = swept[order[i] & ((std::uint64_t{1} << kIndexBits) - 1)];
-    if (voxels.empty() || (order[i - 1] >> kIndexBits) != v) {
+    out.vertices[i] = swept[order[i] & ((std::uint64_t{1} << kIndexBits) - 1)];
+    if (out.voxels.empty() || (order[i - 1] >> kIndexBits) != v) {
       const auto w = static_cast<std::uint64_t>(cells.x), h = static_cast<std::uint64_t>(cells.y);
       const glm::ivec3 c{static_cast<int>(v % w), static_cast<int>(v / w % h), static_cast<int>(v / (w * h))};
-      voxels.push_back({lo + (glm::vec3{c} + 0.5f) * kVoxel, static_cast<std::uint32_t>(i), 0});
+      out.voxels.push_back({lo + (glm::vec3{c} + 0.5f) * kVoxel, static_cast<std::uint32_t>(i), 0});
     }
-    ++voxels.back().count;
+    ++out.voxels.back().count;
   }
-  swept.clear();
-  swept.shrink_to_fit();
-  order.clear();
-  order.shrink_to_fit();
-  // The voxels grouped into blocks of kBlock a side, each with bounds round
-  // all its vertices, so a triangle need only look at the voxels near it.
+  // The voxels grouped into blocks of kBlock a side.
   constexpr int kBlock = 12;
-  const float voxelSlack = 0.5f * std::sqrt(3.f) * kVoxel;  // a vertex from its voxel's middle, at most
-  struct Block {
-    glm::vec3 lo{1e9f}, hi{-1e9f};
-    std::vector<std::uint32_t> voxels;
-  };
   const glm::ivec3 blocksOf = (cells + kBlock - 1) / kBlock;
-  std::vector<Block> blocks(static_cast<std::size_t>(blocksOf.x) * blocksOf.y * blocksOf.z);
-  std::vector<glm::vec3> fox;  // every voxel's middle
-  float reach = 0.f;           // how far any vertex reaches from the origin, seen from above
-  float radius = 0.f;          // and at all
-  for (std::size_t i = 0; i < voxels.size(); ++i) {
-    const glm::vec3 p = voxels[i].centre;
+  out.blocks.resize(static_cast<std::size_t>(blocksOf.x) * blocksOf.y * blocksOf.z);
+  for (std::size_t i = 0; i < out.voxels.size(); ++i) {
+    const glm::vec3 p = out.voxels[i].centre;
     const glm::ivec3 c = glm::ivec3(glm::floor((p - lo) / kVoxel)) / kBlock;
-    Block& b = blocks[(static_cast<std::size_t>(c.z) * blocksOf.y + c.y) * blocksOf.x + c.x];
-    b.lo = glm::min(b.lo, p - voxelSlack);
-    b.hi = glm::max(b.hi, p + voxelSlack);
+    Sweep::Block& b = out.blocks[(static_cast<std::size_t>(c.z) * blocksOf.y + c.y) * blocksOf.x + c.x];
+    b.lo = glm::min(b.lo, p - kVoxelSlack);
+    b.hi = glm::max(b.hi, p + kVoxelSlack);
     b.voxels.push_back(static_cast<std::uint32_t>(i));
-    fox.push_back(p);
-    reach = std::max(reach, glm::length(glm::vec2{p.x, p.z}) + voxelSlack);
-    radius = std::max(radius, glm::length(p) + voxelSlack);
+    out.fox.push_back(p);
+    out.reach = std::max(out.reach, glm::length(glm::vec2{p.x, p.z}) + kVoxelSlack);
+    out.radius = std::max(out.radius, glm::length(p) + kVoxelSlack);
   }
-  std::erase_if(blocks, [](const Block& b) { return b.voxels.empty(); });
-  const float planSlack = 0.5f * std::sqrt(2.f) * kPlan;
-  // From another fox, both seen from above (no nearer than in 3D): each
-  // vertex its voxel's middle, then that middle's plan cell's.
-  const float foxNear = kBedClearance + 2.f * (voxelSlack + planSlack);
+  std::erase_if(out.blocks, [](const Sweep::Block& b) { return b.voxels.empty(); });
+  return out;
+}
 
-  // Everything standing in the scene, on a grid of metre cells seen from above.
-  constexpr float kCell = 1.f;
-  const std::vector<glm::vec3>& solids = layout.solids;
-  glm::vec2 gridLo{1e9f}, gridHi{-1e9f};
-  for (const glm::vec3& p : solids) {
-    gridLo = glm::min(gridLo, glm::vec2{p.x, p.z});
-    gridHi = glm::max(gridHi, glm::vec2{p.x, p.z});
-  }
-  const int gw = solids.empty() ? 0 : static_cast<int>((gridHi.x - gridLo.x) / kCell) + 1;
-  const int gh = solids.empty() ? 0 : static_cast<int>((gridHi.y - gridLo.y) / kCell) + 1;
-  std::vector<std::vector<std::uint32_t>> grid(static_cast<std::size_t>(gw) * gh);
-  std::vector<glm::vec3> triLo, triHi;
-  for (std::size_t i = 0; i + 2 < solids.size(); i += 3) {
-    const glm::vec3 a = glm::min(glm::min(solids[i], solids[i + 1]), solids[i + 2]);
-    const glm::vec3 b = glm::max(glm::max(solids[i], solids[i + 1]), solids[i + 2]);
-    triLo.push_back(a);
-    triHi.push_back(b);
-    for (int z = static_cast<int>((a.z - gridLo.y) / kCell); z <= static_cast<int>((b.z - gridLo.y) / kCell); ++z)
-      for (int x = static_cast<int>((a.x - gridLo.x) / kCell); x <= static_cast<int>((b.x - gridLo.x) / kCell); ++x)
-        grid[static_cast<std::size_t>(z) * gw + x].push_back(static_cast<std::uint32_t>(i / 3));
+// The bed rules over a scene laid out as `layout`: everything standing in
+// it on a grid of metre cells seen from above, and the beds taken so far,
+// each as its fox seen from above.
+class Fox::Beds {
+ public:
+  Beds(const Sweep& sweep, const SceneLayout& layout) : sweep_(sweep), layout_(layout) {
+    const std::vector<glm::vec3>& solids = layout.solids;
+    for (const glm::vec3& p : solids) {
+      gridLo_ = glm::min(gridLo_, glm::vec2{p.x, p.z});
+      gridHi_ = glm::max(gridHi_, glm::vec2{p.x, p.z});
+    }
+    gw_ = solids.empty() ? 0 : static_cast<int>((gridHi_.x - gridLo_.x) / kCell) + 1;
+    gh_ = solids.empty() ? 0 : static_cast<int>((gridHi_.y - gridLo_.y) / kCell) + 1;
+    grid_.resize(static_cast<std::size_t>(gw_) * gh_);
+    for (std::size_t i = 0; i + 2 < solids.size(); i += 3) {
+      const glm::vec3 a = glm::min(glm::min(solids[i], solids[i + 1]), solids[i + 2]);
+      const glm::vec3 b = glm::max(glm::max(solids[i], solids[i + 1]), solids[i + 2]);
+      triLo_.push_back(a);
+      triHi_.push_back(b);
+      for (int z = static_cast<int>((a.z - gridLo_.y) / kCell); z <= static_cast<int>((b.z - gridLo_.y) / kCell); ++z)
+        for (int x = static_cast<int>((a.x - gridLo_.x) / kCell); x <= static_cast<int>((b.x - gridLo_.x) / kCell); ++x)
+          grid_[static_cast<std::size_t>(z) * gw_ + x].push_back(static_cast<std::uint32_t>(i / 3));
+    }
   }
 
-  // The beds taken so far, each as its fox seen from above: the distance
-  // from every cell of a window round it to the nearest cell it covers.
-  struct Taken {
-    glm::vec2 xz{0.f}, lo{0.f};
-    int w = 0, h = 0;
-    std::vector<float> dist;
-  };
-  std::vector<Taken> taken;
   // The fox lying in a bed, placed in the world.
   struct Placed {
     glm::vec2 xz{0.f};
@@ -998,102 +989,138 @@ std::vector<FoxBed> Fox::findBeds(const pxe::SkinnedModel& model, const SceneLay
     glm::mat3 turn{1.f};
     glm::vec3 at(glm::vec3 p) const { return glm::vec3{xz.x, y, xz.y} + turn * p; }
   };
-  auto place = [&](glm::vec2 xz, float yaw) {
+  Placed place(glm::vec2 xz, float yaw) const {
     Placed b;
     b.xz = xz;
     glm::quat tilt;
     glm::vec3 normal;
-    lie(layout.ground, xz, b.y, tilt, normal);
+    lie(layout_.ground, xz, b.y, tilt, normal);
     // As world(), less the scale the points already have.
     b.turn = glm::mat3(glm::rotate(glm::mat4_cast(tilt), yaw, glm::vec3{0.f, 1.f, 0.f}));
     return b;
-  };
-  auto clearOfScene = [&](const Placed& b) {
+  }
+
+  // Open lawn under all of the curl.
+  bool onLawn(glm::vec2 xz) const {
+    bool lawn = layout_.lawn.heightAt(xz) > pxe::HeightMap::kNone;
+    for (int k = 0; k < 8 && lawn; ++k) {
+      const float a = kTwoPi * static_cast<float>(k) / 8.f;
+      lawn = layout_.lawn.heightAt(xz + kFootprint * glm::vec2{std::cos(a), std::sin(a)}) > pxe::HeightMap::kNone;
+    }
+    return lawn;
+  }
+
+  // The curl's yaw toward the nearest campfire within kFaceFire, if any.
+  void faceFire(glm::vec2 xz, float& yaw) const {
+    float nearest = kFaceFire;
+    for (const glm::vec2& fire : layout_.campfires) {
+      const glm::vec2 to = fire - xz;
+      if (glm::length(to) >= nearest) continue;
+      nearest = glm::length(to);
+      yaw = std::atan2(to.x, to.y);
+    }
+  }
+
+  bool clearOfScene(const Placed& b) const {
     const glm::vec3 centre = b.at(glm::vec3{0.f});
-    const float far = radius + kBedClearance;
-    const int x0 = std::max(0, static_cast<int>((b.xz.x - far - gridLo.x) / kCell));
-    const int x1 = std::min(gw - 1, static_cast<int>((b.xz.x + far - gridLo.x) / kCell));
-    const int z0 = std::max(0, static_cast<int>((b.xz.y - far - gridLo.y) / kCell));
-    const int z1 = std::min(gh - 1, static_cast<int>((b.xz.y + far - gridLo.y) / kCell));
+    const float far = sweep_.radius + kBedClearance;
+    const int x0 = std::max(0, static_cast<int>((b.xz.x - far - gridLo_.x) / kCell));
+    const int x1 = std::min(gw_ - 1, static_cast<int>((b.xz.x + far - gridLo_.x) / kCell));
+    const int z0 = std::max(0, static_cast<int>((b.xz.y - far - gridLo_.y) / kCell));
+    const int z1 = std::min(gh_ - 1, static_cast<int>((b.xz.y + far - gridLo_.y) / kCell));
     std::vector<std::uint32_t> near;
     for (int z = z0; z <= z1; ++z)
       for (int x = x0; x <= x1; ++x)
-        for (std::uint32_t t : grid[static_cast<std::size_t>(z) * gw + x])
-          if (glm::length(glm::clamp(centre, triLo[t], triHi[t]) - centre) < far) near.push_back(t);
+        for (std::uint32_t t : grid_[static_cast<std::size_t>(z) * gw_ + x])
+          if (glm::length(glm::clamp(centre, triLo_[t], triHi_[t]) - centre) < far) near.push_back(t);
     std::sort(near.begin(), near.end());
     near.erase(std::unique(near.begin(), near.end()), near.end());
     const glm::mat3 back = glm::transpose(b.turn);
-    const float sure = kBedClearance + voxelSlack, never = kBedClearance - voxelSlack;
+    const float sure = kBedClearance + kVoxelSlack, never = kBedClearance - kVoxelSlack;
     for (std::uint32_t t : near) {
       // The triangle in the model, and the voxels near it: those whose
       // middles are clearly clear or clearly not say so; the rest are
       // checked vertex by vertex.
       glm::vec3 c[3];
-      for (int k = 0; k < 3; ++k) c[k] = back * (solids[3 * t + static_cast<std::size_t>(k)] - centre);
+      for (int k = 0; k < 3; ++k) c[k] = back * (layout_.solids[3 * t + static_cast<std::size_t>(k)] - centre);
       const glm::vec3 tlo = glm::min(glm::min(c[0], c[1]), c[2]), thi = glm::max(glm::max(c[0], c[1]), c[2]);
-      for (const Block& k : blocks) {
+      for (const Sweep::Block& k : sweep_.blocks) {
         if (boxGap(k.lo, k.hi, tlo, thi) >= kBedClearance) continue;
         for (std::uint32_t i : k.voxels) {
-          const Voxel& v = voxels[i];
+          const Sweep::Voxel& v = sweep_.voxels[i];
           const glm::vec3 q = closestOnTriangle(v.centre, c[0], c[1], c[2]);
           const float d2 = glm::dot(q - v.centre, q - v.centre);
           if (d2 >= sure * sure) continue;
           if (d2 < never * never) return false;
           for (std::uint32_t j = v.first; j < v.first + v.count; ++j) {
-            const glm::vec3 r = closestOnTriangle(vertices[j], c[0], c[1], c[2]);
-            if (glm::dot(r - vertices[j], r - vertices[j]) < kBedClearance * kBedClearance) return false;
+            const glm::vec3 r = closestOnTriangle(sweep_.vertices[j], c[0], c[1], c[2]);
+            if (glm::dot(r - sweep_.vertices[j], r - sweep_.vertices[j]) < kBedClearance * kBedClearance) return false;
           }
         }
       }
     }
     return true;
-  };
-  auto onGround = [&](const Placed& b) {
-    for (const glm::vec3& p : fox) {
+  }
+
+  bool onGround(const Placed& b) const {
+    for (const glm::vec3& p : sweep_.fox) {
       const glm::vec3 w = b.at(p);
-      const float g = layout.ground.heightAt({w.x, w.z});
-      if (g > pxe::HeightMap::kNone && w.y - voxelSlack < g - kSink) return false;
+      const float g = layout_.ground.heightAt({w.x, w.z});
+      if (g > pxe::HeightMap::kNone && w.y - kVoxelSlack < g - kSink) return false;
     }
     return true;
-  };
-  std::vector<glm::vec2> plan;  // the fox in a bed, seen from above
-  auto seen = [&](const Placed& b) {
-    plan.clear();
-    for (const glm::vec3& p : fox) {
-      const glm::vec3 w = b.at(p);
-      plan.push_back({w.x, w.z});
-    }
-  };
-  auto clearOfFoxes = [&](const Placed& b) {
+  }
+
+  bool clearOfFoxes(const Placed& b) {
     bool looked = false;
-    for (const Taken& t : taken) {
-      if (glm::length(t.xz - b.xz) >= 2.f * reach + foxNear + 0.1f) continue;
-      if (!looked) seen(b);
+    for (const Taken& t : taken_) {
+      if (glm::length(t.xz - b.xz) >= 2.f * sweep_.reach + foxNear() + 0.1f) continue;
+      if (!looked) outline(b);
       looked = true;
-      for (const glm::vec2& p : plan) {
-        const int x = static_cast<int>(std::floor((p.x - t.lo.x) / kPlan));
-        const int z = static_cast<int>(std::floor((p.y - t.lo.y) / kPlan));
-        if (x < 0 || z < 0 || x >= t.w || z >= t.h) continue;  // the window reaches past foxNear
-        if (t.dist[static_cast<std::size_t>(z) * t.w + x] < foxNear) return false;
+      for (std::size_t k = 0; k < sweep_.blocks.size(); ++k) {
+        // The plan cells its voxels' middles can fall in, those within the
+        // window (which reaches past foxNear). The distance changes by no
+        // more than the cells' spacing, so if the one in the middle of them
+        // is far enough by more than the farthest is from it, all are; else
+        // each voxel is looked at.
+        const glm::vec4& r = outline_[k];
+        const int x0 = std::max(0, static_cast<int>(std::floor((r.x - t.lo.x) / kPlan)));
+        const int z0 = std::max(0, static_cast<int>(std::floor((r.y - t.lo.y) / kPlan)));
+        const int x1 = std::min(t.w - 1, static_cast<int>(std::floor((r.z - t.lo.x) / kPlan)));
+        const int z1 = std::min(t.h - 1, static_cast<int>(std::floor((r.w - t.lo.y) / kPlan)));
+        if (x0 > x1 || z0 > z1) continue;
+        const int xm = (x0 + x1) / 2, zm = (z0 + z1) / 2;
+        const float spread = kPlan * glm::length(glm::vec2{static_cast<float>(std::max(xm - x0, x1 - xm)),
+                                                           static_cast<float>(std::max(zm - z0, z1 - zm))});
+        if (t.dist[static_cast<std::size_t>(zm) * t.w + xm] - spread >= foxNear() + kRounding) continue;
+        for (std::uint32_t i : sweep_.blocks[k].voxels) {
+          const glm::vec3 w = b.at(sweep_.fox[i]);
+          const int x = static_cast<int>(std::floor((w.x - t.lo.x) / kPlan));
+          const int z = static_cast<int>(std::floor((w.z - t.lo.y) / kPlan));
+          if (x < 0 || z < 0 || x >= t.w || z >= t.h) continue;  // the window reaches past foxNear
+          if (t.dist[static_cast<std::size_t>(z) * t.w + x] < foxNear()) return false;
+        }
       }
     }
     return true;
-  };
-  auto take = [&](const Placed& b) {
+  }
+
+  // The bed is taken: later beds keep clear of its fox.
+  void take(const Placed& b) {
     seen(b);
     Taken t;
     t.xz = b.xz;
     glm::vec2 pl{1e9f}, ph{-1e9f};
-    for (const glm::vec2& p : plan) {
+    for (const glm::vec2& p : plan_) {
       pl = glm::min(pl, p);
       ph = glm::max(ph, p);
     }
-    const float pad = foxNear + 2.f * kPlan;
+    const float pad = foxNear() + 2.f * kPlan;
     t.lo = glm::floor((pl - pad) / kPlan) * kPlan;
     t.w = static_cast<int>(std::ceil((ph.x + pad - t.lo.x) / kPlan));
     t.h = static_cast<int>(std::ceil((ph.y + pad - t.lo.y) / kPlan));
     t.dist.assign(static_cast<std::size_t>(t.w) * t.h, std::numeric_limits<float>::max());
-    for (const glm::vec2& p : plan) {
+    for (const glm::vec2& p : plan_) {
       const int x = static_cast<int>(std::floor((p.x - t.lo.x) / kPlan));
       const int z = static_cast<int>(std::floor((p.y - t.lo.y) / kPlan));
       t.dist[static_cast<std::size_t>(z) * t.w + x] = 0.f;
@@ -1113,9 +1140,67 @@ std::vector<FoxBed> Fox::findBeds(const pxe::SkinnedModel& model, const SceneLay
       for (int z = 0; z < t.h; ++z)
         t.dist[static_cast<std::size_t>(z) * t.w + x] = std::sqrt(line[static_cast<std::size_t>(z)]);
     }
-    taken.push_back(std::move(t));
-  };
+    taken_.push_back(std::move(t));
+  }
 
+  // How near a bed's fox may come to another's before it is checked cell by
+  // cell (clearOfFoxes skips beds farther apart than this and both reaches).
+  float foxNear() const {
+    // Both seen from above (no nearer than in 3D): each vertex its voxel's
+    // middle, then that middle's plan cell's.
+    return kBedClearance + 2.f * (kVoxelSlack + kPlanSlack);
+  }
+
+ private:
+  static constexpr float kCell = 1.f;
+  // More than the rounding in placing a point or in a distance (m).
+  static constexpr float kRounding = 1e-3f;
+  // A taken bed's fox seen from above: the distance from every cell of a
+  // window round it to the nearest cell it covers.
+  struct Taken {
+    glm::vec2 xz{0.f}, lo{0.f};
+    int w = 0, h = 0;
+    std::vector<float> dist;
+  };
+  // Each block of the fox in a bed, seen from above, into outline_: the xz
+  // rectangle (lo, hi) its corners fall in, and so every voxel's middle in
+  // it, kRounding wider all round for the arithmetic's rounding.
+  void outline(const Placed& b) {
+    outline_.clear();
+    for (const Sweep::Block& k : sweep_.blocks) {
+      glm::vec2 lo{1e9f}, hi{-1e9f};
+      for (int c = 0; c < 8; ++c) {
+        const glm::vec3 w = b.at({c & 1 ? k.hi.x : k.lo.x, c & 2 ? k.hi.y : k.lo.y, c & 4 ? k.hi.z : k.lo.z});
+        lo = glm::min(lo, glm::vec2{w.x, w.z});
+        hi = glm::max(hi, glm::vec2{w.x, w.z});
+      }
+      outline_.push_back({lo - kRounding, hi + kRounding});
+    }
+  }
+  // The fox in a bed, seen from above, into plan_.
+  void seen(const Placed& b) {
+    plan_.clear();
+    for (const glm::vec3& p : sweep_.fox) {
+      const glm::vec3 w = b.at(p);
+      plan_.push_back({w.x, w.z});
+    }
+  }
+
+  const Sweep& sweep_;
+  const SceneLayout& layout_;
+  glm::vec2 gridLo_{1e9f}, gridHi_{-1e9f};
+  int gw_ = 0, gh_ = 0;
+  std::vector<std::vector<std::uint32_t>> grid_;
+  std::vector<glm::vec3> triLo_, triHi_;
+  std::vector<Taken> taken_;
+  std::vector<glm::vec2> plan_;
+  std::vector<glm::vec4> outline_;
+};
+
+std::vector<FoxBed> Fox::findBeds(const Sweep& sweep, const SceneLayout& layout, int count) {
+  std::vector<FoxBed> found;
+  if (count <= 0 || layout.lawn.empty() || layout.ground.empty()) return found;
+  Beds beds(sweep, layout);
   // Every kBedStep over the lawn where beds are looked for, in a fixed
   // shuffled order; each spot draws a yaw, used when no campfire is near
   // enough to face.
@@ -1129,28 +1214,53 @@ std::vector<FoxBed> Fox::findBeds(const pxe::SkinnedModel& model, const SceneLay
   for (std::size_t i = spots.size(); i > 1; --i)
     std::swap(spots[i - 1], spots[std::min(i - 1, static_cast<std::size_t>(draw01(rng) * static_cast<float>(i)))]);
   for (const glm::vec2& xz : spots) {
-    if (static_cast<int>(beds.size()) >= count) break;
+    if (static_cast<int>(found.size()) >= count) break;
     float yaw = kTwoPi * draw01(rng);
-    // Open lawn under all of the curl.
-    bool lawn = layout.lawn.heightAt(xz) > pxe::HeightMap::kNone;
-    for (int k = 0; k < 8 && lawn; ++k) {
-      const float a = kTwoPi * static_cast<float>(k) / 8.f;
-      lawn = layout.lawn.heightAt(xz + kFootprint * glm::vec2{std::cos(a), std::sin(a)}) > pxe::HeightMap::kNone;
-    }
-    if (!lawn) continue;
-    float nearest = kFaceFire;
-    for (const glm::vec2& fire : layout.campfires) {
-      const glm::vec2 to = fire - xz;
-      if (glm::length(to) >= nearest) continue;
-      nearest = glm::length(to);
-      yaw = std::atan2(to.x, to.y);
-    }
-    const Placed b = place(xz, yaw);
-    if (!clearOfFoxes(b) || !clearOfScene(b) || !onGround(b)) continue;
-    take(b);
-    beds.push_back({xz, yaw});
+    if (!beds.onLawn(xz)) continue;
+    beds.faceFire(xz, yaw);
+    const Beds::Placed b = beds.place(xz, yaw);
+    if (!beds.clearOfFoxes(b) || !beds.clearOfScene(b) || !beds.onGround(b)) continue;
+    beds.take(b);
+    found.push_back({xz, yaw});
   }
-  return beds;
+  return found;
+}
+
+bool Fox::findBed(const Sweep& sweep, const SceneLayout& layout, glm::vec2 at, glm::vec2 toCamera,
+                  std::span<const Fox> foxes, FoxBed& bed) const {
+  if (!model_ || layout.lawn.empty() || layout.ground.empty()) return false;
+  Beds beds(sweep, layout);
+  // The foxes already lying near enough to matter.
+  for (const Fox& other : foxes) {
+    if (&other == this || !other.model_) continue;
+    if (glm::length(other.bedPos_ - at) >= kAddReach + 2.f * sweep.reach + beds.foxNear() + 0.1f) continue;
+    beds.take(beds.place(other.bedPos_, other.bedYaw_));
+  }
+  // findBeds' spots within reach, nearest first (and, as far, in rows of
+  // increasing z, then x, so the order is fixed).
+  std::vector<glm::vec2> spots;
+  const glm::vec2 from = glm::ceil((at - kAddReach) / kBedStep);
+  const glm::vec2 to = glm::floor((at + kAddReach) / kBedStep);
+  for (int z = static_cast<int>(from.y); z <= static_cast<int>(to.y); ++z)
+    for (int x = static_cast<int>(from.x); x <= static_cast<int>(to.x); ++x) {
+      const glm::vec2 xz = glm::vec2{static_cast<float>(x), static_cast<float>(z)} * kBedStep;
+      if (glm::length(xz - at) <= kAddReach) spots.push_back(xz);
+    }
+  std::stable_sort(spots.begin(), spots.end(),
+                   [&](glm::vec2 a, glm::vec2 b) { return glm::length(a - at) < glm::length(b - at); });
+  // Standing, it faces standTurn_ round from the curl's yaw.
+  const float facingCamera = std::atan2(toCamera.x, toCamera.y) - standTurn_;
+  for (const glm::vec2& xz : spots) {
+    if (!beds.onLawn(xz)) continue;
+    float yaw = facingCamera;
+    beds.faceFire(xz, yaw);
+    if (!bedFree(xz, yaw, foxes)) continue;
+    const Beds::Placed b = beds.place(xz, yaw);
+    if (!beds.clearOfFoxes(b) || !beds.clearOfScene(b) || !beds.onGround(b)) continue;
+    bed = {xz, yaw};
+    return true;
+  }
+  return false;
 }
 
 }  // namespace game
