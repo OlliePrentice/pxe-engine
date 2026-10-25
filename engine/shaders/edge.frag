@@ -3,9 +3,12 @@
 // Post pass over the low-res target.
 //
 // Edges, after David Holland's write-up of t3ssel8r's look: only stone and
-// bark take them. A pixel on an upward face whose neighbour turns away (a
-// crease) or drops behind (a silhouette) catches a light rim; any other
-// silhouette pixel darkens into an outline.
+// bark take them, and a building's wood, plaster and roof. A pixel on an
+// upward face whose neighbour turns away (a crease) or drops behind (a
+// silhouette) catches a light rim; any other silhouette pixel darkens into
+// an outline. Wood, plaster and roof take no rims, only the outline, on
+// every silhouette: indoors they are seen in shade, where a light line on
+// every plank groove would be noise.
 //
 // Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
 // grade, all drawn here from hashes. Splashes are hashed on cells of the
@@ -15,22 +18,33 @@
 // it hung that far behind or in front of the focus.
 
 uniform sampler2D uColor;
-uniform sampler2D uNormal;  // xyz normal * 0.5 + 0.5, a = (surface + 1) / 8; 0 grass sprites, 1 leaf sprites
+uniform sampler2D uNormal;  // xyz normal * 0.5 + 0.5, a = (surface + 1) / kSurfaceScale; 0 grass sprites, 1 leaf sprites
 uniform sampler2D uDepth;
 uniform float uDepthMetres;  // far - near: the ortho depth buffer is linear
 uniform int uEnabled;
 
+const int kSurfaces = 10;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
 const int kSurfWater = 5;
-const int kLeafSprite = 7;
+const int kSurfWood = 7;
+const int kSurfRoof = 9;
+// A building's wood, plaster and roof: outlined, never rimmed (edges()).
+bool timbered(int surface) { return surface >= kSurfWood && surface <= kSurfRoof; }
+const float kSurfaceScale = 16.0;  // as common.glsl
+const int kLeafSprite = 15;        // a leaf sprite's alpha of 1, read as a surface
+
+// Cut stone and a building's wood, plaster and roof: hard, flat-faced
+// structure, rimmed and outlined alike and splashed hard by the rain.
+bool built(int surface) { return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof); }
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
 uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
 uniform vec3 uInk;
 
-uniform float uRain;        // 0 dry .. 1 downpour
+uniform float uRain;        // 0 dry .. 1 downpour (0 indoors: no rain is drawn there)
+uniform float uSunRain;     // the rain as it is, indoors too: how far it has put out direct sun
 uniform float uFlash;       // lightning, 0 none .. 1 peak
 uniform float uTime;        // seconds
 uniform vec2 uCamTexel;     // camera position in whole low-res texels
@@ -59,9 +73,9 @@ uniform int uTileSize;           // pixels
 uniform int uTilesX;
 uniform float uFlyLight;         // firefly light: strength
 uniform float uFlyDim;           // how far direct sun or moon light drowns it out
-uniform vec3 uFlyBand[7];        // each surface's colour in full firefly light
+uniform vec3 uFlyBand[kSurfaces];  // each surface's colour in full firefly light
 uniform float uFireDim;          // firelight, likewise
-uniform vec3 uFireBand[7];
+uniform vec3 uFireBand[kSurfaces];
 uniform sampler2D uHeat;    // fire: flame heat (r), ember glow (g), smoke (b)
 uniform int uFire;
 #ifdef FIRE_GRID
@@ -78,7 +92,7 @@ uniform vec4 uGridDomain;      // xz of the grid's corner, 1 / its size in metre
 out vec4 oColor;
 
 vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
-    if (uEnabled == 0 || (surface != kSurfStone && surface != kSurfBark)) return col;
+    if (uEnabled == 0 || (!built(surface) && surface != kSurfBark)) return col;
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
     float d = texelFetch(uDepth, p, 0).r * uDepthMetres;
 
@@ -98,7 +112,7 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
         bool behind = dq - d > kSilhouette;
         bool meshNeighbour = nq4.a > 0.0 && nq4.a < 0.99;  // not a grass or leaf sprite
         bool crease = !behind && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < 0.8;
-        if (n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
+        if (!timbered(surface) && n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
         else if (behind && !diagonal) ink = true;
         // Bark is smooth-shaded except along a few seams marked sharp in
         // Blender; there the normal jumps a little, and one light stroke is
@@ -299,7 +313,7 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
 #endif
     vec3 s = worldAt(p);
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
-    int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, 6));
+    int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, kSurfaces - 1));
     float k = 0.0;     // fireflies
     float fire = 0.0;  // fires
     for (int j = 0; j < count; ++j) {
@@ -349,7 +363,7 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
         float ndl = clamp(dot(n, uLight) * 3.0, 0.0, 1.0);
         vec4 ls = uLightViewProj * vec4(s + n * 0.08, 1.0);
         vec3 l = ls.xyz / ls.w * 0.5 + 0.5;
-        sun = ndl * texture(uShadowMap, vec3(l.xy, l.z - 0.002)) * (1.0 - cloudShadow(s)) * (1.0 - uRain);
+        sun = ndl * texture(uShadowMap, vec3(l.xy, l.z - 0.002)) * (1.0 - cloudShadow(s)) * (1.0 - uSunRain);
     }
     if (k > 0.0) {
         k *= uFlyLight * (1.0 - uFlyDim * sun);
@@ -387,7 +401,7 @@ vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
     // Wet stone and trunks pick up a soft light line along their upper
     // outlines, a two-pixel haze where they meet what is behind them.
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
-    bool hard = surface == kSurfStone || surface == kSurfBark;
+    bool hard = built(surface) || surface == kSurfBark;
     bool crown = surface == kSurfLeaf || surface == kLeafSprite;
     if (hard) {
         float d = texelFetch(uDepth, p, 0).r * uDepthMetres;
@@ -441,7 +455,7 @@ void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec3 col = texelFetch(uColor, p, 0).rgb;
     vec4 np = texelFetch(uNormal, p, 0);
-    int surface = int(np.a * 8.0 + 0.5) - 1;
+    int surface = int(np.a * kSurfaceScale + 0.5) - 1;
     col = edges(p, col, np, surface);
     col = godRays(p, col);
     col = pointLights(p, col, np, surface);

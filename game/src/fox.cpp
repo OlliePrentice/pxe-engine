@@ -252,8 +252,8 @@ void Fox::spawn(const pxe::Scene& scene, glm::vec2 xz, float yaw) {
   // side. The standing fox, which reaches about 1.6 m out, keeps the same
   // tilt: a plane through the ground is the same plane whether it is sampled
   // 0.41 m out or 1.6 m, so long as the ground under the fox is planar, and
-  // one tilt for every clip keeps the joins seamless (the hand-placed beds
-  // are chosen where that holds, see scene.hpp; findBeds' beds keep every
+  // one tilt for every clip keeps the joins seamless (the hand-placed bed
+  // is chosen where that holds, see scene.hpp; findBeds' beds keep every
   // part of the fox out of the ground).
   lie(scene.ground, xz, y_, tilt_, bedNormal_);
   yaw_ = yaw;

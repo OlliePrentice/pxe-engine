@@ -105,6 +105,15 @@ struct BrushSettings {
   float radius = 1.f;  // metres
 };
 
+// A loading screen over the whole window: a dark plate with a title and a
+// passage under it, `opacity` 1 fully up .. 0 gone, as it fades into the
+// scene behind it.
+struct LoadingScreen {
+  const char* title = "";
+  const char* passage = "";
+  float opacity = 1.f;
+};
+
 // Dear ImGui panel toggled with Tab. Drawn at window resolution on top of
 // the upscaled pixel art.
 class SettingsMenu {
@@ -122,10 +131,11 @@ class SettingsMenu {
 
   // Build and draw the panel, and round the cursor the brush's (or the fox
   // tool's) outline on the ground (window points) if any, and `note` (if
-  // any) by `notePoint` (window points). Call after the scene is presented,
-  // before swap.
+  // any) by `notePoint` (window points); and over everything, `loading` if
+  // it is up. Call after the scene is presented, before swap.
   void draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
-            const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint, float fps);
+            const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint, float fps,
+            const LoadingScreen* loading = nullptr);
 
  private:
   bool ready_ = false;

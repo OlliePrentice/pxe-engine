@@ -51,6 +51,9 @@ class Camera {
 
   glm::vec3 target() const { return smoothPos_; }
   float yawRadians() const { return yaw_; }
+  // Where the yaw comes to rest: the 45-degree step it is turning to, or
+  // the yaw itself when it is not turning.
+  float restingYawRadians() const { return yawTo_; }
 
  private:
   void basis(float yaw, glm::vec3& forward, glm::vec3& right, glm::vec3& up) const;

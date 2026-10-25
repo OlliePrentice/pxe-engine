@@ -55,7 +55,7 @@ float rainRipple(vec2 xz) {
 void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec3 n = vec3(0.0, 1.0, 0.0);
-    oNormal = vec4(n * 0.5 + 0.5, float(kSurfWater + 1) / 8.0);
+    oNormal = vec4(n * 0.5 + 0.5, float(kSurfWater + 1) / kSurfaceScale);
 
     float depth = (texelFetch(uBedDepth, p, 0).r - gl_FragCoord.z) * uDepthMetres;
     float lit = sunLit(vWorld, n, 1.0) * horizonLight(vWorld);

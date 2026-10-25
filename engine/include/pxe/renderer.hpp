@@ -125,10 +125,17 @@ class Renderer {
   int viewH() const { return RenderConfig::kViewH; }
   int rtW() const { return RenderConfig::kViewW + 2 * RenderConfig::kPad; }
   int rtH() const { return RenderConfig::kViewH + 2 * RenderConfig::kPad; }
+  // Make `scene` the one drawn: its grass, and its fires and shadows afresh.
+  // A grass fire stays with the scene it burns in, so a scene uploaded again
+  // - the game coming back to it from another - keeps its burnt grass. The
+  // scene must stay where it is (and alive) for as long as it is drawn.
   void upload(const Scene& scene);
   // Just the grass, after the game has changed scene.grass (blades cleared
   // from under a fox added as it runs); everything else upload() set stays.
   void uploadGrass(const Scene& scene);
+  // Put out the grass fire - every flame, ember and burning crown - leaving
+  // the grass it burnt burnt (FireGrid::quench).
+  void quenchGrassFire() { grid_.quench(); }
   // A point of the window (framebuffer pixels from its top left, `fbW` x
   // `fbH`) as presented for `camera`: the view ray through it starts at the
   // returned point on the camera's plane and runs along camera.forward.

@@ -52,6 +52,12 @@ struct FireSite {
 
 struct Scene {
   std::vector<Mesh> meshes;  // opaque; all cast shadows
+  // Drawn only into the sun and moon's shadow map (and lightning's), never
+  // seen: a cutaway room's roof and the walls nearest the camera, so the
+  // room is lit as if it were closed while the camera sees in. Built from
+  // glTF nodes named "..._ShadowOnly". They are not part of `ground`, but
+  // are of `shelter`, and of the bounds the shadow map is fitted to.
+  std::vector<Mesh> shadowOnly;
   // Water sheets, drawn after the opaque meshes with reflections. They do
   // not cast shadows. waterLevel is the height of the (flat) water plane,
   // and waterMin/Max bound the sheets for the reflection pass's scissor.
@@ -97,6 +103,13 @@ struct Scene {
 
   glm::vec3 boundsMin{0.f};
   glm::vec3 boundsMax{0.f};
+
+  // A room under a roof, with no sky in view: no rain is drawn over the
+  // frame (the edge pass's streaks, splashes and murk), no cloud shadows
+  // drift over it and no god rays shine in. The rain's overcast still dims
+  // the colours, and sun, moon and lightning still light it through its
+  // windows by the shadow map.
+  bool indoors = false;
 
   // Where the camera starts.
   glm::vec3 focus{0.f};

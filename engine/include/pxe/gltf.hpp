@@ -10,7 +10,8 @@ namespace pxe {
 
 // One glTF primitive, already moved into world space (node transforms and
 // parents applied, normals by the inverse transpose). `surface` comes from
-// the material name: Grass, Dirt, Stone, Bark, Leaf, Water or Foam.
+// the material name: Grass, Dirt, Stone, Bark, Leaf, Water, Foam, Wood,
+// Plaster or Roof (any other name is Stone).
 struct GltfPrimitive {
   std::string node;
   std::string material;

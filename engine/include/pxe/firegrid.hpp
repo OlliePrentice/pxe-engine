@@ -62,6 +62,12 @@ class FireGrid {
   // Forget the last scene; the next advance builds the grid for its scene.
   void reset() { scene_ = nullptr; }
   bool running() const { return scene_ != nullptr; }
+  // Put the fire out at once: every burning cell and crown, its embers and
+  // glow, and any ignitions and brush strokes still waiting, as if it had
+  // never been lit, but keeping the fuel it burnt, how wet the ground is,
+  // and the burn texture - so burnt grass stays burnt, and does not burn
+  // again. The grid stays with its scene.
+  void quench();
 
   // Bring the grid to `time` seconds, first setting alight the cells near
   // each of `ignite` (world xz) and painting `strokes`. `rain` 0 dry .. 1

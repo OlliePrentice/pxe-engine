@@ -7,6 +7,7 @@
 #include <glm/geometric.hpp>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 
@@ -207,7 +208,7 @@ bool SettingsMenu::wantsMouse() const { return ready_ && open_ && ImGui::GetIO()
 
 void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
                         const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint,
-                        float fps) {
+                        float fps, const LoadingScreen* loading) {
   if (!ready_) return;
   ImGui_ImplOpenGL3_NewFrame();
   ImGui_ImplGlfw_NewFrame();
@@ -369,6 +370,30 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
     list->AddRectFilled(ImVec2(at.x - 6.f, at.y - 4.f), ImVec2(at.x + size.x + 6.f, at.y + size.y + 4.f),
                         IM_COL32(20, 18, 24, 210), 4.f);
     list->AddText(at, IM_COL32(255, 235, 220, 255), note);
+  }
+
+  // The loading screen, over everything (the menu too): a near-black plate
+  // the colour of the night palette's shadows, the title large and warm in
+  // the middle, the passage wrapped under it in a muted cream. All of it
+  // fades together.
+  if (loading && loading->opacity > 0.f) {
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    const ImVec2 size = ImGui::GetIO().DisplaySize;
+    const float a = std::clamp(loading->opacity, 0.f, 1.f);
+    auto alpha = [&](int full) { return static_cast<int>(static_cast<float>(full) * a + 0.5f); };
+    list->AddRectFilled(ImVec2(0.f, 0.f), size, IM_COL32(14, 12, 22, alpha(255)));
+    ImFont* font = ImGui::GetFont();
+    const float body = ImGui::GetFontSize() * 1.25f;
+    const float heading = ImGui::GetFontSize() * 2.6f;
+    const float wrap = std::min(size.x * 0.6f, body * 32.f);
+    const ImVec2 titleSize = font->CalcTextSizeA(heading, FLT_MAX, 0.f, loading->title);
+    const ImVec2 passageSize = font->CalcTextSizeA(body, FLT_MAX, wrap, loading->passage);
+    const float gap = body * 1.6f;
+    const float top = 0.5f * (size.y - (titleSize.y + gap + passageSize.y));
+    list->AddText(font, heading, ImVec2(0.5f * (size.x - titleSize.x), top), IM_COL32(240, 196, 120, alpha(255)),
+                  loading->title);
+    list->AddText(font, body, ImVec2(0.5f * (size.x - passageSize.x), top + titleSize.y + gap),
+                  IM_COL32(214, 204, 186, alpha(255)), loading->passage, nullptr, wrap);
   }
 
   ImGui::Render();

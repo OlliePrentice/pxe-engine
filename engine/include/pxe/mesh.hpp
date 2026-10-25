@@ -6,7 +6,9 @@
 namespace pxe {
 
 // Material families. Each one has its own three-step toon ramp, and the
-// glTF loader picks one from the material name.
+// glTF loader picks one from the material name. Wood, plaster and roof are
+// built structure (buildings and their furniture): flat-faced like cut
+// stone, and outlined and rimmed in the edge pass as stone is.
 enum Surface : int {
   kSurfGrass = 0,
   kSurfDirt = 1,
@@ -15,7 +17,10 @@ enum Surface : int {
   kSurfLeaf = 4,
   kSurfWater = 5,
   kSurfFoam = 6,
-  kSurfCount = 7,
+  kSurfWood = 7,
+  kSurfPlaster = 8,
+  kSurfRoof = 9,
+  kSurfCount = 10,
 };
 
 // World-space vertex. Lighting uses the vertex normal, so a crown's custom

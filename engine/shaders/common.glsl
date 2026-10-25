@@ -1,11 +1,22 @@
 // Shared toon ramp. Spliced into the mesh fragment shader and the grass
 // vertex shader so both run the same function on the same kind of inputs.
-const int kSurfaces = 7;
+const int kSurfaces = 10;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
 const int kSurfWater = 5;
 const int kSurfFoam = 6;
+const int kSurfWood = 7;
+const int kSurfPlaster = 8;
+const int kSurfRoof = 9;
+// Each pixel's surface goes to the edge pass in the normal target's alpha,
+// as (surface + 1) / kSurfaceScale; 0 marks a grass sprite and 1 a leaf
+// sprite (edge.frag).
+const float kSurfaceScale = 16.0;
+
+// Built structure - cut stone, and a building's wood, plaster and roof -
+// is flat-faced: one colour per side.
+bool flatFaced(int surface) { return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof); }
 
 uniform vec3 uSunDir;
 uniform float uTLit;
@@ -23,6 +34,7 @@ uniform vec2 uCloudOffset;   // drift, in cloud-noise units
 uniform float uCloudStrength;  // 0..1, how dark a thick cloud's shadow gets
 uniform float uOvercast;       // 0..1, rain: everything pulled toward shadow
 uniform float uRain;           // 0 dry .. 1 downpour
+uniform int uIndoors;          // 1 in a room (pxe::Scene::indoors): rain never lifts its shade
 uniform float uFlash;          // lightning, 0 none .. 1 peak
 uniform vec3 uFlashDir;        // toward the flash
 uniform mat4 uFlashViewProj;
@@ -88,10 +100,14 @@ float sunVisible(vec3 wpos, vec3 n) { return sunVisibleSpread(wpos, n, 1.25, 1.0
 // rather than a single tap keeps the edge from crawling as the sun turns.
 // Under rain cloud there is no direct light to cast them, so cast shadows
 // fade as rain sets in: full in a drizzle, lighter as it gets heavier, and
-// gone in a downpour, leaving only each face's own side shading.
+// gone in a downpour, leaving only each face's own side shading. Indoors
+// the shade is the room's own walls and roof, not the sun's shadow, so it
+// stays; what fades instead is the direct sun falling in through the
+// windows, toward the shade round it, gone in a downpour.
 float sunLit(vec3 wpos, vec3 n, float biasScale) {
     float lit = step(0.5, sunVisibleSpread(wpos, n, 1.25, biasScale));
-    return mix(lit, 1.0, smoothstep(0.15, 0.95, uRain));
+    float fade = smoothstep(0.15, 0.95, uRain);
+    return uIndoors != 0 ? lit * (1.0 - fade) : mix(lit, 1.0, fade);
 }
 
 // A lightning flash has its own shadow map, and its shadows stay hard

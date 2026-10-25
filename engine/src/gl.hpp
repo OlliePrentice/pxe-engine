@@ -35,6 +35,7 @@
   M(PFNGLUNMAPBUFFERPROC, glUnmapBuffer)            \
   M(PFNGLUNIFORM2FVPROC, glUniform2fv)              \
   M(PFNGLCOLORMASKPROC, glColorMask)                \
+  M(PFNGLCOLORMASKIPROC, glColorMaski)              \
   M(PFNGLPOLYGONOFFSETPROC, glPolygonOffset)        \
   M(PFNGLGETERRORPROC, glGetError)                  \
   M(PFNGLGETSTRINGPROC, glGetString)                \

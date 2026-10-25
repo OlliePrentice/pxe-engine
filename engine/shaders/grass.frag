@@ -82,8 +82,9 @@ void main() {
     }
 
     if (hit == 0) discard;
-    // Grass reads as "no surface" (0); leaves get their own marker (1, i.e.
-    // surface 7) so the rain can splash on tree crowns more than on the lawn.
+    // Grass reads as "no surface" (0); leaves get their own marker (1, read
+    // as surface 15 in the edge pass) so the rain can splash on tree crowns
+    // more than on the lawn.
     oNormal = vec4(0.5, 1.0, 0.5, vKind > 1.5 ? 1.0 : 0.0);
     if (uMagenta == 1) {
         oColor = vec4(1.0, 0.0, 1.0, 1.0);

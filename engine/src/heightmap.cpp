@@ -7,7 +7,8 @@
 
 namespace pxe {
 
-void HeightMap::build(const std::vector<glm::vec3>& triangles, float cell) {
+void HeightMap::build(const std::vector<glm::vec3>& triangles, float cell,
+                      const std::function<bool(glm::vec2, float)>& overhead) {
   cell_ = cell;
   heights_.clear();
   w_ = h_ = 0;
@@ -36,8 +37,10 @@ void HeightMap::build(const std::vector<glm::vec3>& triangles, float cell) {
         const float u = ((b.z - c.z) * (px - c.x) + (c.x - b.x) * (pz - c.z)) / d;
         const float w = ((c.z - a.z) * (px - c.x) + (a.x - c.x) * (pz - c.z)) / d;
         if (u < 0.f || w < 0.f || u + w > 1.f) continue;
+        const float y = a.y * u + b.y * w + c.y * (1.f - u - w);
+        if (overhead && overhead({px, pz}, y)) continue;
         float& t = heights_[static_cast<std::size_t>(z * w_ + x)];
-        t = std::max(t, a.y * u + b.y * w + c.y * (1.f - u - w));
+        t = std::max(t, y);
       }
   }
 }

@@ -5,6 +5,7 @@ add_executable(pxe
   src/fireball.cpp
   src/hero.cpp
   src/fox.cpp
+  src/tavern.cpp
   src/gamepad.cpp
   src/audio.cpp
   src/miniaudio.cpp

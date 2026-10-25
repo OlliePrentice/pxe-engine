@@ -5,6 +5,7 @@
 #include "hero.hpp"
 #include "scene.hpp"
 #include "settings.hpp"
+#include "tavern.hpp"
 
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
@@ -34,6 +35,7 @@
 #include <cstring>
 #include <filesystem>
 #include <optional>
+#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -95,7 +97,10 @@ struct Options {
   int bench = 0;
   bool benchPaused = false;
   float time = 0.f;
+  // "ruins", "hills" or "tavern" (inside the Sleeping Fox).
   std::string scene = "ruins";
+  // Every tavern door shown fully open, whoever is near.
+  bool tavernDoorOpen = false;
   bool haveYaw = false;
   float yawDeg = 45.f;
   float slide = 0.f;
@@ -113,12 +118,12 @@ struct Options {
   float heroAttack = -1.f;  // captures: this many seconds into an attack (after any move)
   int heroPresses = 1;      // ...pressing X this many times, a fifth of a second apart
   float heroHold = 0.f;     // ...holding the first press this many seconds (a charge)
-  // The foxes in the ruins: the three hand-placed ones when playing; in
-  // captures, the first of them only when asked for; never in the hills.
+  // The fox in the ruins: the hand-placed one, by the campfire, when
+  // playing; in captures only when asked for; never in the hills.
   // -1 default, 0 --no-fox, 1 --fox.
   int fox = -1;
   // --foxes N: N foxes placed where they fit, in place of the hand-placed
-  // ones, in play, captures and the bench. -1: not asked for.
+  // one, in play, captures and the bench. -1: not asked for.
   int foxes = -1;
   // Every fox shown this many seconds into its wake sequence (0 starting to
   // stand), in captures and at the start of play; implies --fox. -1: asleep.
@@ -142,7 +147,9 @@ void printUsage() {
                "  --width N --height N\n"
                "  --capture path.png       640x360 low-res framebuffer, then exit\n"
                "  --window-png path.png    integer-upscaled window, then exit\n"
-               "  --scene ruins|hills      default ruins\n"
+               "  --scene ruins|hills|tavern  default ruins; tavern starts inside the Sleeping Fox (in play, at\n"
+               "                           its inside door; walking out loads the ruins)\n"
+               "  --tavern-door-open       every tavern door shown fully open\n"
                "  --hour H                 time of day, 0-24 (captures default to 15)\n"
                "  --clouds C               cloud cover 0-1 (default 0.35)\n"
                "  --rain R                 rain severity 0-1 (0.2 drizzle, 0.55 rain, 1 downpour)\n"
@@ -180,8 +187,8 @@ void printUsage() {
                "  --hero-attack SECS       captures: the hero SECS into an attack (X; then on toward DEG if moving)\n"
                "  --hero-combo N           ...pressing X N times, 0.2 s apart, to chain the combo\n"
                "  --hero-charge SECS       ...holding X that long first (a charged spin)\n"
-               "  --fox / --no-fox         ruins: when playing, three foxes asleep on the lawn (--no-fox: none);\n"
-               "                           in captures, --fox shows the first of them, by the campfire, alone\n"
+               "  --fox / --no-fox         ruins: when playing, a fox asleep by the campfire (--no-fox: none);\n"
+               "                           in captures, --fox shows it\n"
                "  --foxes N                ruins: N foxes instead, each bed found clear of the scene and the\n"
                "                           others (the same every run), in play, captures and --bench; prints\n"
                "                           how many fit when fewer than N do\n"
@@ -236,6 +243,8 @@ Options parseArgs(int argc, char** argv) {
       opt.haveYaw = true;
     } else if (a == "--scene") {
       opt.scene = need("--scene");
+    } else if (a == "--tavern-door-open") {
+      opt.tavernDoorOpen = true;
     } else if (a == "--slide") {
       opt.slide = std::atof(need("--slide"));
     } else if (a == "--min-dist") {
@@ -626,15 +635,15 @@ glm::vec2 compass(float degrees) {
 // Which foxes this run shows. None in the hills (buildScene builds the
 // ruins for any other name), the self-test or with --no-fox. --foxes N
 // places N where they fit, in play, captures and the bench alike. Without
-// it, play shows the three hand-placed foxes, captures the first of them
-// alone and only with --fox, --fox-wake or --fox-walk, and the bench none.
-enum class FoxSet { kNone, kFirst, kHandPlaced, kFound };
+// it, play shows the one hand-placed fox, captures show it only with --fox,
+// --fox-wake or --fox-walk, and the bench none.
+enum class FoxSet { kNone, kFirst, kFound };
 FoxSet foxesShown(const Options& opt) {
   if (opt.scene == "hills" || opt.selfTest || opt.fox == 0) return FoxSet::kNone;
   if (opt.foxes >= 0) return opt.foxes > 0 ? FoxSet::kFound : FoxSet::kNone;
   if (opt.bench > 0) return FoxSet::kNone;
   const bool capture = !opt.capture.empty() || !opt.windowPng.empty();
-  if (!capture) return FoxSet::kHandPlaced;
+  if (!capture) return FoxSet::kFirst;
   return opt.fox == 1 || opt.foxWake >= 0.f || opt.foxWalk ? FoxSet::kFirst : FoxSet::kNone;
 }
 
@@ -719,6 +728,121 @@ std::vector<game::Blocker> foxBodies(const std::vector<game::Fox>& foxes) {
   for (const game::Fox& f : foxes) out.push_back(f.body());
   return out;
 }
+
+// The ruins (or the hills) and what lives in them: the scene, and the
+// foxes, with their one model, the scene's layout and (where beds may be
+// searched for) the fox's sweep, which stay for the whole run, for adding
+// foxes to it. Built once and in place - the foxes keep a pointer to the
+// model and the renderer to the scene - at the start, or, starting in the
+// tavern, when the hero first walks out of it.
+struct Outdoors {
+  bool built = false;
+  pxe::Scene scene;
+  std::optional<pxe::SkinnedModel> foxModel;
+  game::Fox::Sweep foxSweep;
+  std::vector<game::Fox> foxes;
+  std::vector<game::FoxBed> beds;
+  game::SceneLayout layout;
+};
+
+// Build `out` as `build` asks (the ruins, or the hills). The foxes: their
+// one model loaded and their beds settled before the scene is built, so the
+// grass under them is only cleared once they are sure to be there; a
+// missing model is logged and the game goes on without them. The
+// hand-placed fox lies by the campfire, its face toward it; any found by
+// --foxes as their beds say. Each is spawned asleep in its bed, its walks
+// keeping clear of every campfire. False, logged, if the scene fails to
+// build.
+bool buildOutdoors(const Options& opt, game::BuildOptions build, Outdoors& out) {
+  const FoxSet foxSet = foxesShown(opt);
+  if (foxModelWanted(opt, foxSet)) {
+    try {
+      out.foxModel = game::Fox::loadModel();
+      out.layout = game::laidOut(build);
+      const bool capture = !opt.capture.empty() || !opt.windowPng.empty();
+      if (foxSet == FoxSet::kFound || !capture || !opt.addFoxes.empty()) out.foxSweep = game::Fox::sweep(*out.foxModel);
+      if (foxSet == FoxSet::kFound) {
+        out.beds = game::Fox::findBeds(out.foxSweep, out.layout, opt.foxes);
+        if (static_cast<int>(out.beds.size()) < opt.foxes)
+          std::fprintf(stderr, "pxe: only %zu of %d foxes fit\n", out.beds.size(), opt.foxes);
+      } else if (foxSet != FoxSet::kNone) {
+        auto facingFire = [](glm::vec2 xz) {
+          const glm::vec2 toFire = game::kRuinsCampfire - xz;
+          return game::FoxBed{xz, std::atan2(toFire.x, toFire.y)};
+        };
+        out.beds.push_back(facingFire(game::kRuinsFoxSpot));
+      }
+      out.foxes.resize(out.beds.size());
+      for (std::size_t i = 0; i < out.foxes.size(); ++i) out.foxes[i].build(*out.foxModel, static_cast<int>(i));
+    } catch (const std::exception& ex) {
+      std::fprintf(stderr, "pxe: no fox: %s\n", ex.what());
+      out.foxes.clear();
+      out.beds.clear();
+      out.foxModel.reset();
+    }
+  }
+  for (const game::FoxBed& b : out.beds) build.beds.push_back({b.xz, game::Fox::kFootprint});
+  try {
+    out.scene = game::buildScene(build);
+  } catch (const std::exception& ex) {
+    std::fprintf(stderr, "scene build failed: %s\n", ex.what());
+    return false;
+  }
+  for (std::size_t i = 0; i < out.foxes.size(); ++i) {
+    out.foxes[i].spawn(out.scene, out.beds[i].xz, out.beds[i].yaw);
+    out.foxes[i].setFires(out.layout.campfires, game::kCampfireReach);
+    if (opt.foxWalk) out.foxes[i].forceWalk();
+  }
+  out.built = true;
+  return true;
+}
+
+// Indoors, where the camera may look: `target` moved as little as it takes,
+// across and up the screen, for the whole room (kRoomMin to kRoomMax) to
+// stay in view (or, where the room is wider than the view, for it to stay
+// in the middle). Outdoors, `target` as it is.
+glm::vec3 framed(const pxe::Scene& scene, glm::vec3 target, const pxe::CameraFrame& view) {
+  if (!scene.indoors) return target;
+  const glm::vec3 middle = 0.5f * (game::kRoomMin + game::kRoomMax);
+  glm::vec2 lo{1e9f}, hi{-1e9f};
+  for (int i = 0; i < 8; ++i) {
+    const glm::vec3 corner{(i & 1) ? game::kRoomMax.x : game::kRoomMin.x, (i & 2) ? game::kRoomMax.y : game::kRoomMin.y,
+                           (i & 4) ? game::kRoomMax.z : game::kRoomMin.z};
+    const glm::vec2 s{glm::dot(corner - middle, view.right), glm::dot(corner - middle, view.up)};
+    lo = glm::min(lo, s);
+    hi = glm::max(hi, s);
+  }
+  const glm::vec2 half{view.orthoHalfW, view.orthoHalfH};
+  const glm::vec3 d = target - middle;
+  glm::vec2 s{glm::dot(d, view.right), glm::dot(d, view.up)};
+  for (int k = 0; k < 2; ++k) {
+    const float from = hi[k] - half[k], to = lo[k] + half[k];
+    s[k] = from <= to ? std::clamp(s[k], from, to) : 0.5f * (from + to);
+  }
+  return middle + view.right * s.x + view.up * s.y + view.forward * glm::dot(d, view.forward);
+}
+
+// Where the hero starts in captures, the bench and play: in the tavern at
+// its inside door, facing into the room; elsewhere at the view's focus,
+// facing the camera.
+void heroStart(const pxe::Scene& scene, const pxe::Camera& camera, const pxe::CameraFrame& view, glm::vec2& xz,
+               float& yaw) {
+  if (scene.indoors) {
+    const game::Doorway d = game::tavernDoorway();
+    xz = d.arrive;
+    yaw = d.arriveYaw;
+    return;
+  }
+  xz = {camera.target().x, camera.target().z};
+  yaw = std::atan2(-view.forward.x, -view.forward.z);
+}
+
+// The loading screen between the ruins and the tavern stays up at least
+// this long, then fades into the scene over kLoadingFade.
+constexpr double kLoadingShown = 2.0;
+constexpr double kLoadingFade = 0.3;
+// Rain and wind heard indoors, against outside.
+constexpr float kIndoorWeather = 0.4f;
 
 // The --fireball roll for captures and the bench: launched on the first
 // frame, then pushed along its heading as it turns.
@@ -914,61 +1038,59 @@ int main(int argc, char** argv) {
       build.shelterTest = opt.shelterTest;
       build.extraFires = opt.extraFires;
       build.candles = opt.candles;
-      build.scene = opt.scene;
-      // The foxes: their one model loaded and their beds settled before the
-      // scene is built, so the grass under them is only cleared once they
-      // are sure to be there; a missing model is logged and the game goes
-      // on without them. The first two lie by the campfire, their faces
-      // toward it; the third and any found by --foxes as their beds say.
-      // The model, the scene's layout and (where beds may be searched for)
-      // the fox's sweep stay for the whole run, for adding foxes to it.
-      std::optional<pxe::SkinnedModel> foxModel;
-      game::Fox::Sweep foxSweep;
-      std::vector<game::Fox> foxes;
-      std::vector<game::FoxBed> beds;
-      game::SceneLayout layout;
-      const FoxSet foxSet = foxesShown(opt);
-      if (foxModelWanted(opt, foxSet)) {
+      // Starting in the tavern, the ruins are built when the hero first
+      // walks out; any other scene now, with its foxes. Either way, what
+      // the run starts in is `scene` - and in captures, the bench and the
+      // self-test, all it shows.
+      const bool startsInside = opt.scene == "tavern";
+      build.scene = startsInside ? "ruins" : opt.scene;
+      game::BuildOptions tavernBuild;
+      tavernBuild.scene = "tavern";
+      Outdoors outdoors;
+      std::optional<pxe::Scene> tavern;
+      bool built = true;
+      if (startsInside) {
         try {
-          foxModel = game::Fox::loadModel();
-          layout = game::laidOut(build);
-          const bool capture = !opt.capture.empty() || !opt.windowPng.empty();
-          if (foxSet == FoxSet::kFound || !capture || !opt.addFoxes.empty()) foxSweep = game::Fox::sweep(*foxModel);
-          if (foxSet == FoxSet::kFound) {
-            beds = game::Fox::findBeds(foxSweep, layout, opt.foxes);
-            if (static_cast<int>(beds.size()) < opt.foxes)
-              std::fprintf(stderr, "pxe: only %zu of %d foxes fit\n", beds.size(), opt.foxes);
-          } else if (foxSet != FoxSet::kNone) {
-            auto facingFire = [](glm::vec2 xz) {
-              const glm::vec2 toFire = game::kRuinsCampfire - xz;
-              return game::FoxBed{xz, std::atan2(toFire.x, toFire.y)};
-            };
-            beds.push_back(facingFire(game::kRuinsFoxSpot));
-            if (foxSet == FoxSet::kHandPlaced) {
-              beds.push_back(facingFire(game::kRuinsFoxSpot2));
-              beds.push_back({game::kRuinsFoxSpot3, game::kRuinsFoxYaw3});
-            }
-          }
-          foxes.resize(beds.size());
-          for (std::size_t i = 0; i < foxes.size(); ++i) foxes[i].build(*foxModel, static_cast<int>(i));
+          tavern.emplace(game::buildScene(tavernBuild));
         } catch (const std::exception& ex) {
-          std::fprintf(stderr, "pxe: no fox: %s\n", ex.what());
-          foxes.clear();
-          beds.clear();
-          foxModel.reset();
+          std::fprintf(stderr, "scene build failed: %s\n", ex.what());
+          built = false;
         }
+      } else {
+        built = buildOutdoors(opt, build, outdoors);
       }
-      for (const game::FoxBed& b : beds) build.beds.push_back({b.xz, game::Fox::kFootprint});
-      pxe::Scene scene;
-      try {
-        scene = game::buildScene(build);
-      } catch (const std::exception& ex) {
-        std::fprintf(stderr, "scene build failed: %s\n", ex.what());
+      if (!built) {
         glfwDestroyWindow(window);
         glfwTerminate();
         return 1;
       }
+      pxe::Scene& scene = startsInside ? *tavern : outdoors.scene;
+      std::vector<game::Fox>& foxes = outdoors.foxes;
+      std::optional<pxe::SkinnedModel>& foxModel = outdoors.foxModel;
       renderer.upload(scene);
+
+      // The tavern's two doors, the exterior's in the ruins and the inside
+      // door in the tavern, from the one model: wherever the tavern can be
+      // (not the hills, nor the self-test). A missing model is logged and the
+      // doorways stand open.
+      std::optional<pxe::SkinnedModel> doorModel;
+      game::TavernDoor outsideDoor, insideDoor;
+      if (opt.scene != "hills" && !opt.selfTest) {
+        try {
+          doorModel = game::TavernDoor::loadModel();
+          outsideDoor.build(*doorModel, game::ruinsDoorway());
+          insideDoor.build(*doorModel, game::tavernDoorway());
+          if (opt.tavernDoorOpen) {
+            outsideDoor.holdOpen();
+            insideDoor.holdOpen();
+          }
+        } catch (const std::exception& ex) {
+          std::fprintf(stderr, "pxe: no tavern doors: %s\n", ex.what());
+          doorModel.reset();
+          outsideDoor = game::TavernDoor{};
+          insideDoor = game::TavernDoor{};
+        }
+      }
 
       pxe::Camera camera;
       camera.setYawRadians((opt.haveYaw ? opt.yawDeg : scene.yawDegrees) * 3.14159265f / 180.f);
@@ -979,23 +1101,17 @@ int main(int argc, char** argv) {
         camera.setTarget(camera.target() + flatForward * opt.slide);
       }
 
-      // Asleep in their beds, their walks keeping clear of every campfire;
-      // or, with --fox-wake, that far into waking (and with --fox-walk, that
-      // wake or the first takes a walk). In captures, --add-fox adds foxes
-      // first, or with --fox-wake at their moments in the run to it, facing
-      // the camera as it starts.
-      for (std::size_t i = 0; i < foxes.size(); ++i) {
-        foxes[i].spawn(scene, beds[i].xz, beds[i].yaw);
-        foxes[i].setFires(layout.campfires, game::kCampfireReach);
-        if (opt.foxWalk) foxes[i].forceWalk();
-      }
+      // Asleep in their beds (buildOutdoors); or, with --fox-wake, that far
+      // into waking (and with --fox-walk, that wake or the first takes a
+      // walk). In captures, --add-fox adds foxes first, or with --fox-wake at
+      // their moments in the run to it, facing the camera as it starts.
       const bool captureAdds = headless && !opt.selfTest && opt.bench <= 0;
       if (!opt.addFoxes.empty() && (opt.bench > 0 || opt.selfTest))
         std::fprintf(stderr, "pxe: --add-fox is for play and captures; ignored\n");
       else if (!opt.addFoxes.empty() && !foxModel)
         std::fprintf(stderr, "pxe: --add-fox: no fox model (foxes live in the ruins only)\n");
       auto addAt = [&](glm::vec2 at) {
-        return addFox(foxes, *foxModel, foxSweep, layout, scene, renderer, at,
+        return addFox(foxes, *foxModel, outdoors.foxSweep, outdoors.layout, scene, renderer, at,
                       camera.frame(renderer.rtW(), renderer.rtH()).forward);
       };
       if (opt.foxWake >= 0.f && !foxes.empty()) {
@@ -1023,6 +1139,19 @@ int main(int argc, char** argv) {
         renderer.render(scene, frame, params);
         return frame;
       };
+      // A scene's tavern door (none in the hills), and where the hero may not
+      // go in it: every fox's body in the ruins, or the room's chairs, stools
+      // and near walls in the tavern; and the door's leaf until it is open.
+      auto doorOf = [&](const pxe::Scene& s) -> game::TavernDoor& { return s.indoors ? insideDoor : outsideDoor; };
+      const std::vector<game::Blocker> roomBlockers = game::tavernBlockers();
+      auto blockersIn = [&](const pxe::Scene& s) {
+        std::vector<game::Blocker> out = s.indoors ? roomBlockers : foxBodies(foxes);
+        doorOf(s).block(out);
+        return out;
+      };
+      auto heroAt = [](const game::Hero& h) {
+        return h.built() ? std::optional<glm::vec2>{glm::vec2{h.position().x, h.position().z}} : std::nullopt;
+      };
 
       if (opt.bench > 0) {
         // Same frame as the default window, wind running, timed per pass.
@@ -1037,14 +1166,17 @@ int main(int argc, char** argv) {
         clock.cloudSpeed = opt.windStrength;
         clock.placeFires(scene.fires);
         game::Fireball ball;
-        // With --hero, the hero stands at the view's focus facing the camera,
-        // idling, kept out of any foxes (--foxes), which wake and walk as in play.
+        // With --hero, the hero stands at the view's focus facing the camera
+        // (in the tavern, at its inside door), idling, kept out of any foxes
+        // (--foxes), which wake and walk as in play.
         game::Hero hero;
         if (opt.hero == 1) {
           hero.build();
           hero.setSize(opt.heroSize);
-          const pxe::CameraFrame start = camera.frame(renderer.rtW(), renderer.rtH());
-          hero.spawn(scene, {camera.target().x, camera.target().z}, std::atan2(-start.forward.x, -start.forward.z));
+          glm::vec2 at{0.f};
+          float yaw = 0.f;
+          heroStart(scene, camera, camera.frame(renderer.rtW(), renderer.rtH()), at, yaw);
+          hero.spawn(scene, at, yaw);
         }
         // Per-pass GPU timers block every frame and, on macOS's GL-on-Metal,
         // under-report; they are opt-in. The wall-clock figure is the one to trust.
@@ -1070,9 +1202,11 @@ int main(int argc, char** argv) {
           params.fires = fireDraws(clock);
           params.lighting = lightingFor(scene, clock);
           for (game::Fox& fox : foxes) fox.update(scene, 1.f / 60.f, foxes);
-          hero.update(scene, 1.f / 60.f, game::HeroInput{}, foxBodies(foxes));
+          doorOf(scene).update(1.f / 60.f, heroAt(hero));
+          hero.update(scene, 1.f / 60.f, game::HeroInput{}, blockersIn(scene));
           hero.pose(params.actors, params.actorEffects, params.actorMaterials);
           for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
+          doorOf(scene).pose(params.actors, params.actorMaterials);
           draw(params);
           glfwSwapBuffers(window);
           if (f >= warmup)
@@ -1146,21 +1280,27 @@ int main(int argc, char** argv) {
         // them at spawn. The hero moves round them as they are.
         if (opt.foxWake < 0.f)
           for (game::Fox& fox : foxes) fox.holdRest(shotTime);
-        const std::vector<game::Blocker> blockers = foxBodies(foxes);
+        // The scene's tavern door swings for the hero, frame by frame, as it
+        // moves.
+        game::TavernDoor& door = doorOf(scene);
         game::Hero hero;
         if (opt.hero == 1 || opt.haveHeroMove || opt.heroAttack >= 0.f) {
-          // Stands at the view's focus facing the camera, then runs or walks
-          // the way asked, the view following.
+          // Stands at the view's focus facing the camera (in the tavern, at
+          // its inside door), then runs or walks the way asked, the view
+          // following.
           hero.build();
           hero.setSize(opt.heroSize);
-          const pxe::CameraFrame start = camera.frame(renderer.rtW(), renderer.rtH());
-          hero.spawn(scene, {camera.target().x, camera.target().z}, std::atan2(-start.forward.x, -start.forward.z));
+          glm::vec2 at{0.f};
+          float yaw = 0.f;
+          heroStart(scene, camera, camera.frame(renderer.rtW(), renderer.rtH()), at, yaw);
+          hero.spawn(scene, at, yaw);
           const int frames = opt.haveHeroMove ? static_cast<int>(std::lround(opt.heroMove.y * 60.f)) : 0;
           for (int f = 0; f < frames; ++f) {
             game::HeroInput in;
             in.move = compass(opt.heroMove.x);
             in.walk = opt.heroMove.z > 0.5f;
-            hero.update(scene, 1.f / 60.f, in, blockers);
+            door.update(1.f / 60.f, heroAt(hero));
+            hero.update(scene, 1.f / 60.f, in, blockersIn(scene));
           }
           if (opt.heroAttack >= 0.f) {
             const int attackFrames = static_cast<int>(std::lround(opt.heroAttack * 60.f));
@@ -1170,7 +1310,8 @@ int main(int argc, char** argv) {
               in.walk = opt.heroMove.z > 0.5f;
               in.attack = f % 12 == 0 && f / 12 < opt.heroPresses;
               in.attackHeld = in.attack || static_cast<float>(f) / 60.f < opt.heroHold;
-              hero.update(scene, 1.f / 60.f, in, blockers);
+              door.update(1.f / 60.f, heroAt(hero));
+              hero.update(scene, 1.f / 60.f, in, blockersIn(scene));
               // The smear samples the blade as it is drawn; keep it fed.
               if (f < attackFrames) {
                 std::vector<pxe::ActorDraw> a;
@@ -1182,12 +1323,14 @@ int main(int argc, char** argv) {
           }
           if (frames > 0 || opt.heroAttack >= 0.f) std::fprintf(stderr, "pxe: hero at %.2f %.2f %.2f, %.2f m/s\n", hero.position().x,
                                        hero.position().y, hero.position().z, hero.speed());
-          camera.setTarget(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
+          camera.setTarget(framed(scene, hero.position() + glm::vec3{0.f, hero.size(), 0.f},
+                                  camera.frame(renderer.rtW(), renderer.rtH())));
         }
         pxe::FrameParams params = makeParams(opt);
         params.framebufferW = fbW;
         params.framebufferH = fbH;
         hero.pose(params.actors, params.actorEffects, params.actorMaterials);
+        door.pose(params.actors, params.actorMaterials);
         if (opt.settle > 0.f) {
           params.time = opt.time + std::ceil(opt.settle * 60.f) / 60.f;
           scriptFireball(opt, ball, clock, scene, static_cast<int>(std::ceil(opt.settle * 60.f)), 1.f / 60.f,
@@ -1264,21 +1407,27 @@ int main(int argc, char** argv) {
         glm::vec2 scriptedCursor{-1.f};  // --ui-shot: the brush stays where the script left it
         // --ui-shot: the frame to save; with --brush, once the strokes are done.
         const int uiFrames = opt.brushes.empty() ? 8 : static_cast<int>(std::ceil((brushesEnd(opt) + 1.f) * 60.f));
+        // Indoors the camera keeps the room's yaw, whatever --yaw asks.
+        if (scene.indoors) camera.setYawRadians(glm::radians(scene.yawDegrees));
         pxe::CameraFrame lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
-        // The hero stands at the view's focus facing the camera; WASD moves
-        // it (Shift walks) and the view follows it.
+        // The hero stands at the view's focus facing the camera (in the
+        // tavern, at its inside door); WASD moves it (Shift walks) and the
+        // view follows it.
         game::Hero hero;
         if (opt.hero != 0) {
           try {
             hero.build();
             hero.setSize(opt.heroSize);
-            hero.spawn(scene, {camera.target().x, camera.target().z},
-                       std::atan2(-lastFrame.forward.x, -lastFrame.forward.z));
+            glm::vec2 at{0.f};
+            float yaw = 0.f;
+            heroStart(scene, camera, lastFrame, at, yaw);
+            hero.spawn(scene, at, yaw);
+            if (scene.indoors) camera.setTarget(framed(scene, hero.position() + glm::vec3{0.f, hero.size(), 0.f}, lastFrame));
           } catch (const std::exception& ex) {
             std::fprintf(stderr, "pxe: no hero: %s\n", ex.what());
           }
         }
-        if (opt.haveFireball) {
+        if (opt.haveFireball && !startsInside) {
           ball.launch(clock, scene, {opt.fireball.x, opt.fireball.y}, compass(opt.fireball.z));
           following = true;
         }
@@ -1300,6 +1449,84 @@ int main(int argc, char** argv) {
         float noRoomFor = 0.f;
         glm::vec2 noRoomAt{0.f};
         game::Gamepad gamepad;
+
+        // Inside the tavern, or out in the ruins. Walking into the zone
+        // through an open doorway takes the hero to the other, behind the
+        // loading screen (a Passage): it comes up and is drawn alone for a
+        // frame, the other scene is loaded behind it the next, and it stays
+        // up for at least kLoadingShown seconds from when it came up, then
+        // fades into the scene over kLoadingFade. The ruins stay as they are
+        // while the hero is inside - their foxes, fireball and fires held
+        // where they were, and the camera's yaw put by - and come back as
+        // they were left, but for the lawn's grass fire, which is put out on
+        // the way in (the grass it burnt stays burnt).
+        bool inside = startsInside;
+        const game::Doorway ruinsWay = game::ruinsDoorway(), tavernWay = game::tavernDoorway();
+        float outdoorYaw = camera.restingYawRadians();
+        std::vector<game::WorldClock::Fire> outdoorFires;
+        std::uint32_t outdoorNextFire = 0;
+        struct Passage {
+          bool active = false;
+          bool loaded = false;    // the other scene is up behind the screen
+          int framesUp = 0;       // frames drawn with the screen up
+          double since = 0.0;     // when the screen came up
+          double loadedAt = 0.0;  // and when the other scene was loaded
+          int lore = 0;           // the passage shown, from kTavernLore
+        };
+        Passage passage;
+        std::mt19937 loreRng(std::random_device{}());
+        std::uniform_int_distribution<int> pickLore(0, game::kTavernLoreCount - 1);
+        bool wasInZone = false;  // the hero was in the zone last frame
+        // Into the tavern: built the first time; the ruins' camera yaw and
+        // fires put by and the lawn's grass fire put out; the hero just
+        // inside the inside door, facing into the room, the camera at the
+        // room's yaw. If the room fails to build, it is logged and the hero
+        // stays out.
+        auto goInside = [&]() {
+          if (!tavern) {
+            try {
+              tavern.emplace(game::buildScene(tavernBuild));
+            } catch (const std::exception& ex) {
+              std::fprintf(stderr, "pxe: the tavern failed to build: %s\n", ex.what());
+              return;
+            }
+          }
+          outdoorYaw = camera.restingYawRadians();
+          outdoorFires = clock.fires;
+          outdoorNextFire = clock.nextFireId;
+          renderer.quenchGrassFire();
+          ignite.clear();
+          following = false;
+          painting = false;
+          renderer.upload(*tavern);
+          clock.placeFires(tavern->fires);
+          hero.spawn(*tavern, tavernWay.arrive, tavernWay.arriveYaw);
+          camera.setYawRadians(glm::radians(tavern->yawDegrees));
+          camera.setTarget(framed(*tavern, hero.position() + glm::vec3{0.f, hero.size(), 0.f},
+                                  camera.frame(renderer.rtW(), renderer.rtH())));
+          inside = true;
+        };
+        // Out to the ruins: built the first time (when play started in the
+        // tavern), otherwise as they were left, with their fires and the
+        // camera's yaw; the hero on the lawn outside the door, facing away
+        // from the tavern. If they fail to build, it is logged and the hero
+        // stays in.
+        auto goOutside = [&]() {
+          if (!outdoors.built) {
+            if (!buildOutdoors(opt, build, outdoors)) return;
+            clock.placeFires(outdoors.scene.fires);
+            outdoorYaw = glm::radians(outdoors.scene.yawDegrees);
+          } else {
+            clock.fires = outdoorFires;
+            clock.nextFireId = outdoorNextFire;
+          }
+          renderer.upload(outdoors.scene);
+          hero.spawn(outdoors.scene, ruinsWay.arrive, ruinsWay.arriveYaw);
+          camera.setYawRadians(outdoorYaw);
+          camera.setTarget(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
+          inside = false;
+        };
+
         double previous = glfwGetTime();
         while (!glfwWindowShouldClose(window)) {
           const double now = glfwGetTime();
@@ -1319,6 +1546,33 @@ int main(int argc, char** argv) {
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
           if (input.brush >= 0) brush.kind = brush.kind == input.brush ? game::BrushSettings::kNone : input.brush;
+          // Through a doorway: the frame after the loading screen came up, the
+          // other scene is loaded behind it.
+          if (passage.active && !passage.loaded && passage.framesUp > 0) {
+            if (inside) goOutside();
+            else goInside();
+            passage.loaded = true;
+            passage.loadedAt = glfwGetTime();
+            wasInZone = false;
+            // The view as it now is, for steering and framing until the next
+            // frame is drawn.
+            lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
+          }
+          pxe::Scene& here = inside ? *tavern : outdoors.scene;
+          game::TavernDoor& door = doorOf(here);
+          // While the loading screen is up the hero stands where it is; and
+          // indoors the camera keeps the room's yaw, and the brushes, the
+          // fireball and setting the grass alight do nothing.
+          if (passage.active) {
+            input.move = glm::vec2{0.f};
+            input.panX = input.panY = 0.f;
+            input.attack = input.attackHeld = false;
+          }
+          if (inside || passage.active) {
+            input.rotate = 0;
+            input.igniteGrass = input.launchFireball = input.follow = false;
+            input.steer = glm::vec2{0.f};
+          }
           // The foxes asked for last frame join now, before any fox moves.
           for (const FoxAsk& ask : foxAsks) {
             if (!foxModel) {
@@ -1326,7 +1580,8 @@ int main(int argc, char** argv) {
                            ask.at.x, ask.at.y);
               continue;
             }
-            if (!addFox(foxes, *foxModel, foxSweep, layout, scene, renderer, ask.at, lastFrame.forward)) {
+            if (!addFox(foxes, *foxModel, outdoors.foxSweep, outdoors.layout, outdoors.scene, renderer, ask.at,
+                        lastFrame.forward)) {
               noRoomFor = kNoRoomShown;
               noRoomAt = ask.shownAt;
             }
@@ -1345,24 +1600,32 @@ int main(int argc, char** argv) {
             clock.hoursPerMinute = std::clamp(clock.hoursPerMinute * std::pow(2.f, static_cast<float>(input.speedSteps)),
                                               1.f / 60.f, 120.f);
           clock.advance(dt);
-          // The foxes first, so the hero is kept out of where they are now.
-          for (game::Fox& fox : foxes) fox.update(scene, dt, foxes);
+          // The foxes first, so the hero is kept out of where they are now;
+          // with the hero inside, they hold still.
+          if (!inside)
+            for (game::Fox& fox : foxes) fox.update(here, dt, foxes);
           // The fireball: F sets one rolling from the middle of the view,
           // away up the screen; I J K L push it up, left, down and right on
-          // screen; the view follows it (C toggles) until you pan away.
+          // screen; the view follows it (C toggles) until you pan away. With
+          // the hero inside, it holds still.
           {
             glm::vec2 right{lastFrame.right.x, lastFrame.right.z}, up{lastFrame.forward.x, lastFrame.forward.z};
             if (glm::length(right) > 1e-4f) right = glm::normalize(right);
             if (glm::length(up) > 1e-4f) up = glm::normalize(up);
-            if (input.launchFireball) {
-              ball.launch(clock, scene, {camera.target().x, camera.target().z}, up);
-              grassFire = true;
-              following = true;
+            if (!inside) {
+              if (input.launchFireball) {
+                ball.launch(clock, here, {camera.target().x, camera.target().z}, up);
+                grassFire = true;
+                following = true;
+              }
+              if (input.follow) following = !following;
+              if (!hero.built() && (input.panX != 0.f || input.panY != 0.f)) following = false;
+              ball.update(clock, here, dt, right * input.steer.x + up * input.steer.y, ignite);
+              if (ball.alive() && following) camera.follow(ball.position());
             }
-            if (input.follow) following = !following;
-            if (!hero.built() && (input.panX != 0.f || input.panY != 0.f)) following = false;
-            ball.update(clock, scene, dt, right * input.steer.x + up * input.steer.y, ignite);
-            if (ball.alive() && following) camera.follow(ball.position());
+            // The scene's door swings for the hero before it moves, so the
+            // hero meets the door as it is now.
+            door.update(dt, heroAt(hero));
             if (hero.built()) {
               game::HeroInput in;
               in.move = right * input.move.x + up * input.move.y;
@@ -1370,11 +1633,24 @@ int main(int argc, char** argv) {
               in.walk = input.walk;
               in.attack = input.attack;
               in.attackHeld = input.attackHeld;
-              hero.update(scene, dt, in, foxBodies(foxes));
+              hero.update(here, dt, in, blockersIn(here));
               if (glm::length(in.move) > 0.f) following = false;
-              if (!(ball.alive() && following)) camera.follow(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
+              if (!(ball.alive() && following))
+                camera.follow(framed(here, hero.position() + glm::vec3{0.f, hero.size(), 0.f}, lastFrame));
               input.panX = input.panY = 0.f;
             }
+          }
+          // Walking into the doorway's zone from outside it starts the way
+          // through to the other scene.
+          if (!passage.active && hero.built()) {
+            const bool inZone = (inside ? tavernWay : ruinsWay).inZone({hero.position().x, hero.position().z});
+            if (inZone && !wasInZone) {
+              passage = Passage{};
+              passage.active = true;
+              passage.since = glfwGetTime();
+              passage.lore = pickLore(loreRng);
+            }
+            wasInZone = inZone;
           }
           if (input.toggleGrass) view.grass = !view.grass;
           if (input.toggleMagenta) magenta = !magenta;
@@ -1390,17 +1666,18 @@ int main(int argc, char** argv) {
           // last frame drawn. Held down, the left button paints from where
           // the cursor was last frame to where it is now. Scripted --brush
           // strokes go through the same pick, from where their ends show.
+          // Out in the ruins only, and not while the loading screen is up.
           std::vector<pxe::FireGrid::Stroke> strokes;
           std::vector<glm::vec2> brushOutline;
-          {
+          if (!inside && !passage.active) {
             int winW = 0, winH = 0;
             glfwGetWindowSize(window, &winW, &winH);
             const float pointScale = winW > 0 ? static_cast<float>(fbW) / static_cast<float>(winW) : 1.f;
             auto pick = [&](glm::vec2 px, glm::vec3& hit) {
-              return scene.ground.raycast(renderer.rayThrough(lastFrame, fbW, fbH, px), lastFrame.forward, 400.f, hit);
+              return here.ground.raycast(renderer.rayThrough(lastFrame, fbW, fbH, px), lastFrame.forward, 400.f, hit);
             };
             auto shown = [&](glm::vec2 xz) {
-              const float y = scene.ground.heightAt(xz);
+              const float y = here.ground.heightAt(xz);
               return renderer.windowPoint(lastFrame, fbW, fbH, {xz.x, y > pxe::HeightMap::kNone ? y : 0.f, xz.y});
             };
             auto paint = [&](glm::vec2 fromPx, glm::vec2 toPx, float radius, int kind) {
@@ -1460,11 +1737,14 @@ int main(int argc, char** argv) {
               for (int i = 0; i < 40; ++i) {
                 const float a = static_cast<float>(i) / 40.f * 6.2831853f;
                 const glm::vec2 xz = glm::vec2{hit.x, hit.z} + cursorRadius * glm::vec2{std::cos(a), std::sin(a)};
-                float y = scene.ground.heightAt(xz);
+                float y = here.ground.heightAt(xz);
                 if (y <= pxe::HeightMap::kNone || std::fabs(y - hit.y) > 0.4f) y = hit.y;
                 brushOutline.push_back(renderer.windowPoint(lastFrame, fbW, fbH, {xz.x, y, xz.y}) / pointScale);
               }
             }
+          } else {
+            painting = false;
+            leftHeld = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
           }
 
           pxe::FrameParams params = makeParams(opt);
@@ -1476,7 +1756,9 @@ int main(int argc, char** argv) {
           params.rays = view.rays;
           params.fireflies = view.fireflies;
           params.fires = fireDraws(clock);
-          params.grassFire = grassFire;
+          // The lawn's grass fire runs only while the hero is out on it; it
+          // keeps its burnt grass while the hero is inside.
+          params.grassFire = grassFire && !inside;
           params.igniteGrass = std::move(ignite);
           ignite.clear();
           brushFires(clock, strokes);
@@ -1485,26 +1767,53 @@ int main(int argc, char** argv) {
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
-          params.lighting = lightingFor(scene, clock);
+          params.lighting = lightingFor(here, clock);
           hero.pose(params.actors, params.actorEffects, params.actorMaterials);
-          for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
-          const pxe::CameraFrame frame = draw(params);
-          lastFrame = frame;
-          // Weather sound follows the settings; each new flash queues its
-          // thunder, panned toward the side of the screen it lit from.
-          audio.setVolumes(sound);
+          if (!inside)
+            for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
+          door.pose(params.actors, params.actorMaterials);
+          // The scene, unless the loading screen is up over the old one, which
+          // it hides entirely, while the new one loads.
+          if (!passage.active || passage.loaded) {
+            lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
+            renderer.render(here, lastFrame, params);
+          }
+          // Weather sound follows the settings, the rain and wind quieter
+          // indoors; each new flash queues its thunder, panned toward the side
+          // of the screen it lit from.
+          game::SoundSettings heard = sound;
+          if (inside) {
+            heard.wind *= kIndoorWeather;
+            heard.rain *= kIndoorWeather;
+          }
+          audio.setVolumes(heard);
           audio.setWeather(clock.cloudSpeed, clock.rain);
           if (clock.strikes != heardStrikes) {
             heardStrikes = clock.strikes;
-            audio.thunder(glm::dot(clock.flashDir, frame.right) / std::max(glm::length(glm::vec2{clock.flashDir.x, clock.flashDir.z}), 1e-3f));
+            audio.thunder(glm::dot(clock.flashDir, lastFrame.right) /
+                          std::max(glm::length(glm::vec2{clock.flashDir.x, clock.flashDir.z}), 1e-3f));
           }
           if (input.shot) {
             const bool ok = writePng("shot.png", renderer.viewW(), renderer.viewH(),
                                      renderer.readView());
             std::fprintf(stderr, "pxe: %s shot.png\n", ok ? "wrote" : "failed");
           }
+          // The loading screen: fully up until the other scene is loaded and
+          // kLoadingShown seconds have passed since it came up, then fading.
+          game::LoadingScreen loading;
+          if (passage.active) {
+            const double fadeFrom = std::max(passage.since + kLoadingShown, passage.loadedAt);
+            loading.title = "The Sleeping Fox";
+            loading.passage = game::kTavernLore[passage.lore];
+            loading.opacity =
+                passage.loaded ? static_cast<float>(std::clamp(1.0 - (glfwGetTime() - fadeFrom) / kLoadingFade, 0.0, 1.0)) : 1.f;
+          }
           menu.draw(clock, view, sound, brush, brushOutline, noRoomFor > 0.f ? "No room for a fox here" : nullptr, noRoomAt,
-                    fps);
+                    fps, passage.active ? &loading : nullptr);
+          if (passage.active) {
+            ++passage.framesUp;
+            if (passage.loaded && loading.opacity <= 0.f) passage.active = false;
+          }
           ++frameCount;
           if (!opt.uiShot.empty() && frameCount == uiFrames) {
             const bool ok = writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
@@ -1512,13 +1821,12 @@ int main(int argc, char** argv) {
             if (!opt.brushes.empty()) std::fprintf(stderr, "pxe: brush picks within %.3f m of the scripted strokes\n", pickError);
             glfwSetWindowShouldClose(window, GLFW_TRUE);
           }
-          char title[320];
+          char title[384];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
-                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   X attack (hold: charge)   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   4 add a fox   F fireball, IJKL roll   F4 capture",
+                        "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   X attack (hold: charge)   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   4 add a fox   F fireball, IJKL roll   F4 capture   walk through the Sleeping Fox's door to go in",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
           glfwSetWindowTitle(window, title);
-          (void)frame;
           glfwSwapBuffers(window);
         }
         menu.shutdown();
