@@ -1,7 +1,7 @@
 # The Sleeping Fox tavern
 Type: feature
 Status: open
-Cycle: 3
+Cycle: 4
 
 ## Goal
 Add an enterable tavern, the Sleeping Fox, to the ruins. Its door swings open on its own when the hero comes near and closes again when the hero walks away. Walking through the open doorway shows a short loading screen with a random lore passage, then loads a new interior scene: one roomy hall with a bar, tables, chairs, barrels, shelves, a burning hearth, a brazier and candles. Walking back out through the inside door (which also opens on its own) shows the loading screen again and returns the hero to the ruins outside the door. The ruins stay in memory, so returning doesn't rebuild them. The tavern is bigger inside than out.
@@ -125,3 +125,5 @@ The standing style is `docs/art-style.md`, including its **Buildings and props**
 - Cycle 2: 2026-10-25 orchestrator decisions: FlagInsets removed with their flags; the tavern spot moved to (−11.75, −0.25) because the chimney failed the campfire margin at (−11, −1); TreeF's crown hiding about 46% of the doorway from the default yaw is accepted (style norm, Q/E rotates outside, moving TreeF would change the reference composition).
 - Cycle 2: complete. Fresh build passes, ISSUE-001 resolved, no new issues.
 - Cycle 3: 2026-10-25 reopened by the user: the cycle-2 spot is too cramped. The tavern can go anywhere on the map with its door facing the default camera; the cleared ruins props are restored; the size stays 9 × 7 m.
+- Cycle 3: complete. Spot (−28.625, 29.5) passes every hard rule and both aims, but the "most level" tie-break put it at the map's edge: the edge is visible, the hills shade it after about 13:30, and the approach is from behind.
+- Cycle 4: 2026-10-25 started, base 824df40. Trial of the alternative spot behind the ruins, near (−12.4, −25.9), for the user to compare with the cycle-3 spot.
