@@ -1,0 +1,37 @@
+# Architecture: engine and game
+
+The project is two things: **pxe**, a reusable engine for pixel-art 3D games in this style (`engine/`, the `pxe_engine` library, namespace `pxe`), and **the game**, one implementation built on it (`game/`, the `pxe` executable, namespace `game`). Every piece of code belongs to exactly one of them, and where it goes is decided on purpose, never by where the nearest similar code happens to be.
+
+## The test
+Would a different game in this style need this code, unchanged? Yes: it is engine. No: it is game.
+
+A feature often needs both. Split it into the engine capability, named for what it does, and the game's use of it. A tavern with an opening door is a door model, placed and animated by the game (game), drawn with meshes, a skinned or rigid animated model and indoor lighting (engine). If the engine lacks a capability the game needs, add the capability to the engine in general terms. Don't add a game-shaped special case.
+
+## Rules
+- **Dependencies run one way.** The game includes engine headers. The engine never includes game headers, never calls game code, and never knows game data exists. The build already enforces the include rule: `engine/` has no include path into `game/`.
+- **The game owns its objects.** The game creates, holds and destroys every object in its world: the player character, NPCs (the fox), buildings (the tavern), props, the fires it places, and any scene it builds. The engine supplies the types they're made from (`Mesh`, `SkinnedModel`, `Fire`, `Scene`, `HeightMap`, ...) and the systems that run them (`Renderer`, `Camera`, `Lighting`, ...). Each frame the game tells the engine what to draw through `FrameParams` and its draw structs. The engine never spawns a game object and never keeps a pointer to one between calls.
+- **The engine owns only its own machinery.** GPU resources, shadow maps, particle state inside a `Fire`, and caches are the engine's, and are created and freed by the engine type that uses them.
+- **No game content in the engine.** No names, asset paths, file names, world positions, layout constants or tuning that belong to this game: no fox, hero, tavern, ruins or Sleeping Fox in engine identifiers, APIs or comments. Generic real-world nouns used to explain a capability are fine ("1 is a campfire, about 0.2 a candle"). So are credits to references (t3ssel8r).
+- **Game values come in as data.** When the game needs to set something, the engine takes it as a parameter, a field, or a loaded file. Don't add parameters speculatively. A value becomes a parameter when a game needs to set it. Until then it is an engine default.
+- **Asset choice is the game's.** The engine loads whatever file it is given. Which `.glb` to load, and where its objects go, is game code.
+
+## Where things live
+| Area | Home | Status |
+|---|---|---|
+| Rendering, shaders, toon ramps, edge pass, water, rain, god rays | engine | in place |
+| Meshes, glTF loading, skinning and animation clips | engine | in place |
+| Camera, lighting, day/night palette blending | engine | in place |
+| Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
+| Window and main loop (GLFW) | engine | **misplaced**: `game/src/main.cpp` |
+| Input devices: keyboard and gamepad to raw input | engine | **misplaced**: `game/src/gamepad.cpp`, `pollInput` in `game/src/main.cpp` |
+| Audio playback (miniaudio) | engine | **misplaced**: `game/src/audio.cpp` |
+| Turning a `.glb` into a `pxe::Scene` (meshes, water, shadow-only, height maps, shelter, grass scattering) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
+| Which scene to build, and where objects are placed in it (`kTavernSpot`, `kRuinsFoxSpot`, ...) | game | in place |
+| Player character, fox, tavern, fireball | game | in place |
+| Input actions (what a key or button does), settings menu, which sounds play when | game | in place |
+
+## Misplaced code
+Code marked **misplaced** above is moved only by a dedicated refactor task, never as a side effect of a feature. Until then:
+- Extend misplaced code where it currently lives. Don't start a second copy of it in the other layer.
+- A new, self-contained capability that passes the test goes in the engine, even if related misplaced code is still in the game.
+- Report any misplaced code a task touched in its handoff, so the refactor task can be scoped.

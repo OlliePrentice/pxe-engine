@@ -24,12 +24,13 @@ You are the only one who can talk to the user. The agents can't ask questions, s
 ## 1. Interview the user
 Every new feature or fix starts with an interview. Don't write a spec from the opening request alone.
 
-1. Read enough of the codebase to ask informed questions: the systems the request touches and the existing behaviour.
+1. Read enough of the codebase to ask informed questions: the systems the request touches and the existing behaviour. Read `docs/architecture.md` too.
 2. Run the interview using the **grill** skill. Follow its process until it is complete.
 3. Keep going until you can write every acceptance criterion as a concrete statement you can check by reading the code, and you know what is out of scope. For a fix, you also need the reproduction steps and the expected behaviour.
 4. When the user's answer conflicts with the codebase or with an earlier answer, say so and resolve it before moving on.
 5. **Existing content stays put.** A feature must not move, remove, resize or restyle anything already in the game unless the user explicitly says so. This covers placed objects, props, trees, characters and their beds or spawn points, existing assets, and tuned constants. If the feature might need such a change, ask the user, naming each thing that would change, and record their answer in `## Decisions`. Never decide it yourself, even when the user has said to proceed as you see fit: that covers choices within the feature, not changes to what was already there.
-6. If the task needs new or changed assets, cover them in the interview:
+6. **Engine or game.** Decide where each piece of the feature lives, following `docs/architecture.md`. Settle it yourself where the rules settle it. Ask the user only when it's a real judgement call: a new engine capability whose scope is unclear, or a feature in an area the doc marks misplaced. If an answer sets a standing rule, add it to `docs/architecture.md`.
+7. If the task needs new or changed assets, cover them in the interview:
    - **Style:** read `docs/art-style.md` first and only ask about what it doesn't settle. If it doesn't exist, ask about the overall art style and create it from the answers. It holds the standing style for the whole project, so the user isn't asked the same questions on every task.
    - **Each asset:** what it is, its proportions, level of detail and references.
    - **Technical needs:** check the engine code for the format, units, axes and limits the loader expects. Ask the user only about what the code doesn't settle.
@@ -48,6 +49,10 @@ Cycle: 1
 
 ## Decisions
 - <Each design decision from the interview, with the user's reasoning where they gave it.>
+
+## Layering
+- Engine: <each new or changed engine capability, named for what it does, not for game content; or "none">
+- Game: <which game code creates and owns each new object, and how it uses the engine>
 
 ## Acceptance criteria
 - [ ] <Concrete criterion you can check by reading the code>
@@ -89,7 +94,7 @@ Every change is committed, so any cycle can be undone with `git revert`. The des
    cmake --build build-check --parallel
    ```
    If the project has `CMakePresets.json`, use its presets instead. Record each distinct compile error as a `critical` issue. Record new warnings as `minor` issues, but only in files listed in the handoff.
-4. **Review.** Read the cycle's diff (`git diff <cycle base>..HEAD`) against the spec. Check that it leaves existing content alone unless `## Decisions` names the change. For each acceptance criterion, find the code that satisfies it. Record anything that's missing or wrong as an issue, along with obvious regressions in code the change touched. Check that every asset the developer loads matches its `assets.md` entry.
+4. **Review.** Read the cycle's diff (`git diff <cycle base>..HEAD`) against the spec. Check that it leaves existing content alone unless `## Decisions` names the change. Check the layering against `## Layering` and `docs/architecture.md`: no engine file includes a game header or names game content, game objects are created and owned in game code, and no misplaced code was moved or copied into a second layer. For each acceptance criterion, find the code that satisfies it. Record anything that's missing or wrong as an issue, along with obvious regressions in code the change touched. Check that every asset the developer loads matches its `assets.md` entry.
 5. **Resolve.** For each issue the developer marked `fixed`, check it's actually gone in this cycle's build or review, then set it to `resolved`. If it isn't gone, set it back to `open` and increment `Reopened`.
 6. **Commit.** Commit `task.md` and `issues.md` with the message `<task-id> cycle <n>: review`.
 7. **Loop.** If any issue is `open`, increment `Cycle` in `task.md`, add a cycle log line listing the outstanding issue IDs, and go back to step 1.
