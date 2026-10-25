@@ -23,6 +23,9 @@ The MCP drives the user's live Blender session.
 - Before changing anything, check whether the open file has unsaved changes (`bpy.data.is_dirty`). If it does, stop and report it. Don't discard or overwrite the user's work.
 - Save each asset to its own file under the project. Never save over a file you didn't create for this task.
 
+## Existing content
+Don't move, remove, resize or restyle anything in an existing asset or scene (props, trees, rocks, paving, characters) unless `task.md` explicitly names it as a change. If an asset can't be made to fit without changing existing content, don't change it. Return `NEEDS INPUT` naming what would have to change. The orchestrator asks the user.
+
 ## Where assets go
 Follow the project's existing asset layout if there is one. Otherwise use:
 - `assets/source/<asset-name>.blend`: the Blender source file
@@ -62,5 +65,12 @@ Animations: <names and frame ranges, or "none">
 Revision: <n>, <date>, <what changed>
 ```
 
+## Committing
+Commit your work each time you finish a delegation, after the exports are verified and the manifest is updated, so each asset change can be reverted on its own.
+- Commit only on the task's branch. If the current branch is `main`, don't commit. Report it instead.
+- Stage the files you changed by name: build scripts, exports, previews, `assets.md`, `docs/art-style.md`, and `asset-requests.md` if you addressed requests. Never use `git add -A` or `git add .`. Don't stage `task.md`, the developer's code or handoff, or scratch files.
+- Message: `<task-id> assets: <one-line summary>`, then a short body listing the assets and requests. End it with the attribution line your session's instructions give, if any.
+- Never amend, rebase, reset, force, or push.
+
 ## Report
-Return either `NEEDS INPUT` with your questions, or: assets created or revised, the export paths, change requests addressed, and anything the developer needs to know to load them.
+Return either `NEEDS INPUT` with your questions, or: assets created or revised, the export paths, change requests addressed, anything the developer needs to know to load them, and the commit hash.

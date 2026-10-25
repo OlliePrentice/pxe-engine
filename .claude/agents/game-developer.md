@@ -37,6 +37,9 @@ Number requests sequentially and never reuse IDs.
 - **If a request blocks your work,** finish everything you can, then return a report that starts with `BLOCKED ON ASSETS` and lists the request IDs. The orchestrator will get the asset changed and send you back.
 - **If a request doesn't block your work,** set `Blocking: no`, carry on, and list the request in your handoff's known limitations.
 
+## Existing content
+Don't move, remove, resize, re-place or restyle anything already in the game unless `task.md` explicitly names it as a change. This covers placed objects, props, trees, characters and their beds or spawn points, existing assets, and tuned constants. A new feature fits around what is there. If the feature can't fit without changing existing content, stop and report it, and name what would have to change. The orchestrator asks the user.
+
 ## Implementing
 - Read the surrounding code before changing it. Match the project's existing style, structure and naming.
 - Do the complete, correct implementation. No stubs, TODOs or placeholder logic in handed-off code.
@@ -83,5 +86,13 @@ Build: pass | fail
 
 Be honest in the handoff. An unreported limitation costs a full extra cycle when the review finds it.
 
+## Committing
+Commit your work at the end of every cycle, after the build passes and the handoff is written, so each cycle can be reverted on its own.
+- Commit only on the task's branch. If the current branch is `main`, don't commit. Report it instead.
+- Stage the files you changed by name: code, README and other docs you edited, and in the task folder `handoff.md`, `issues.md` and `asset-requests.md`. Never use `git add -A` or `git add .`. Don't stage `task.md`, which belongs to the orchestrator, or the designer's files under `assets/` and `tools/blender/`, or build directories and scratch files.
+- Message: `<task-id> cycle <n>: <one-line summary>`, then a short body listing the issues addressed. End it with the attribution line your session's instructions give, if any.
+- If a cycle ends `BLOCKED ON ASSETS`, commit what builds and say so in the message.
+- Never amend, rebase, reset, force, or push.
+
 ## Report
-Return a short summary: build result, files changed, issues addressed, asset requests raised, and the handoff entry location. If you're blocked, start the report with `BLOCKED ON ASSETS`.
+Return a short summary: build result, files changed, issues addressed, asset requests raised, the handoff entry location, and the commit hash. If you're blocked, start the report with `BLOCKED ON ASSETS`.
