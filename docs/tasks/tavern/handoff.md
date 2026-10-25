@@ -270,3 +270,60 @@ Which captures changed: the 30-capture suite (`runcaps.sh`: default, six yaws, d
 - **Approach from behind.** The hero starts behind and right of it, so the player first sees its back and has to walk round to the door. This follows from the door-to-camera rule.
 - Interactive passages (keyboard) weren't driven. Walking to and through the doorway was checked by the flood fill and the `--hero-move` captures.
 - No asset requests raised.
+
+## Cycle 4
+Build: pass (fresh build directory, Debug, at `/private/tmp/claude-501/-Users-sampr-Projects-Games-pxe-pxe-engine/031add42-8fdc-4ccb-87c2-6c47c358642c/scratchpad/c4/build`; the only warnings are the existing ones: `third_party/stb/stb_image_write.h` sprintf and ld's duplicate `libglfw3.a`)
+
+### Placement (trial of the cycle-3 alternative)
+- **Spot: `kTavernSpot = (-11.4, 1.645, -25.9)`, yaw `kTavernYaw` = 12.5° (unchanged, 0.21816616 rad).** Behind the ruins, on the lawn beyond the pond on the left of the default view, about 24 m from the hero's start.
+- Search: `fit5` (the cycle-3 tool, unchanged rules and the full 4 m ring) over x -15.4..-9.4, z -28.9..-22.9 (±3 m of (-12.4, -25.9)) at 0.25 m, yaw -15..15° at 2.5°: 7,973 spots pass every hard rule (152 fail clearance), 2,067 with the full 4 m ring. A second scratch tool, `/private/tmp/claude-501/-Users-sampr-Projects-Games-pxe-pxe-engine/031add42-8fdc-4ccb-87c2-6c47c358642c/scratchpad/c4/fit6.cpp` (fit5 plus a `prefs` mode), scored all 2,067 ring-4 spots on the three preferences:
+  - map edge: rays for every 6th pixel of the 960 × 540 view at the default yaw (180°), pitch 30°, centred on the footprint's middle 3 m above the floor, marched onto the ruins' ground and water; a ray that hits nothing is the void past the map's edge;
+  - hills' shadow: `horizonLight` from `common.glsl` reproduced on the CPU with the ruins' ridge (centre (2, -6), radius 46, height 12, relief 9) and `sunDirection` (peak 55°), over the footprint plus the 4 m ring at lawn level and over the walls 4 m above the floor;
+  - approach: the start in front of the door (cosine of the angle between the door's normal and the direction to the start) and the walk with the tavern masked out compared with the walk without it.
+  - The Pareto set over (least void, most lawn lit at 15:00, least variation) is 7 spots along one line; (-11.4, -25.9, 12.5°) is best on both void and 15:00 light. I picked it over (-12.4, -25.9), the most level spot, which has more void (779 against 674 samples) and less lit lawn at 15:00 (60% against 66%), for 0.056 m more lawn variation.
+- **Hard rules (all pass):**
+  - Door facing: 12.5° off straight at the default camera (rule ±15°).
+  - Lawn: all Grass under the footprint, no Dirt, no gaps, 1.354 to 1.644 m (**0.291 m variation**, rule ≤ 0.6). Floor at 1.645. The lawn 0.8 m before the door is at 1.599, so the step onto the threshold is **0.04 m**.
+  - Reachable: the cycle-3 flood fill (hero's step, feet, look-ahead and water rules) reaches the door front from (2, -6) in **27.2 m**, the same with the tavern masked out (straight line 23.2 m; the extra is the way round the pond).
+  - Clearances, seen from above (footprint, eaves, chimney, sign): ruins.glb **4.01 m** (TreeGCrown; then PondCrown 4.10, Water 4.42, RimStone.005 4.37); campfire patch **18.1 m**; fox #0's bed **17.4 m** (fox walks reach 5 m from the bed, so they don't come near).
+- **Open ring: 4 m reached. Campfire: ≥ 10 m reached (18.1 m).**
+- Scene bounds unchanged (log: -76.37, -3.40, -76.37 .. 76.37, 16.84, 76.37); the roof top at about y 10.8 is inside.
+
+### The three preferences: one met, two not
+None of the 2,067 ring-4 spots in the ±3 m window meets all three. As asked, I didn't widen the search.
+1. **No map edge in the centred default-yaw view: not met.** No spot in the window has none: the fewest void samples is 674 of 14,400 (4.7%), at this spot. The void is a black triangle at the top left of `tavern_view_*.png`, where the diamond-shaped map ends behind and left of the tavern, about 25 m or more back from it. (The cycle-3 spot scored 336 by the same measure.)
+2. **Out of the hills' shadow at 06, 09, 12, 15 and 18: partly met.**
+   - 09:00 and 12:00: all of it lit, lawn and walls.
+   - 15:00: the walls are all lit, and so is the lawn before the door. The ridge's shadow covers 34% of the 4 m ring's lawn, a wedge at the back left that just takes in the footprint's back left corner. This is the most lit lawn at 15:00 of any spot in the window (66%).
+   - 06:00 and 18:00: in shade, but no spot anywhere can meet these. At those hours the sun is exactly on the horizon (`sunDirection` gives y = 0), so `horizonLight` shades the whole map, the campfire and the focus included.
+   - The hills' shadow reaches the door at about 15:33, against 16:20 at the campfire and 13:36 at the cycle-3 door. In the morning the door is lit from 06:43, the campfire from 07:13.
+   - Tree shadow is separate from the hills' shadow and isn't covered by this preference. At 15:00 the lawn before the door is in the cast shadow of the big tree to its left (`tavern_view_1500.png`). At 12:00 that tree and TreeG shade the lawn in front of the door.
+3. **Approach to the door side without walking round the building: met.** The hero's start is in front of the door (cosine 0.93), and the walking route is the same 27.2 m with or without the tavern in the way. The hero goes round the pond and straight up to the door.
+
+### Changes
+- game/src/scene.hpp: `kTavernSpot` (-11.4, 1.645, -25.9); `kTavernYaw` unchanged at 12.5°. The comment is rewritten with the figures above.
+- README.md: the intro sentence and the Sleeping Fox paragraph give the new place, figures and walk.
+- Nothing else changed. Everything placed relative to the tavern (doorway, door, trigger zone, arrival point, grass clearing, ground overheads, solids, and the scatter skips) follows `kTavernSpot`/`kTavernYaw`. The log shows 567 grass sprites dropped under the tavern.
+
+### Issues addressed
+- None named this cycle (no open issues). This cycle is the placement trial the orchestrator asked for.
+
+### Captures
+In `/private/tmp/claude-501/-Users-sampr-Projects-Games-pxe-pxe-engine/031add42-8fdc-4ccb-87c2-6c47c358642c/scratchpad/c4/`:
+- `tavern_view_1200.png`, `tavern_view_1500.png`: centred on the tavern at the default yaw (`--target -11.69,4.6,-29.06`).
+- `default.png`: the default view at 15:00. **The foot of the tavern's front wall now shows at the top left edge** (about x 130–270, y 0–20 px), so the default view is no longer byte-identical to HEAD. I didn't re-run the 30-capture suite. Any framing that reaches about 20 m behind and 13 m left of the focus will also show it.
+- `walk_in_0.6.png`, `walk_in_1.0.png`, `walk_in_1.4.png`: `--target -10.90,2.08,-23.655 --hero-move -12.5,T --hour 12`. The hero starts at the arrival point, 2.3 m out, and runs at the door. At 0.6 s it is in the open doorway (-11.55, 1.64, -26.57). At 1.0 s it is in the vestibule at local z -2.39 (-12.06, 1.64, -28.20). At 1.4 s it has slid along the vestibule's back wall (-12.58, 1.64, -28.20).
+
+### How to playtest
+- Start play. From the campfire, go up and left past the pond (away from the camera). The tavern is just beyond the top left of the default view, its door toward you. The walk is about 27 m and doesn't go round the building.
+- Walk in. The door opens within 3 m, and the step onto the threshold is tiny (0.04 m). Walk out again: you arrive 2.3 m in front of the door, facing the pond.
+- Compare it with the cycle-3 spot (-28.625, 0.06, 29.5): one constant change to go back.
+- Look at it around 15:00–16:00 to see the hills' shadow line crossing it, and from the default view to see the strip of it at the top left.
+
+### Known limitations
+- The centred view shows the map's edge at the top left. No spot in the ±3 m window avoids that.
+- **Crowns hide much of the building from the camera.** In plan they clear it by 4 m, but at 30° pitch the big tree to its left (in front, toward the camera) covers the left half of the front wall and roof, and TreeG's crown covers the right end and chimney. The door itself stays visible in every capture (`tavern_view_*.png`). The 4 m ring rule is measured in plan, so it doesn't catch this.
+- The default view changed: a sliver of the tavern now shows at its top left. The user may or may not want that. The task says the tavern needn't be in the default view, but doesn't say it must stay out of it.
+- The lawn under it varies by 0.291 m (the cycle-3 spot: 0.125 m). It is well inside the 0.6 m rule.
+- Interactive play (keyboard) wasn't driven. The walk and the doorway were checked by the flood fill and the `--hero-move` captures.
+- No asset requests raised.

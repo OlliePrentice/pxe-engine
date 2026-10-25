@@ -33,31 +33,37 @@ constexpr glm::vec2 kRuinsFoxSpot{-2.f, -7.f};
 // The Sleeping Fox (tavern_exterior.glb, 9 x 7 m) in the ruins: where its
 // origin - the middle of its doorway's threshold, at floor level - stands,
 // and its yaw (radians about +y; at 0 its door faces +z, toward the default
-// view's camera). It stands alone on the open lawn far out to the front
-// left of the ruins, about 47 m from where the hero starts (the default
-// view's focus), out of the default view (yaw 180), turned 12.5 degrees
-// so its door faces that view's camera. Settled by a search over the whole
-// map (0.5 m and 2.5 degree steps, then 0.125 m round the best) with the
-// real exterior and the ruins as built (docs/tasks/tavern/task.md):
+// view's camera). It stands alone on the open lawn behind the ruins, on the
+// far side of the pond to the left, about 24 m from where the hero starts
+// (the default view's focus), turned 12.5 degrees so its door faces the
+// default view's camera; the default view shows only the foot of its front
+// wall, at the top left. Trialled in cycle 4 from a spot the cycle-3 whole
+// map search found (docs/tasks/tavern/task.md), refined within 3 m of it
+// (0.25 m and 2.5 degree steps) with the real exterior and the ruins as
+// built:
 // - Hard rules, all met: the door within 15 degrees of facing the default
 //   camera; open lawn under all of its footprint, none of it dirt, from
-//   -0.068 to 0.057 m (0.125 m of variation; its floor is just over the
+//   1.354 to 1.644 m (0.291 m of variation; its floor is just over the
 //   highest, so its plinth, reaching 0.6 m down, meets the lawn all round);
 //   the lawn before its door reached on foot from the hero's start over
 //   ground the hero climbs (scene.ground cells, a 0.55 m step at most, its
-//   feet and look-ahead, no deep water) in 51.1 m, round the building's
-//   back and side, which face the ruins; and 0.3 m or more from everything,
-//   seen from above.
+//   feet and look-ahead, no deep water) in 27.2 m, round the pond and
+//   straight up to the door, which faces the start, never round the
+//   building; and 0.3 m or more from everything, seen from above.
 // - Open lawn round it: nothing of ruins.glb within 4 m of its eaves,
-//   chimney and sign (the nearest, TreeE's crown, is 6.83 m off); the
-//   nearest ground that is not lawn (the map's edge) is 8.6 m off. The
-//   campfire's dirt patch is 32.9 m away, and the fox in its bed
-//   (kRuinsFoxSpot, a 1.53 m circle round it) 35.0 m.
-// Of the spots with a 4 m ring of open lawn (most of those that pass), this is
-// the most level; the lawn before the door is at -0.04, a 0.1 m step onto
-// the threshold. All of it stays inside the ruins' bounds, so the sun's
-// shadow map, fitted to them, covers it as it did before.
-constexpr glm::vec3 kTavernSpot{-28.625f, 0.06f, 29.5f};
+//   chimney and sign (the nearest, TreeG's crown, is 4.01 m off, then the
+//   pond's crown 4.10 m and the water 4.42 m). The campfire's dirt patch is
+//   18.1 m away, and the fox in its bed (kRuinsFoxSpot, a 1.53 m circle
+//   round it) 17.4 m.
+// Of the 4 m-ring spots near there, this is the one with the least of the
+// map's edge in a default-yaw view centred on it (a corner at the top left
+// is still beyond the edge) and the most of its lawn in sun at 15:00: the
+// hills' shadow reaches its door at about 15:30 (the campfire's at about
+// 16:20) and only its back left corner's lawn by 15:00. The lawn before the
+// door is at 1.60, a 0.04 m step onto the threshold. All of it stays inside
+// the ruins' bounds, so the sun's shadow map, fitted to them, covers it as
+// it did before.
+constexpr glm::vec3 kTavernSpot{-11.4f, 1.645f, -25.9f};
 constexpr float kTavernYaw = 0.21816616f;
 // Its footprint on the ground (xz, in its own coordinates; assets.md): the
 // 9 x 7 m plinth's outline, with the threshold step at the front and the
