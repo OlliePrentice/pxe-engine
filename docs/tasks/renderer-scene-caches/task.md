@@ -35,4 +35,4 @@ None
 - Detecting a caller passing a scene that wasn't uploaded (caller error, not checked).
 
 ## Cycle log
-- Cycle 1: 2026-10-26 started, base 14e2e12
+- Cycle 1: 2026-10-26 started, base 868ccd4
