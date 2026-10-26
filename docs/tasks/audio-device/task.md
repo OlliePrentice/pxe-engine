@@ -1,7 +1,7 @@
 # Audio playback device in the engine
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 The miniaudio playback device lives in the game (`Audio::Impl::device` and `Audio::start` in game/src/audio.cpp, the implementation unit game/src/miniaudio.cpp). docs/architecture.md puts audio playback in the engine and the sounds themselves, including the synthesised wind, rain and thunder, in the game. Move the device into the engine as `pxe::AudioDevice`, which plays whatever the game renders. The synth stays in the game unchanged.
@@ -32,3 +32,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 6b447a3
+- Cycle 1: review: build passes, --audio-wav --rain 0.6 byte-identical (orchestrator re-checked, SHA-1 d038ea9a); ISSUE-001 open
