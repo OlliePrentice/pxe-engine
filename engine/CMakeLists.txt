@@ -15,6 +15,8 @@ add_library(pxe_engine
   src/window.cpp
   src/input.cpp
   src/overlay.cpp
+  src/audio_device.cpp
+  src/miniaudio.cpp
   ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
   ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
@@ -23,6 +25,7 @@ add_library(pxe_engine
 set_source_files_properties(
   ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
   ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+  src/miniaudio.cpp
   PROPERTIES COMPILE_OPTIONS "-w"
 )
 
@@ -32,6 +35,7 @@ target_include_directories(pxe_engine
   PRIVATE ${CMAKE_SOURCE_DIR}/third_party/khronos
   PRIVATE ${CMAKE_SOURCE_DIR}/third_party/cgltf
   PRIVATE ${imgui_SOURCE_DIR}/backends
+  PRIVATE ${miniaudio_SOURCE_DIR}
 )
 
 target_compile_definitions(pxe_engine

@@ -7,15 +7,10 @@ add_executable(pxe
   src/fox.cpp
   src/gamepad.cpp
   src/audio.cpp
-  src/miniaudio.cpp
 )
-
-# Third-party implementation: built without the project's warnings.
-set_source_files_properties(src/miniaudio.cpp PROPERTIES COMPILE_OPTIONS "-w")
 
 target_include_directories(pxe PRIVATE
   ${CMAKE_SOURCE_DIR}/third_party/stb
-  ${miniaudio_SOURCE_DIR}
 )
 
 target_compile_options(pxe PRIVATE

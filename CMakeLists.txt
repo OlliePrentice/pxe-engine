@@ -21,7 +21,7 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 # miniaudio is a single header; populate it without its own CMake, and
-# compile the implementation in one source file of the game.
+# compile the implementation in one source file of the engine.
 FetchContent_Declare(
   miniaudio
   GIT_REPOSITORY https://github.com/mackron/miniaudio.git
