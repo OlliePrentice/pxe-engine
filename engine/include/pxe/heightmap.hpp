@@ -8,8 +8,8 @@
 namespace pxe {
 
 // The height of the highest surface over each cell of a grid on the
-// ground, for things that move over the scene - a rolling fireball - to
-// follow the ground and stop at walls. Built once from triangles.
+// ground, for something moving over the ground of the scene to follow it
+// and stop at walls. Built once from triangles.
 class HeightMap {
  public:
   static constexpr float kNone = -1e9f;

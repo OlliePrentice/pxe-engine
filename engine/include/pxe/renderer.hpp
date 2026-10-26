@@ -126,8 +126,8 @@ class Renderer {
   int rtW() const { return RenderConfig::kViewW + 2 * RenderConfig::kPad; }
   int rtH() const { return RenderConfig::kViewH + 2 * RenderConfig::kPad; }
   void upload(const Scene& scene);
-  // Just the grass, after the game has changed scene.grass (blades cleared
-  // from under a fox added as it runs); everything else upload() set stays.
+  // Just the grass, after the game has changed scene.grass (say, cleared
+  // some blades); everything else upload() set stays.
   void uploadGrass(const Scene& scene);
   // A point of the window (framebuffer pixels from its top left, `fbW` x
   // `fbH`) as presented for `camera`: the view ray through it starts at the
@@ -137,8 +137,9 @@ class Renderer {
   glm::vec2 windowPoint(const CameraFrame& camera, int fbW, int fbH, glm::vec3 world) const;
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
 
-  // Centre 640×360 of the low-res target, bottom-up RGBA8. This is the
-  // snapped image, before the subpixel present shift.
+  // Centre RenderConfig::kViewW x kViewH of the low-res target (the view
+  // without its padding), bottom-up RGBA8. This is the snapped image,
+  // before the subpixel present shift.
   std::vector<std::uint8_t> readView();
   // Window framebuffer, bottom-up RGBA8. Call before swapping buffers.
   std::vector<std::uint8_t> readPresented(int width, int height);
