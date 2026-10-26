@@ -1,7 +1,7 @@
 # Issues
 
 ## ISSUE-001: Engine header included with angle brackets
-Status: fixed
+Status: resolved
 Severity: minor
 Source: review
 Found in cycle: 1

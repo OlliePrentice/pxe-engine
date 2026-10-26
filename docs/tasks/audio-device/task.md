@@ -1,6 +1,6 @@
 # Audio playback device in the engine
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -16,12 +16,12 @@ The miniaudio playback device lives in the game (`Audio::Impl::device` and `Audi
 - Game: `game::Audio` holds a `pxe::AudioDevice` and passes `Impl::render` as its callback; game/src/miniaudio.cpp is deleted; game/CMakeLists.txt drops miniaudio's include path and source. The root CMakeLists.txt comment about miniaudio is updated.
 
 ## Acceptance criteria
-- [ ] `grep -rn "miniaudio\|ma_" game/src` finds nothing.
-- [ ] `pxe::AudioDevice` is as described under Decisions, with no game content in names or comments.
-- [ ] `game::Audio::start()` returns false and the game runs silent when there is no output, as today.
-- [ ] `--audio-wav` output is byte-identical before and after (`--rain 0.6`), checked with `cmp` against the cycle base build. Record in the handoff.
-- [ ] miniaudio compiles in exactly one engine source with the same defines and `-w`.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `grep -rn "miniaudio\|ma_" game/src` finds nothing. (c738d4d: grep finds nothing)
+- [x] `pxe::AudioDevice` is as described under Decisions, with no game content in names or comments. (engine/include/pxe/audio_device.hpp, engine/src/audio_device.cpp; pimpl, no miniaudio in the public header)
+- [x] `game::Audio::start()` returns false and the game runs silent when there is no output, as today. (Audio::start returns AudioDevice::open, which returns false on init or start failure; not exercised, no machine without output)
+- [x] `--audio-wav` output is byte-identical before and after (`--rain 0.6`), checked with `cmp` against the cycle base build. Record in the handoff. (developer and orchestrator: cmp equal, SHA-1 d038ea9a)
+- [x] miniaudio compiles in exactly one engine source with the same defines and `-w`. (engine/src/miniaudio.cpp, same three defines, -w in engine/CMakeLists.txt)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check exit 0 after cycle 2)
 
 ## Assets
 None
@@ -34,3 +34,4 @@ None
 - Cycle 1: 2026-10-26 started, base 6b447a3
 - Cycle 1: review: build passes, --audio-wav --rain 0.6 byte-identical (orchestrator re-checked, SHA-1 d038ea9a); ISSUE-001 open
 - Cycle 2: 2026-10-26 started, base fb93271; ISSUE-001
+- Cycle 2: ISSUE-001 resolved (d422366); fresh build exit 0; complete
