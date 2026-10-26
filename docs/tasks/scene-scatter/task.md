@@ -34,3 +34,4 @@ None
 - Any change to where or how densely things grow.
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base 5fcfd91
