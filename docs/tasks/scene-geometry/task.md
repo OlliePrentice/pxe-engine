@@ -1,6 +1,6 @@
 # Engine scene geometry: from glTF primitives to a drawable, queryable Scene
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -23,12 +23,12 @@ game/src/scene.cpp holds generic machinery for turning loaded geometry into a `p
 - Game: scene.cpp builds the ruins and hills with them: loads ruins.glb, appends it, collects lawn and crown triangles by its own conventions, adds its props, finishes the scene, then (until scene-scatter) scatters grass and leaves as today.
 
 ## Acceptance criteria
-- [ ] `GroundIndex`/`Triangle`, `cornersOf`, `computeBounds`, the per-surface merge and the scene-finishing code no longer exist in game/src/scene.cpp; their engine equivalents do.
-- [ ] No engine file names Ground, ruins, campfire, candle, fox or any asset path.
-- [ ] `game::laidOut` returns the same layout as before (same campfires, solids count, ground, lawn, bed rectangle); check by logging or comparing in a scratch build, and record in the handoff.
-- [ ] Captures are byte-identical to the cycle base: `--capture` with `--hour 15`, `--hour 21`, `--hour 7 --rain 0.3`, `--scene hills`, `--scene hills --stamps`, `--hour 21 --candles --shelter-test --extra-fires 6`, and the default with `--foxes 3`. Build log lines (clumps/tufts counts, grass dropped, candles, fires, leaf clusters, sprites) identical too. Record commands and results in the handoff.
-- [ ] `--self-test` passes.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `GroundIndex`/`Triangle`, `cornersOf`, `computeBounds`, the per-surface merge and the scene-finishing code no longer exist in game/src/scene.cpp; their engine equivalents do. (e2c4451: pxe::TriangleGrid, pxe::Triangle, pxe::SurfaceGeometry, pxe::buildSceneMaps, pxe::uploadScene; game/src/scene.cpp no longer has them)
+- [x] No engine file names Ground, ruins, campfire, candle, fox or any asset path. (grep of the four new engine files finds nothing)
+- [x] `game::laidOut` returns the same layout as before (same campfires, solids count, ground, lawn, bed rectangle); check by logging or comparing in a scratch build, and record in the handoff. (developer: hashes of campfires, solids, ground, lawn and bed rectangle match the base, default and shelter-test)
+- [x] Captures are byte-identical to the cycle base: `--capture` with `--hour 15`, `--hour 21`, `--hour 7 --rain 0.3`, `--scene hills`, `--scene hills --stamps`, `--hour 21 --candles --shelter-test --extra-fires 6`, and the default with `--foxes 3`. Build log lines (clumps/tufts counts, grass dropped, candles, fires, leaf clusters, sprites) identical too. Record commands and results in the handoff. (developer: all seven PNGs and logs identical; orchestrator: hills --stamps, --hour 7 --rain 0.3 --foxes 3, and candles/shelter/extra fires: PNGs and logs identical to the pre-change build)
+- [x] `--self-test` passes. (developer: identical output on both builds)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check exit 0)
 
 ## Assets
 None
@@ -39,3 +39,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 8702818
+- Cycle 1: review passed, no issues; complete. Accepted: scene finishing split into buildSceneMaps (also used by laidOut) and uploadScene
