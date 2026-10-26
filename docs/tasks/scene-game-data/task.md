@@ -30,3 +30,4 @@ None
 - Moving any scene-building code into the engine (scene-geometry, scene-scatter tasks).
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base b2a7e0b
