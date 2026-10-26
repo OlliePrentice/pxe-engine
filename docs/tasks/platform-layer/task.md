@@ -54,3 +54,4 @@ None
 - Any change to what the menu shows or how it looks.
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base 75f49c9 (worktree /Users/sampr/Projects/Games/pxe/pxe-engine-platform-layer, branch platform-layer)
