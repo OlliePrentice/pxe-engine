@@ -14,6 +14,7 @@ add_library(pxe_engine
   src/heightmap.cpp
   src/scene_geometry.cpp
   src/triangle_grid.cpp
+  src/scatter.cpp
   src/image.cpp
   src/window.cpp
   src/input.cpp
