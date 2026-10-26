@@ -1,6 +1,6 @@
 # Renderer: no Scene pointers between calls
 Type: fix
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -20,12 +20,12 @@ pxe::Renderer remembers the address of the last Scene it drew (`shadowScene_`, `
 - Expected: after `upload()`, the first frame with a flash redraws the flash shadow map.
 
 ## Acceptance criteria
-- [ ] No `const Scene*` (or other Scene pointer or reference) member remains in pxe::Renderer or its nested structs.
-- [ ] `upload()` invalidates the main shadow map (including `shadowStaticValid_`'s map), every shadow cube, and the flash shadow map.
-- [ ] The places that delete and recreate the shadow framebuffers/textures (renderer.cpp ~208-226) also invalidate the matching caches, as the current `drawnScene = nullptr` / `shadowScene_ = nullptr` lines do.
-- [ ] The redraw conditions at the current renderer.cpp:799, :926 and :959 keep every non-address trigger they have today (light position, light direction, flash direction, crownShadows).
-- [ ] renderer.hpp documents the upload-then-render contract on `render()` or `upload()`.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] No `const Scene*` (or other Scene pointer or reference) member remains in pxe::Renderer or its nested structs. (65a9e47: renderer.hpp now has shadowValid_, flashValid_, ShadowCube::drawn; grep finds no Scene pointer member)
+- [x] `upload()` invalidates the main shadow map (including `shadowStaticValid_`'s map), every shadow cube, and the flash shadow map. (Renderer::upload clears shadowValid_, shadowStaticValid_, flashValid_ and resets cubes_)
+- [x] The places that delete and recreate the shadow framebuffers/textures (renderer.cpp ~208-226) also invalidate the matching caches, as the current `drawnScene = nullptr` / `shadowScene_ = nullptr` lines do. (Renderer::destroyTargets clears cube.drawn and all three flags; flash flag is new there, fixing a second stale-map path)
+- [x] The redraw conditions at the current renderer.cpp:799, :926 and :959 keep every non-address trigger they have today (light position, light direction, flash direction, crownShadows). (updateFires drawnPos, render sceneShadows lightDir/crownShadows, flash flashDir/crownShadows all kept)
+- [x] renderer.hpp documents the upload-then-render contract on `render()` or `upload()`. (comments on upload() and render())
+- [x] Project builds cleanly from a fresh build directory with CMake (fresh build-check, exit 0; no new warnings)
 
 ## Assets
 None
@@ -36,3 +36,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 868ccd4
+- Cycle 1: review passed, no issues; complete. Follow-up noted: pxe::FireGrid keeps const Scene* scene_ (firegrid.hpp:116), out of scope
