@@ -524,92 +524,6 @@ int shiftedDiff(const std::vector<std::uint8_t>& base, const std::vector<std::ui
 
 constexpr float kCaptureHour = 15.f;
 
-pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock) {
-  pxe::Lighting lighting = pxe::lightingAt(scene, clock.hour);
-  lighting.cloudCover = clock.cloudCover;
-  lighting.cloudOffset = clock.cloudOffset;
-  lighting.cloudStrength = clock.cloudStrength;
-  lighting.windDir = clock.windDir();
-  lighting.windStrength = clock.cloudSpeed;
-  // Rain brings a murky, even overcast that fades sun and moon shadows. The
-  // drifting cloud shadows fade out as it sets in - under a rain sky there
-  // are no separate clouds to see - and are gone from moderate rain up.
-  lighting.rain = clock.rain;
-  lighting.overcast = 0.7f * clock.rain;
-  lighting.cloudStrength *= std::clamp(1.f - 2.f * clock.rain, 0.f, 1.f);
-
-  // God rays: only from the sun. Strong in the morning and at dusk while it
-  // is low, barely there with it high. A drizzle catches the light and
-  // brings them out more; from moderate rain up the sun is gone and so are
-  // they. Cloud shadows block them where they fall (in the edge pass).
-  {
-    const float elev = lighting.sunElevationDegrees;
-    const bool sunLights = pxe::sunDirection(scene, clock.hour).y >= pxe::moonDirection(scene, clock.hour).y;
-    auto ramp = [](float x, float a, float b) {
-      const float t = std::clamp((x - a) / (b - a), 0.f, 1.f);
-      return t * t * (3.f - 2.f * t);
-    };
-    const float low = 1.f - ramp(elev, 8.f, 35.f);
-    const float r = clock.rain;
-    const float rainLight = r <= 0.3f ? 1.f + 2.5f * r : std::max(0.f, 1.75f * (1.f - (r - 0.3f) / 0.15f));
-    lighting.rays = sunLights ? ramp(elev, 0.f, 3.f) * (0.1f + low) * rainLight : 0.f;
-    lighting.rayColour = glm::mix(glm::vec3{1.f, 0.97f, 0.86f}, glm::vec3{1.f, 0.8f, 0.56f}, 1.f - ramp(elev, 6.f, 24.f));
-  }
-
-  // Firefly light, like the firelight: direct sun drowns it out, so by day
-  // it shows only in the shade, and at night it lights all round them.
-  {
-    const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
-    lighting.fireflyLight = 1.4f;
-    lighting.fireflyDim = 0.95f * (1.f - dark);
-    const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
-    for (int s = 0; s < pxe::kSurfCount; ++s)
-      lighting.fireflyBand[s] = glm::mix(noon.palette[s].band[2], glm::vec3{0.85f, 1.f, 0.5f}, 0.5f);
-  }
-
-  // Firelight: a warm pool round the campfire. By day direct sun drowns it
-  // out, so it shows only in the shade round the fire; once the sun is down
-  // it lights everything near and carries farther. Each surface's colour in
-  // full firelight is its midday lit colour pulled toward a golden orange.
-  {
-    const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
-    lighting.fireLight = 1.5f;
-    lighting.fireDim = 0.9f * (1.f - dark);
-    lighting.fireReach = 6.f + 3.5f * dark;
-    const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
-    for (int s = 0; s < pxe::kSurfCount; ++s)
-      lighting.fireBand[s] = glm::mix(noon.palette[s].band[2] * 1.05f, glm::vec3{1.f, 0.52f, 0.34f}, 0.55f);
-  }
-
-  // A lightning flash: a second light from the flash's direction with hard
-  // shadows, blended over the sun or moon by its strength, and the overcast
-  // drops away while it lasts. Lit faces take the midday colours washed out
-  // to a cold blue-white; the shadow side stays close to the storm's dark.
-  if (clock.flash > 0.f) {
-    const float f = clock.flash;
-    const pxe::Lighting day = pxe::lightingAt(scene, 12.f);
-    auto cold = [](glm::vec3 c) {
-      const float l = glm::dot(c, glm::vec3{0.299f, 0.587f, 0.114f});
-      return glm::mix(c, glm::vec3{l}, 0.55f) * glm::vec3{0.86f, 0.95f, 1.18f};
-    };
-    for (int s = 0; s < pxe::kSurfCount; ++s)
-      for (int b = 0; b < 3; ++b) {
-        pxe::Palette& p = lighting.palette[s];
-        const pxe::Palette& d = day.palette[s];
-        const float k = f * (b == 0 ? 0.35f : 1.f);
-        p.band[b] = glm::mix(p.band[b], cold(d.band[b]), k);
-        p.detail[b] = glm::mix(p.detail[b], cold(d.detail[b]), k);
-        p.tip[b] = glm::mix(p.tip[b], cold(d.tip[b]), k);
-      }
-    lighting.rim = glm::mix(lighting.rim, cold(day.rim), f);
-    lighting.ink = glm::mix(lighting.ink, day.ink, f);
-    lighting.flashDir = clock.flashDir;
-    lighting.overcast *= 1.f - f;
-    lighting.flash = f;
-  }
-  return lighting;
-}
-
 // The fires burning this frame, for the renderer.
 std::vector<pxe::FireDraw> fireDraws(const game::WorldClock& clock) {
   std::vector<pxe::FireDraw> draws;
@@ -1068,7 +982,7 @@ int main(int argc, char** argv) {
           scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
           brushFires(clock, params.gridStrokes);
           params.fires = fireDraws(clock);
-          params.lighting = lightingFor(scene, clock);
+          params.lighting = pxe::lightingAt(scene, clock.hour, clock.weather());
           for (game::Fox& fox : foxes) fox.update(scene, 1.f / 60.f, foxes);
           hero.update(scene, 1.f / 60.f, game::HeroInput{}, foxBodies(foxes));
           hero.pose(params.actors, params.actorEffects, params.actorMaterials);
@@ -1121,7 +1035,7 @@ int main(int argc, char** argv) {
             scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
             brushFires(clock, params.gridStrokes);
             params.fires = fireDraws(clock);
-            params.lighting = lightingFor(scene, clock);
+            params.lighting = pxe::lightingAt(scene, clock.hour, clock.weather());
             draw(params);
           }
           clock.paused = false;
@@ -1202,7 +1116,7 @@ int main(int argc, char** argv) {
         }
         for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
         params.fires = fireDraws(clock);
-        params.lighting = lightingFor(scene, clock);
+        params.lighting = pxe::lightingAt(scene, clock.hour, clock.weather());
         const pxe::CameraFrame frame = draw(params);
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
         bool ok = true;
@@ -1485,7 +1399,7 @@ int main(int argc, char** argv) {
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
-          params.lighting = lightingFor(scene, clock);
+          params.lighting = pxe::lightingAt(scene, clock.hour, clock.weather());
           hero.pose(params.actors, params.actorEffects, params.actorMaterials);
           for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
           const pxe::CameraFrame frame = draw(params);

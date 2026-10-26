@@ -177,6 +177,19 @@ glm::vec2 WorldClock::windDir() const {
   return {std::sin(a), -std::cos(a)};
 }
 
+pxe::Weather WorldClock::weather() const {
+  pxe::Weather w;
+  w.cloudCover = cloudCover;
+  w.cloudOffset = cloudOffset;
+  w.cloudStrength = cloudStrength;
+  w.windDir = windDir();
+  w.windStrength = cloudSpeed;
+  w.rain = rain;
+  w.flash = flash;
+  w.flashDir = flashDir;
+  return w;
+}
+
 void SettingsMenu::init(GLFWwindow* window) {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();

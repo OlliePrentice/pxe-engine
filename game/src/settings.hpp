@@ -4,6 +4,7 @@
 #include <glm/vec3.hpp>
 
 #include "audio.hpp"
+#include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 
 #include <cstdint>
@@ -76,6 +77,8 @@ struct WorldClock {
   static constexpr float kRainPutsOutFire = 0.45f;
   // Unit vector, world XZ, the wind blows toward.
   glm::vec2 windDir() const;
+  // The weather now, for pxe::lightingAt.
+  pxe::Weather weather() const;
 
  private:
   float random();
