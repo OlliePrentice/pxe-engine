@@ -21,7 +21,7 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Rendering, shaders, toon ramps, edge pass, water, rain, god rays | engine | in place |
 | Meshes, glTF loading, skinning and animation clips | engine | in place |
 | Camera, lighting, day/night palette blending | engine | in place |
-| Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | **misplaced**: `lightingFor` in `game/src/main.cpp` |
+| Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | in place: `pxe::Weather`, `pxe::lightingAt(scene, hour, weather)` |
 | Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
 | Window and main loop (GLFW) | engine | **misplaced**: `game/src/main.cpp` |
 | UI overlay: Dear ImGui set up against the window and OpenGL (context, platform and renderer backends, per-frame begin and end, whether the UI has the keyboard or mouse) | engine | **misplaced**: `SettingsMenu::init`, `shutdown` and `draw` in `game/src/settings.cpp` |
