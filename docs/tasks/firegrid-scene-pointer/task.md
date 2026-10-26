@@ -1,6 +1,6 @@
 # FireGrid: no Scene pointer between calls
 Type: fix
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -19,11 +19,11 @@ Cycle: 1
 - Expected: no Scene pointer kept; build on the first advance after reset.
 
 ## Acceptance criteria
-- [ ] No Scene pointer or reference member remains in pxe::FireGrid.
-- [ ] `reset()` makes the next `advance` build the grid; `running()` is false after `reset()` until it does.
-- [ ] firegrid.hpp documents the advance-after-reset contract.
-- [ ] Renderer's use of the grid (renderer.cpp `grid_.reset()`, `grid_.running()`, `grid_.advance`) is unchanged.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] No Scene pointer or reference member remains in pxe::FireGrid. (78a9280: firegrid.hpp bool built_ replaces scene_)
+- [x] `reset()` makes the next `advance` build the grid; `running()` is false after `reset()` until it does. (reset() clears built_; advance builds when !built_; running() returns built_)
+- [x] firegrid.hpp documents the advance-after-reset contract. (comment on advance())
+- [x] Renderer's use of the grid (renderer.cpp `grid_.reset()`, `grid_.running()`, `grid_.advance`) is unchanged. (renderer.cpp untouched in the diff)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check in worktree, exit 0; no new warnings)
 
 ## Assets
 None
@@ -32,3 +32,5 @@ None
 - Any other FireGrid change.
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base 75f49c9 (worktree /Users/sampr/Projects/Games/pxe/pxe-engine-firegrid-scene-pointer, branch firegrid-scene-pointer)
+- Cycle 1: review passed, no issues; complete
