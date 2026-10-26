@@ -28,3 +28,4 @@ None
 - WAV writing for `--audio-wav`.
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base 43e8f52
