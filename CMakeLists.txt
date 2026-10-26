@@ -47,18 +47,15 @@ set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(glfw glm imgui miniaudio)
 
-# Dear ImGui has no CMake of its own; build the core plus the GLFW and
-# OpenGL 3 backends for the in-game settings menu.
+# Dear ImGui has no CMake of its own; build the core here. Its GLFW and
+# OpenGL 3 backends are compiled by the engine, which owns the window.
 add_library(imgui STATIC
   ${imgui_SOURCE_DIR}/imgui.cpp
   ${imgui_SOURCE_DIR}/imgui_draw.cpp
   ${imgui_SOURCE_DIR}/imgui_tables.cpp
   ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
-target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
-target_link_libraries(imgui PUBLIC glfw)
+target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 
 add_subdirectory(engine)
 add_subdirectory(game)

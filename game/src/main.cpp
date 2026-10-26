@@ -8,11 +8,11 @@
 
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
-#include "pxe/gl_loader.hpp"
+#include "pxe/input.hpp"
 #include "pxe/lighting.hpp"
+#include "pxe/overlay.hpp"
 #include "pxe/renderer.hpp"
-
-#include <GLFW/glfw3.h>
+#include "pxe/window.hpp"
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -424,30 +424,25 @@ struct Input {
   bool quit = false;
 };
 
-bool pressed(GLFWwindow* win, int key, bool& latch) {
-  const bool down = glfwGetKey(win, key) == GLFW_PRESS;
-  const bool edge = down && !latch;
-  latch = down;
-  return edge;
-}
-
-Input pollInput(GLFWwindow* win, bool keyboardTaken, game::Gamepad& pad) {
+// This frame's actions from the keys and the pad. While the menu has the
+// keyboard only Tab and the pad's Menu button (to close it) are read.
+Input pollInput(const pxe::Input& raw, bool keyboardTaken, game::Gamepad& pad) {
+  using Key = pxe::Key;
+  auto pressed = [&](Key key) { return raw.keyPressed(key); };
+  auto down = [&](Key key) { return raw.keyDown(key); };
   Input in;
-  static bool tab = false;
-  if (pressed(win, GLFW_KEY_TAB, tab)) in.toggleMenu = true;
-  pad.poll();
+  if (pressed(Key::kTab)) in.toggleMenu = true;
+  pad.poll(raw);
   if (pad.toggleMenu) in.toggleMenu = true;
   if (keyboardTaken) return in;
   if (pad.togglePause) in.togglePause = true;
-  static bool xkey = false;
-  if (pressed(win, GLFW_KEY_X, xkey) || pad.attack) in.attack = true;
-  in.attackHeld = xkey || pad.attackHeld;
+  if (pressed(Key::kX) || pad.attack) in.attack = true;
+  in.attackHeld = down(Key::kX) || pad.attackHeld;
   in.rotate += pad.rotate;
-  auto down = [&](int key) { return glfwGetKey(win, key) == GLFW_PRESS; };
-  if (down(GLFW_KEY_A) || down(GLFW_KEY_LEFT)) in.panX -= 1.f;
-  if (down(GLFW_KEY_D) || down(GLFW_KEY_RIGHT)) in.panX += 1.f;
-  if (down(GLFW_KEY_W) || down(GLFW_KEY_UP)) in.panY += 1.f;
-  if (down(GLFW_KEY_S) || down(GLFW_KEY_DOWN)) in.panY -= 1.f;
+  if (down(Key::kA) || down(Key::kLeft)) in.panX -= 1.f;
+  if (down(Key::kD) || down(Key::kRight)) in.panX += 1.f;
+  if (down(Key::kW) || down(Key::kUp)) in.panY += 1.f;
+  if (down(Key::kS) || down(Key::kDown)) in.panY -= 1.f;
   // The pad's stick adds to the keys; pushed part way, the hero goes at
   // part pace.
   in.move = glm::vec2{in.panX, in.panY} + pad.move;
@@ -456,43 +451,35 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken, game::Gamepad& pad) {
     in.panX = pad.move.x;
     in.panY = pad.move.y;
   }
-  in.walk = down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT);
+  in.walk = down(Key::kLeftShift) || down(Key::kRightShift);
   const float speed = in.walk ? 14.f : 6.f;
   in.panX *= speed;
   in.panY *= speed;
 
-  static bool q = false, e = false, f1 = false, f2 = false, f3 = false, f4 = false, esc = false, space = false,
-              slower = false, faster = false;
-  if (pressed(win, GLFW_KEY_SPACE, space)) in.togglePause = true;
-  static bool rkey = false;
-  if (pressed(win, GLFW_KEY_R, rkey)) in.cycleRain = true;
-  static bool lkey = false;
-  if (pressed(win, GLFW_KEY_L, lkey)) in.strike = true;
-  static bool mkey = false;
-  if (pressed(win, GLFW_KEY_M, mkey)) in.toggleSound = true;
-  static bool gkey = false;
-  if (pressed(win, GLFW_KEY_G, gkey)) in.igniteGrass = true;
-  static bool fkey = false, ckey = false;
-  if (pressed(win, GLFW_KEY_F, fkey)) in.launchFireball = true;
-  static bool one = false, two = false, three = false, four = false;
-  if (pressed(win, GLFW_KEY_1, one)) in.brush = 0;
-  if (pressed(win, GLFW_KEY_2, two)) in.brush = 1;
-  if (pressed(win, GLFW_KEY_3, three)) in.brush = 2;
-  if (pressed(win, GLFW_KEY_4, four)) in.brush = game::BrushSettings::kFox;
-  if (pressed(win, GLFW_KEY_C, ckey)) in.follow = true;
-  if (down(GLFW_KEY_L)) in.steer.x += 1.f;
-  if (down(GLFW_KEY_J)) in.steer.x -= 1.f;
-  if (down(GLFW_KEY_I)) in.steer.y += 1.f;
-  if (down(GLFW_KEY_K)) in.steer.y -= 1.f;
-  if (pressed(win, GLFW_KEY_LEFT_BRACKET, slower)) in.speedSteps -= 1;
-  if (pressed(win, GLFW_KEY_RIGHT_BRACKET, faster)) in.speedSteps += 1;
-  if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
-  if (pressed(win, GLFW_KEY_E, e)) in.rotate += 1;
-  if (pressed(win, GLFW_KEY_F1, f1)) in.toggleNdl = true;
-  if (pressed(win, GLFW_KEY_F2, f2)) in.toggleGrass = true;
-  if (pressed(win, GLFW_KEY_F3, f3)) in.toggleMagenta = true;
-  if (pressed(win, GLFW_KEY_F4, f4)) in.shot = true;
-  if (pressed(win, GLFW_KEY_ESCAPE, esc)) in.quit = true;
+  if (pressed(Key::kSpace)) in.togglePause = true;
+  if (pressed(Key::kR)) in.cycleRain = true;
+  if (pressed(Key::kL)) in.strike = true;
+  if (pressed(Key::kM)) in.toggleSound = true;
+  if (pressed(Key::kG)) in.igniteGrass = true;
+  if (pressed(Key::kF)) in.launchFireball = true;
+  if (pressed(Key::k1)) in.brush = 0;
+  if (pressed(Key::k2)) in.brush = 1;
+  if (pressed(Key::k3)) in.brush = 2;
+  if (pressed(Key::k4)) in.brush = game::BrushSettings::kFox;
+  if (pressed(Key::kC)) in.follow = true;
+  if (down(Key::kL)) in.steer.x += 1.f;
+  if (down(Key::kJ)) in.steer.x -= 1.f;
+  if (down(Key::kI)) in.steer.y += 1.f;
+  if (down(Key::kK)) in.steer.y -= 1.f;
+  if (pressed(Key::kLeftBracket)) in.speedSteps -= 1;
+  if (pressed(Key::kRightBracket)) in.speedSteps += 1;
+  if (pressed(Key::kQ)) in.rotate -= 1;
+  if (pressed(Key::kE)) in.rotate += 1;
+  if (pressed(Key::kF1)) in.toggleNdl = true;
+  if (pressed(Key::kF2)) in.toggleGrass = true;
+  if (pressed(Key::kF3)) in.toggleMagenta = true;
+  if (pressed(Key::kF4)) in.shot = true;
+  if (pressed(Key::kEscape)) in.quit = true;
   return in;
 }
 
@@ -868,29 +855,20 @@ int main(int argc, char** argv) {
   const Options opt = parseArgs(argc, argv);
   if (!opt.audioWav.empty()) return writeAudioWav(opt);
 
-  if (!glfwInit()) {
-    std::fprintf(stderr, "glfwInit failed\n");
-    return 1;
-  }
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-  glfwWindowHint(GLFW_SAMPLES, 0);
-  glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_FALSE);
-  glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
   const bool headless = opt.selfTest || !opt.capture.empty() || !opt.windowPng.empty() || opt.bench > 0;
-  if (headless || !opt.uiShot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-
-  GLFWwindow* window = glfwCreateWindow(opt.width, opt.height, "pxe", nullptr, nullptr);
-  if (!window) {
-    std::fprintf(stderr, "failed to create an OpenGL 4.1 window\n");
-    glfwTerminate();
+  pxe::WindowOptions windowOptions;
+  windowOptions.width = opt.width;
+  windowOptions.height = opt.height;
+  windowOptions.title = "pxe";
+  windowOptions.visible = !headless && opt.uiShot.empty();
+  windowOptions.vsync = opt.vsync && !headless;
+  std::optional<pxe::Window> window;
+  try {
+    window.emplace(windowOptions);
+  } catch (const std::exception& ex) {
+    std::fprintf(stderr, "%s\n", ex.what());
     return 1;
   }
-  glfwMakeContextCurrent(window);
-  glfwSwapInterval(opt.vsync && !headless ? 1 : 0);
-  pxe::loadGl(+[](const char* name) -> void* { return reinterpret_cast<void*>(glfwGetProcAddress(name)); });
 
   int exitCode = 0;
   {
@@ -964,8 +942,6 @@ int main(int argc, char** argv) {
         scene = game::buildScene(build);
       } catch (const std::exception& ex) {
         std::fprintf(stderr, "scene build failed: %s\n", ex.what());
-        glfwDestroyWindow(window);
-        glfwTerminate();
         return 1;
       }
       renderer.upload(scene);
@@ -1026,8 +1002,8 @@ int main(int argc, char** argv) {
 
       if (opt.bench > 0) {
         // Same frame as the default window, wind running, timed per pass.
-        int fbW = 0, fbH = 0;
-        glfwGetFramebufferSize(window, &fbW, &fbH);
+        const glm::ivec2 fbSize = window->framebufferSize();
+        const int fbW = fbSize.x, fbH = fbSize.y;
         game::WorldClock clock;
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
@@ -1052,10 +1028,10 @@ int main(int argc, char** argv) {
         renderer.setProfiling(passes);
         double sum[pxe::PassTimes::kCount] = {};
         const int warmup = 10;
-        const double start = glfwGetTime();
+        const double start = window->time();
         double timedStart = start;
         for (int f = 0; f < warmup + opt.bench; ++f) {
-          if (f == warmup) timedStart = glfwGetTime();
+          if (f == warmup) timedStart = window->time();
           pxe::FrameParams params = makeParams(opt);
           params.framebufferW = fbW;
           params.framebufferH = fbH;
@@ -1074,11 +1050,11 @@ int main(int argc, char** argv) {
           hero.pose(params.actors, params.actorEffects, params.actorMaterials);
           for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
           draw(params);
-          glfwSwapBuffers(window);
+          window->swap();
           if (f >= warmup)
             for (int i = 0; i < pxe::PassTimes::kCount; ++i) sum[i] += renderer.passTimes().ms[i];
         }
-        const double wall = (glfwGetTime() - timedStart) / opt.bench * 1000.0;
+        const double wall = (window->time() - timedStart) / opt.bench * 1000.0;
         if (passes) {
           for (int i = 0; i < pxe::PassTimes::kCount; ++i)
             std::fprintf(stderr, "bench: %-10s %6.2f ms (GPU timer)\n", pxe::PassTimes::name(i), sum[i] / opt.bench);
@@ -1087,8 +1063,8 @@ int main(int argc, char** argv) {
       } else if (opt.selfTest) {
         exitCode = selfTest(renderer, camera, scene);
       } else if (headless) {
-        int fbW = 0, fbH = 0;
-        glfwGetFramebufferSize(window, &fbW, &fbH);
+        const glm::ivec2 fbSize = window->framebufferSize();
+        const int fbW = fbSize.x, fbH = fbSize.y;
         game::WorldClock clock;
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
@@ -1213,8 +1189,8 @@ int main(int argc, char** argv) {
           std::fprintf(stderr, "pxe: %s %s\n", ok ? "wrote" : "failed", opt.capture.c_str());
         }
         if (!opt.windowPng.empty()) {
-          int fbW = 0, fbH = 0;
-          glfwGetFramebufferSize(window, &fbW, &fbH);
+          const glm::ivec2 fbSize = window->framebufferSize();
+          const int fbW = fbSize.x, fbH = fbSize.y;
           const bool wrote = writePng(opt.windowPng, fbW, fbH, renderer.readPresented(fbW, fbH));
           std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", wrote ? "wrote" : "failed", opt.windowPng.c_str(),
                        fbW, fbH);
@@ -1244,8 +1220,15 @@ int main(int argc, char** argv) {
         game::Audio audio;
         if (!audio.start()) std::fprintf(stderr, "pxe: no audio output, running silent\n");
         int heardStrikes = 0;
+        std::optional<pxe::Overlay> overlay;
+        try {
+          overlay.emplace(*window);
+        } catch (const std::exception& ex) {
+          std::fprintf(stderr, "%s\n", ex.what());
+          return 1;
+        }
         game::SettingsMenu menu;
-        menu.init(window);
+        menu.init(*overlay);
         if (opt.menu) menu.toggle();
         // Averaged over a whole second, so a slow first frame or a hitch
         // does not skew it; with vsync on it tops out at the display rate.
@@ -1295,14 +1278,14 @@ int main(int argc, char** argv) {
         const std::vector<Options::AddedFox> scriptedFoxes = addedFoxes(opt);
         std::size_t nextScriptedFox = 0;
         float played = 0.f;      // seconds since the start, for --add-fox
-        bool leftHeld = false;   // the left button was down last frame
         constexpr float kNoRoomShown = 2.f;
         float noRoomFor = 0.f;
         glm::vec2 noRoomAt{0.f};
         game::Gamepad gamepad;
-        double previous = glfwGetTime();
-        while (!glfwWindowShouldClose(window)) {
-          const double now = glfwGetTime();
+        pxe::Input rawInput;
+        double previous = window->time();
+        while (!window->shouldClose()) {
+          const double now = window->time();
           float dt = static_cast<float>(now - previous);
           previous = now;
           fpsTime += dt;
@@ -1313,9 +1296,10 @@ int main(int argc, char** argv) {
             fpsFrames = 0;
           }
           dt = std::clamp(dt, 0.f, 0.05f);
-          glfwPollEvents();
-          Input input = pollInput(window, menu.wantsKeyboard(), gamepad);
-          if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
+          window->pollEvents();
+          rawInput.update(*window);
+          Input input = pollInput(rawInput, menu.wantsKeyboard(), gamepad);
+          if (input.quit) window->requestClose();
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
           if (input.brush >= 0) brush.kind = brush.kind == input.brush ? game::BrushSettings::kNone : input.brush;
@@ -1383,8 +1367,8 @@ int main(int argc, char** argv) {
           if (input.rotate) camera.rotateSteps(input.rotate);
           camera.update(dt);
 
-          int fbW = 0, fbH = 0;
-          glfwGetFramebufferSize(window, &fbW, &fbH);
+          const glm::ivec2 fbSize = window->framebufferSize();
+          const int fbW = fbSize.x, fbH = fbSize.y;
 
           // Spell brushes: the ground under the cursor, picked through the
           // last frame drawn. Held down, the left button paints from where
@@ -1393,8 +1377,7 @@ int main(int argc, char** argv) {
           std::vector<pxe::FireGrid::Stroke> strokes;
           std::vector<glm::vec2> brushOutline;
           {
-            int winW = 0, winH = 0;
-            glfwGetWindowSize(window, &winW, &winH);
+            const int winW = window->windowSize().x;
             const float pointScale = winW > 0 ? static_cast<float>(fbW) / static_cast<float>(winW) : 1.f;
             auto pick = [&](glm::vec2 px, glm::vec3& hit) {
               return scene.ground.raycast(renderer.rayThrough(lastFrame, fbW, fbH, px), lastFrame.forward, 400.f, hit);
@@ -1413,30 +1396,25 @@ int main(int argc, char** argv) {
             glm::vec2 cursorPx{-1.f};
             float cursorRadius = brush.radius;
             int cursorKind = brush.kind;
-            const bool leftDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+            const bool leftDown = rawInput.mouseDown(pxe::MouseButton::kLeft);
             if (brush.kind == game::BrushSettings::kFox) {
               // A ring as wide as a curl; whether a fox fits is only looked
               // into on a click.
-              double cx = 0.0, cy = 0.0;
-              glfwGetCursorPos(window, &cx, &cy);
-              cursorPx = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
+              cursorPx = rawInput.mousePosition();
               cursorRadius = game::Fox::kFootprint;
               glm::vec3 hit{0.f};
-              if (leftDown && !leftHeld && !menu.wantsMouse() && pick(cursorPx, hit))
+              if (rawInput.mousePressed(pxe::MouseButton::kLeft) && !menu.wantsMouse() && pick(cursorPx, hit))
                 foxAsks.push_back({{hit.x, hit.z}, cursorPx / pointScale});
               painting = false;
             } else if (brush.kind != game::BrushSettings::kNone) {
-              double cx = 0.0, cy = 0.0;
-              glfwGetCursorPos(window, &cx, &cy);
-              cursorPx = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
-              const bool down = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !menu.wantsMouse();
+              cursorPx = rawInput.mousePosition();
+              const bool down = leftDown && !menu.wantsMouse();
               if (down) paint(painting ? lastPaintPx : cursorPx, cursorPx, brush.radius, brush.kind);
               painting = down;
               lastPaintPx = cursorPx;
             } else {
               painting = false;
             }
-            leftHeld = leftDown;
             while (nextScriptedFox < scriptedFoxes.size() && scriptedFoxes[nextScriptedFox].secs <= played) {
               const glm::vec2 at = scriptedFoxes[nextScriptedFox++].at;
               foxAsks.push_back({at, shown(at) / pointScale});
@@ -1510,22 +1488,19 @@ int main(int argc, char** argv) {
             const bool ok = writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
             std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", ok ? "wrote" : "failed", opt.uiShot.c_str(), fbW, fbH);
             if (!opt.brushes.empty()) std::fprintf(stderr, "pxe: brush picks within %.3f m of the scripted strokes\n", pickError);
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
+            window->requestClose();
           }
           char title[320];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
                         "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   X attack (hold: charge)   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   4 add a fox   F fireball, IJKL roll   F4 capture",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
-          glfwSetWindowTitle(window, title);
+          window->setTitle(title);
           (void)frame;
-          glfwSwapBuffers(window);
+          window->swap();
         }
-        menu.shutdown();
       }
     }
   }
-  glfwDestroyWindow(window);
-  glfwTerminate();
   return exitCode;
 }

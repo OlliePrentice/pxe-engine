@@ -2,10 +2,14 @@
 
 #include <glm/vec2.hpp>
 
+namespace pxe {
+class Input;
+}
+
 namespace game {
 
-// The first connected gamepad (an Xbox controller, or anything GLFW maps
-// to its layout), read once a frame.
+// The first connected gamepad (an Xbox controller, or any pad in its
+// layout), turned into the game's actions once a frame.
 //   left stick   move the hero; how far it is pushed sets the pace, walk to run
 //   right stick  flick left or right to turn the view a step (like Q / E)
 //   LB / RB      turn the view a step
@@ -20,11 +24,10 @@ struct Gamepad {
   bool attack = false;      // X pressed this frame
   bool attackHeld = false;  // and held
 
-  // Poll the pad, turning presses into this frame's edges.
-  void poll();
+  // Read this frame's actions from the pad's state in `input`.
+  void poll(const pxe::Input& input);
 
  private:
-  bool held_[15] = {};
   bool flicked_ = false;  // the right stick is out and has turned the view already
 };
 
