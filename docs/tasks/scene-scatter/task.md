@@ -1,6 +1,6 @@
 # Engine grass and leaf scattering
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -21,11 +21,11 @@ The second half of moving scene building into the engine (docs/architecture.md: 
 - Game: scene.cpp's ruins and hills builders call them in today's order with today's options.
 
 ## Acceptance criteria
-- [ ] `poisson`, `scatterGrass`, `patchiness`, the stone-and-bark drop and the leaf clump scattering no longer live in game/src/scene.cpp; their engine equivalents do.
-- [ ] The same `std::mt19937` instance, seeded 7 in game code, is passed to grass then leaf scattering.
-- [ ] Captures are byte-identical to the cycle base, with the same set as scene-geometry: `--hour 15`, `--hour 21`, `--hour 7 --rain 0.3`, `--scene hills`, `--scene hills --stamps`, `--hour 21 --candles --shelter-test --extra-fires 6`, default with `--foxes 3`. Build log counts identical. Record in the handoff.
-- [ ] `--self-test` passes.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `poisson`, `scatterGrass`, `patchiness`, the stone-and-bark drop and the leaf clump scattering no longer live in game/src/scene.cpp; their engine equivalents do. (e4ce436: pxe::poissonDisk, grassPatchiness, scatterGrass, dropGrassUnder, scatterLeaves in engine/src/scatter.cpp; gone from game/src/scene.cpp)
+- [x] The same `std::mt19937` instance, seeded 7 in game code, is passed to grass then leaf scattering. (buildRuins: one rng(7) passed to pxe::scatterGrass, then pxe::scatterLeaves)
+- [x] Captures are byte-identical to the cycle base, with the same set as scene-geometry: `--hour 15`, `--hour 21`, `--hour 7 --rain 0.3`, `--scene hills`, `--scene hills --stamps`, `--hour 21 --candles --shelter-test --extra-fires 6`, default with `--foxes 3`. Build log counts identical. Record in the handoff. (developer: all seven PNGs and log counts identical; orchestrator: hills, --hour 21 --foxes 3, candles/shelter/extra fires: PNGs and logs identical to the pre-change build)
+- [x] `--self-test` passes. (developer and orchestrator: PASS)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check exit 0)
 
 ## Assets
 None
@@ -35,3 +35,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 5fcfd91
+- Cycle 1: review passed, no issues; complete. Accepted: crown triangle areas computed inside pxe::scatterLeaves (same expression; captures identical)

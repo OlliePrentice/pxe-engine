@@ -28,7 +28,7 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | in place: `pxe::Input` |
 | Audio playback (miniaudio) | engine | in place: `pxe::AudioDevice` |
 | Turning a `.glb` into a `pxe::Scene`: per-surface geometry, meshes, water, height maps, shelter, the triangle grid | engine | in place: `pxe::SurfaceGeometry`, `pxe::TriangleGrid`, `pxe::buildSceneMaps`, `pxe::uploadScene` |
-| Grass and leaf scattering, Poisson sampling, dropping grass under stone and bark | engine | **misplaced**: `game/src/scene.cpp` |
+| Grass and leaf scattering, Poisson sampling, dropping grass under stone and bark | engine | in place: `pxe/scatter.hpp` |
 | Writing images to PNG | engine | in place: `pxe::writePng` |
 | Second-order smoothing (`SecondOrder`) | engine | duplicated: a private copy in `engine/src/camera.cpp`, a public one in `game/src/hero.hpp`. Promote to the engine when a third user needs it |
 | Game-only data on `pxe::Scene` (`fires`, `focus`, `yawDegrees`): the engine never reads it | game | in place: `game::BuiltScene`, `game::FireSite` |
