@@ -23,9 +23,9 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Camera, lighting, day/night palette blending | engine | in place |
 | Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | in place: `pxe::Weather`, `pxe::lightingAt(scene, hour, weather)` |
 | Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
-| Window and main loop (GLFW) | engine | **misplaced**: `game/src/main.cpp` |
-| UI overlay: Dear ImGui set up against the window and OpenGL (context, platform and renderer backends, per-frame begin and end, whether the UI has the keyboard or mouse) | engine | **misplaced**: `SettingsMenu::init`, `shutdown` and `draw` in `game/src/settings.cpp` |
-| Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | **misplaced**: `game/src/gamepad.cpp` (which mixes device code with action mapping), `pollInput` and the mouse polling in `game/src/main.cpp` |
+| Window and main loop (GLFW) | engine | in place: `pxe::Window` |
+| UI overlay: Dear ImGui set up against the window and OpenGL (context, platform and renderer backends, per-frame begin and end, whether the UI has the keyboard or mouse) | engine | in place: `pxe::Overlay` |
+| Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | in place: `pxe::Input` |
 | Audio playback (miniaudio) | engine | **misplaced**: `game/src/audio.cpp`, `game/src/miniaudio.cpp` |
 | Turning a `.glb` into a `pxe::Scene` (meshes, water, height maps, shelter, grass and leaf scattering, clearing grass) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
 | Writing images to PNG | engine | **misplaced**: `writePng` in `game/src/main.cpp` |
