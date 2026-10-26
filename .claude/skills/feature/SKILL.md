@@ -116,6 +116,39 @@ Reopened: <count>
 <left blank for the developer>
 ```
 
+## Several tasks in one run
+A request can cover more than one task, for example a list of refactors. Interview and specify each task as above, one task folder each, and get the user's confirmation of every spec before starting.
+
+Then decide which tasks run in parallel. Run tasks in parallel when they are independent: none needs another's result, and they are expected to change different files. Run them in sequence when one depends on another, or when they would edit the same files, since the merge back would conflict. When in doubt, run in sequence. Tell the user the plan: which tasks run together and which wait.
+
+### Worktrees
+Each task that runs in parallel gets its own git worktree on its own branch, so the agents never share a working tree, an index or a build directory. Create them yourself from the run's branch (the branch the run started on, never `main`):
+```
+git worktree add ../<repo-dir>-<task-id> -b <task-id>
+```
+Don't use the Agent tool's own worktree isolation: it makes a new temporary worktree per delegation, and a task needs the same worktree for every cycle.
+
+Everything for a task happens in its worktree:
+- Its task folder, cycle base, `task.md` and `issues.md` edits and their commits.
+- Every delegation. Pass the worktree's absolute path along with the task folder, and tell the agent to work, build and commit only there.
+- Your build check, with the build directory inside the worktree: `cmake -S <worktree> -B <worktree>/build-check -DCMAKE_BUILD_TYPE=Debug --fresh`.
+- Your review: `git -C <worktree> diff <cycle base>..HEAD`.
+
+### Running them
+- Delegate the developers for parallel tasks in the same turn, so they run at the same time. Run each task's cycles as in step 3, independently of the others.
+- Only one designer runs at a time: assets are built in the user's single live Blender session. Queue designer work across tasks and run it one task after another. The developers can carry on meanwhile.
+- A task that stops or blocks doesn't stop the others. Report it with the rest.
+- Questions for the user from several tasks go to the user together, each labelled with its task ID.
+
+### Merging back
+When a task is complete, merge it into the run's branch from the main working tree:
+```
+git merge --no-ff <task-id>
+```
+- If the merge conflicts, run `git merge --abort`. Then delegate to **game-developer** in the task's worktree: merge the run's branch into the task branch, resolve the conflicts, build and commit. Treat it as a new cycle, with your build check and review. Then merge again.
+- After a task merges, do a fresh build check of the run's branch, because two tasks can build on their own and fail together.
+- Then remove its worktree and branch: `git worktree remove ../<repo-dir>-<task-id>` and `git branch -d <task-id>`. Never force either. If git refuses, something is unmerged or uncommitted: find out what before going on.
+
 ## 4. Close the task
 Set `Status: complete` only when:
 - the latest fresh build passes
@@ -133,6 +166,6 @@ Set `Status: blocked` and report to the user, rather than looping, if:
 - the build environment is broken in a way the developer can't fix (missing toolchain, missing dependency)
 
 ## Report
-Finish with: task status, number of cycles, issues found and resolved, any `wont-fix` decisions, assets created, and anything left for the user to decide.
+Finish with: task status, number of cycles, issues found and resolved, any `wont-fix` decisions, assets created, and anything left for the user to decide. For a run of several tasks, report each task this way, then which branches merged.
 
 End with a **Playtest checklist**: a short list of what the user should try in-game to confirm the task works, built from the acceptance criteria and the developer's "How to playtest" notes. Nothing has run the game, so the user's playtest is the only behavioural check.

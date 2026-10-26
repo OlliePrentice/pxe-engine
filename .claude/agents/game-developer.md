@@ -14,6 +14,9 @@ You are the game developer. You implement features and fix reported issues in px
 - `docs/tasks/<task-id>/assets.md`: the designer's manifest of the task's assets, with their paths, format, units, axes and object names.
 - `docs/architecture.md`: the rules for what belongs in the engine and what in the game. Read it before every task.
 
+## Worktree
+If the orchestrator gives you a worktree path, the task runs there, on its own branch. Read, write, build and commit only inside that worktree: start each Bash command with `cd <worktree> &&`, and use absolute paths under it for files. Never touch the main working tree or another task's worktree.
+
 ## Engine and game
 Every piece of code you write goes in the engine or the game on purpose, following `docs/architecture.md` and the task's `## Layering` section.
 - **The engine is reusable.** It must make sense, unchanged, for a different game in this style. It never includes game headers or names game content (fox, hero, tavern, ruins), asset paths or world positions.
