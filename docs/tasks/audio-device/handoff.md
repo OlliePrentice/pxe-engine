@@ -31,3 +31,23 @@ Build: pass
 
 ### Known limitations
 - The no-output path was not exercised on this machine (it has an output device). The logic is the same miniaudio init/start failure handling moved verbatim, and `Audio::start` returns `AudioDevice::open`'s result directly.
+
+## Cycle 2
+Build: pass
+
+### Changes
+- game/src/audio.cpp: engine header include changed from `#include <pxe/audio_device.hpp>` to `#include "pxe/audio_device.hpp"`, matching every other engine include in game/ and engine/.
+
+### Issues addressed
+- ISSUE-001: engine header now included with quotes.
+
+### Layering
+- Engine: none
+- Game: unchanged from cycle 1 (`game::Audio::Impl` owns the `pxe::AudioDevice`).
+- Misplaced code touched: none
+
+### How to playtest
+- Same as cycle 1; no behaviour change. Game audio plays as before.
+
+### Known limitations
+- None beyond cycle 1's (no-output path not exercised on this machine).
