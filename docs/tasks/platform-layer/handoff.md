@@ -47,3 +47,31 @@ Base: `git archive 75f49c9` extracted to /private/tmp/claude-501/-Users-sampr-Pr
 - Spec deviation to flag: `pxe::Input` exposes raw axes (`gamepadAxis`) as well as dead-zoned sticks (`gamepadStick`). Today's right-stick flick reads the raw axis without the dead zone; feeding it the dead-zoned stick would shift the effective flick thresholds (0.65 -> about 0.71 raw), so the game reads the raw axis to keep behaviour identical.
 - `gamepadAxis` reports triggers as GLFW does (-1 released .. 1 pulled); unused by the game.
 - Not playtested interactively (no human input available here); keyboard/mouse/gamepad mapping checked by reading against the base code.
+
+## Cycle 2
+Build: pass
+
+### Changes
+- Merge commit a6af8d9: `git merge engine-game-layering` into platform-layer (no rebase), bringing in weather-lighting and firegrid-scene-pointer.
+- game/src/settings.cpp: conflict resolved keeping both sides: `WorldClock::weather()` from weather-lighting, followed by this task's `SettingsMenu::init(pxe::Overlay&)` (no ImGui context creation or backend calls in the game).
+- game/src/main.cpp, game/src/settings.hpp: auto-merged. main.cpp keeps the `pxe::Window` / `pxe::Input` / `pxe::Overlay` changes and all four `pxe::lightingAt(scene, clock.hour, clock.weather())` call sites, plus `pxe::lightingAt(scene, kCaptureHour)` on the capture path (as on engine-game-layering). `lightingFor` is gone.
+
+### Issues addressed
+- None (merge-back cycle; no issues in issues.md).
+
+### Layering
+- Engine: none new this cycle (merged-in `pxe::Weather` / `pxe::lightingAt` come from weather-lighting).
+- Game: unchanged from cycle 1.
+- Misplaced code touched: none.
+
+### Verification
+- Fresh configure + Debug build into an empty build directory: pass; only warning is the pre-existing stb_image_write sprintf deprecation.
+- `grep -rn "GLFW\|glfw\|ImGui_Impl\|imgui_impl" game/`: empty.
+- `pxe --self-test`: PASS.
+- `pxe --capture merge-h15.png --hour 15`: wrote the PNG; visually checked, renders the ruins scene normally.
+
+### How to playtest
+- As cycle 1. Additionally check that rain (R) and lightning (L) still darken and flash the scene, since lighting now takes the weather from `WorldClock::weather()`.
+
+### Known limitations
+- Same as cycle 1. Not playtested interactively.
