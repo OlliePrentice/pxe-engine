@@ -1,7 +1,7 @@
 # Platform layer: window, input and UI overlay in the engine
 Type: feature
-Status: complete
-Cycle: 1
+Status: open
+Cycle: 2
 
 ## Goal
 Move everything that talks to GLFW, and ImGui's GLFW and OpenGL backends, from the game into the engine, as three engine capabilities: a window with its timing, raw input from keyboard, mouse and gamepad, and a UI overlay that hosts Dear ImGui. docs/architecture.md marks all three engine and misplaced. Afterwards the game never includes GLFW or calls an ImGui backend: it asks the engine for a window, reads raw input from it and maps it to actions, and builds its settings menu with `ImGui::` widget calls between the overlay's begin and end. Every run mode behaves as it does today.
@@ -56,3 +56,4 @@ None
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 75f49c9 (worktree /Users/sampr/Projects/Games/pxe/pxe-engine-platform-layer, branch platform-layer)
 - Cycle 1: review passed, no issues; complete. Accepted deviation: the right-stick flick reads the raw axis (pxe::Input::gamepadAxis), keeping today's threshold
+- Cycle 2: 2026-10-26 started, base f4f95e7: merge engine-game-layering into platform-layer; conflict in game/src/settings.cpp (WorldClock::weather() from weather-lighting next to SettingsMenu::init)
