@@ -1,6 +1,8 @@
 #include "scene.hpp"
 
 #include "pxe/gltf.hpp"
+#include "pxe/scene_geometry.hpp"
+#include "pxe/triangle_grid.hpp"
 
 #include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
@@ -97,78 +99,6 @@ void setPhasePalettes(pxe::Scene& scene) {
   scene.ink[kPhaseNight] = hex(0x12163a);
 }
 
-struct Triangle {
-  glm::vec3 p[3];
-  glm::vec3 n[3];
-};
-
-// XZ bucket grid over upward-facing triangles, so a point on the lawn can
-// find the triangle under it and read back its height and smooth normal.
-class GroundIndex {
- public:
-  GroundIndex(std::vector<Triangle> tris, float cell) : tris_(std::move(tris)), cell_(cell) {
-    for (const Triangle& t : tris_) {
-      for (const glm::vec3& p : t.p) {
-        min_ = glm::min(min_, glm::vec2(p.x, p.z));
-        max_ = glm::max(max_, glm::vec2(p.x, p.z));
-      }
-    }
-    w_ = std::max(1, static_cast<int>(std::ceil((max_.x - min_.x) / cell_)));
-    h_ = std::max(1, static_cast<int>(std::ceil((max_.y - min_.y) / cell_)));
-    buckets_.resize(static_cast<std::size_t>(w_ * h_));
-    for (std::size_t i = 0; i < tris_.size(); ++i) {
-      const Triangle& t = tris_[i];
-      glm::vec2 lo{1e9f}, hi{-1e9f};
-      for (const glm::vec3& p : t.p) {
-        lo = glm::min(lo, glm::vec2(p.x, p.z));
-        hi = glm::max(hi, glm::vec2(p.x, p.z));
-      }
-      const auto [x0, z0] = cellOf(lo);
-      const auto [x1, z1] = cellOf(hi);
-      for (int z = z0; z <= z1; ++z)
-        for (int x = x0; x <= x1; ++x) buckets_[static_cast<std::size_t>(z * w_ + x)].push_back(i);
-    }
-  }
-
-  bool empty() const { return tris_.empty(); }
-  glm::vec2 min() const { return min_; }
-  glm::vec2 max() const { return max_; }
-
-  struct Hit {
-    glm::vec3 pos;
-    glm::vec3 normal;
-  };
-
-  std::optional<Hit> at(float x, float z) const {
-    if (x < min_.x || z < min_.y || x > max_.x || z > max_.y) return std::nullopt;
-    const auto [cx, cz] = cellOf({x, z});
-    for (std::size_t i : buckets_[static_cast<std::size_t>(cz * w_ + cx)]) {
-      const Triangle& t = tris_[i];
-      const glm::vec2 a{t.p[0].x, t.p[0].z}, b{t.p[1].x, t.p[1].z}, c{t.p[2].x, t.p[2].z};
-      const float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
-      if (std::fabs(d) < 1e-9f) continue;
-      const float u = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (z - c.y)) / d;
-      const float v = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (z - c.y)) / d;
-      const float w = 1.f - u - v;
-      if (u < -1e-5f || v < -1e-5f || w < -1e-5f) continue;
-      return Hit{t.p[0] * u + t.p[1] * v + t.p[2] * w, glm::normalize(t.n[0] * u + t.n[1] * v + t.n[2] * w)};
-    }
-    return std::nullopt;
-  }
-
- private:
-  std::pair<int, int> cellOf(glm::vec2 p) const {
-    return {std::clamp(static_cast<int>((p.x - min_.x) / cell_), 0, w_ - 1),
-            std::clamp(static_cast<int>((p.y - min_.y) / cell_), 0, h_ - 1)};
-  }
-
-  std::vector<Triangle> tris_;
-  std::vector<std::vector<std::size_t>> buckets_;
-  float cell_;
-  glm::vec2 min_{1e9f}, max_{-1e9f};
-  int w_ = 1, h_ = 1;
-};
-
 // Bridson Poisson disk in horizontal metres over a rectangle, keeping only
 // points `accept` likes. Every grid cell is tried as a fresh seed, so lawns
 // split by paving or water still fill. Separation is horizontal rather than
@@ -249,7 +179,7 @@ std::vector<glm::vec2> poisson(glm::vec2 lo, glm::vec2 hi, float minDist, std::m
 // Blade clumps carpet the lawn at blade spacing so every band edge gets a
 // continuous saw-tooth; tufts are a sparse second layer on top. Clump height
 // follows `patch` so the grass grows in taller and shorter patches.
-void scatterGrass(pxe::Scene& scene, const GroundIndex& ground, const BuildOptions& options,
+void scatterGrass(pxe::Scene& scene, const pxe::TriangleGrid& ground, const BuildOptions& options,
                   const std::function<float(float, float)>& patch, std::mt19937& rng) {
   if (ground.empty()) return;
   std::uniform_real_distribution<float> unit(0.f, 1.f);
@@ -277,13 +207,6 @@ float patchiness(float x, float z) {
   const float a = std::sin(0.31f * x + 1.7f * std::sin(0.23f * z));
   const float b = std::sin(0.27f * z - 1.3f * std::sin(0.19f * x + 0.5f));
   return std::clamp(0.5f + 0.5f * a * b + 0.15f * std::sin(0.9f * x + 0.7f * z), 0.f, 1.f);
-}
-
-void computeBounds(pxe::Scene& scene, const std::vector<pxe::Vertex>& verts) {
-  for (const pxe::Vertex& v : verts) {
-    scene.boundsMin = glm::min(scene.boundsMin, glm::vec3(v.px, v.py, v.pz));
-    scene.boundsMax = glm::max(scene.boundsMax, glm::vec3(v.px, v.py, v.pz));
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -346,36 +269,21 @@ BuiltScene buildHills(const BuildOptions& options) {
     }
   }
   std::vector<std::uint32_t> indices;
-  std::vector<Triangle> tris;
   indices.reserve(static_cast<std::size_t>(n - 1) * (n - 1) * 6);
-  auto tri = [&](std::uint32_t a, std::uint32_t b, std::uint32_t c) {
-    indices.insert(indices.end(), {a, b, c});
-    Triangle t;
-    for (int k = 0; k < 3; ++k) {
-      const pxe::Vertex& v = verts[(k == 0) ? a : (k == 1) ? b : c];
-      t.p[k] = {v.px, v.py, v.pz};
-      t.n[k] = {v.nx, v.ny, v.nz};
-    }
-    tris.push_back(t);
-  };
   for (int j = 0; j < n - 1; ++j) {
     for (int i = 0; i < n - 1; ++i) {
       const auto i00 = static_cast<std::uint32_t>(j * n + i);
       const auto i10 = i00 + 1;
       const auto i01 = i00 + static_cast<std::uint32_t>(n);
       const auto i11 = i01 + 1;
-      tri(i00, i11, i10);
-      tri(i00, i01, i11);
+      indices.insert(indices.end(), {i00, i11, i10});
+      indices.insert(indices.end(), {i00, i01, i11});
     }
   }
-  computeBounds(scene, verts);
-  {
-    std::vector<glm::vec3> corners;
-    for (const Triangle& t : tris) corners.insert(corners.end(), {t.p[0], t.p[1], t.p[2]});
-    scene.ground.build(corners);
-  }
-  scene.meshes.emplace_back();
-  scene.meshes.back().upload(verts, indices);
+  pxe::SurfaceGeometry geometry;
+  geometry.append(pxe::kSurfGrass, verts, indices);
+  pxe::buildSceneMaps(scene, geometry);
+  pxe::uploadScene(scene, geometry);
 
   const glm::vec3 flatForward{std::sin(kHillsYaw), 0.f, std::cos(kHillsYaw)};
   const glm::vec3 right{-std::cos(kHillsYaw), 0.f, std::sin(kHillsYaw)};
@@ -385,7 +293,7 @@ BuiltScene buildHills(const BuildOptions& options) {
 
   std::mt19937 rng(7);
   std::uniform_real_distribution<float> unit(0.f, 1.f);
-  GroundIndex ground(std::move(tris), 1.f);
+  const pxe::TriangleGrid ground(pxe::trianglesOf(verts, indices), 1.f);
   if (options.stamps) {
     const float step = 2.6f;
     for (int row = 0; row < 2; ++row) {
@@ -467,7 +375,7 @@ void addLog(VertexLists verts, IndexLists indices, glm::vec3 p0, glm::vec3 p1, f
 // A small campfire on the lawn at (x, z): a scorched dirt patch, a ring of
 // rough stones, and logs leant together in a teepee. Returns where the
 // flames rise from.
-glm::vec3 addCampfire(VertexLists verts, IndexLists indices, const GroundIndex& ground, float x, float z,
+glm::vec3 addCampfire(VertexLists verts, IndexLists indices, const pxe::TriangleGrid& ground, float x, float z,
                       std::mt19937& rng) {
   std::uniform_real_distribution<float> unit(0.f, 1.f);
   auto heightAt = [&](float px, float pz) {
@@ -517,13 +425,6 @@ glm::vec3 addCampfire(VertexLists verts, IndexLists indices, const GroundIndex& 
     addLog(verts, indices, foot, top, 0.055f + 0.01f * unit(rng), unit(rng));
   }
   return centre + glm::vec3{0.f, 0.08f, 0.f};
-}
-
-std::vector<glm::vec3> cornersOf(const std::vector<pxe::Vertex>& v, const std::vector<std::uint32_t>& idx) {
-  std::vector<glm::vec3> out;
-  out.reserve(idx.size());
-  for (std::uint32_t i : idx) out.push_back({v[i].px, v[i].py, v[i].pz});
-  return out;
 }
 
 // The tops of the stonework, for standing candles on: per 0.5 m cell of the
@@ -592,7 +493,7 @@ glm::vec3 addCandle(VertexLists verts, IndexLists indices, glm::vec3 foot) {
 
 // For the shelter test: a little stone shelter over (x, z) - four posts and
 // a two-tier slab roof - to build a campfire under.
-void addShelter(VertexLists verts, IndexLists indices, const GroundIndex& ground, float x, float z) {
+void addShelter(VertexLists verts, IndexLists indices, const pxe::TriangleGrid& ground, float x, float z) {
   auto heightAt = [&](float px, float pz) {
     const auto hit = ground.at(px, pz);
     return hit ? hit->pos.y : 0.f;
@@ -638,14 +539,13 @@ void setUpRuins(BuiltScene& built) {
 
 // The ruins before anything grows on them: ruins.glb, with the campfires
 // (and any test shelter and candles) added, one vertex list per surface.
-// Laying them out also gives the scene its fires, bounds, shelter, ground
-// and water.
+// Laying them out also gives the scene its fires, shelter, ground and
+// water top.
 struct RuinsGeometry {
-  std::vector<pxe::Vertex> verts[pxe::kSurfCount];
-  std::vector<std::uint32_t> indices[pxe::kSurfCount];
-  std::optional<GroundIndex> lawn;  // under the grass
+  pxe::SurfaceGeometry surfaces;
+  std::optional<pxe::TriangleGrid> lawn;  // under the grass
   std::vector<glm::vec3> lawnCorners;
-  std::vector<Triangle> leaves;
+  std::vector<pxe::Triangle> leaves;
   std::vector<float> leafArea;
   std::size_t prims = 0;
   std::size_t candles = 0;
@@ -660,17 +560,12 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
   geo.prims = prims.size();
 
   // One mesh per surface keeps draw calls low.
-  auto& verts = geo.verts;
-  auto& indices = geo.indices;
-  std::vector<Triangle> lawn;
-  std::vector<Triangle>& leaves = geo.leaves;
+  auto& verts = geo.surfaces.vertices;
+  auto& indices = geo.surfaces.indices;
+  std::vector<pxe::Triangle> lawn;
+  std::vector<pxe::Triangle>& leaves = geo.leaves;
   for (const auto& prim : prims) {
-    auto& v = verts[prim.surface];
-    auto& idx = indices[prim.surface];
-    const auto base = static_cast<std::uint32_t>(v.size());
-    v.insert(v.end(), prim.vertices.begin(), prim.vertices.end());
-    for (std::uint32_t i : prim.indices) idx.push_back(base + i);
-    computeBounds(scene, prim.vertices);
+    geo.surfaces.append(prim);
     if (prim.node != "Ground")
       for (std::uint32_t i : prim.indices) {
         const pxe::Vertex& pv = prim.vertices[i];
@@ -678,13 +573,7 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
       }
 
     if (prim.surface != pxe::kSurfGrass && prim.surface != pxe::kSurfLeaf) continue;
-    for (std::size_t i = 0; i + 2 < prim.indices.size(); i += 3) {
-      Triangle t;
-      for (int k = 0; k < 3; ++k) {
-        const pxe::Vertex& pv = prim.vertices[prim.indices[i + static_cast<std::size_t>(k)]];
-        t.p[k] = {pv.px, pv.py, pv.pz};
-        t.n[k] = {pv.nx, pv.ny, pv.nz};
-      }
+    for (const pxe::Triangle& t : pxe::trianglesOf(prim.vertices, prim.indices)) {
       if (prim.surface == pxe::kSurfGrass) {
         lawn.push_back(t);
         if (prim.node == "Ground") geo.lawnCorners.insert(geo.lawnCorners.end(), {t.p[0], t.p[1], t.p[2]});
@@ -699,7 +588,7 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
   for (int s = 0; s < pxe::kSurfCount; ++s) added[s] = indices[s].size();
   // The campfire sits on open lawn left of the pond.
   geo.lawn.emplace(std::move(lawn), 1.f);
-  const GroundIndex& ground = *geo.lawn;
+  const pxe::TriangleGrid& ground = *geo.lawn;
   std::mt19937 fireRng(11);
   const glm::vec2 campfire = kRuinsCampfire;
   built.fires.push_back({addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng)});
@@ -713,10 +602,10 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
     built.fires.push_back({addCampfire(verts, indices, ground, roofed.x, roofed.y, fireRng)});
     geo.campfires.push_back(roofed);
     std::vector<glm::vec3> crownCorners;
-    for (const Triangle& t : leaves) crownCorners.insert(crownCorners.end(), {t.p[0], t.p[1], t.p[2]});
+    for (const pxe::Triangle& t : leaves) crownCorners.insert(crownCorners.end(), {t.p[0], t.p[1], t.p[2]});
     pxe::ShelterMap crowns;
     crowns.build(crownCorners);
-    const std::vector<glm::vec3> bark = cornersOf(verts[pxe::kSurfBark], indices[pxe::kSurfBark]);
+    const std::vector<glm::vec3> bark = geo.surfaces.corners(pxe::kSurfBark);
     std::optional<glm::vec3> under;
     float best = 1e9f;
     for (float z = built.focus.z - 12.f; z <= built.focus.z + 10.f; z += 0.5f)
@@ -743,7 +632,7 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
     // Candles on flat stone tops - a ledge, a plinth, a fallen block, from
     // knee height up - and a few on the open lawn, spread apart and clear of
     // the campfires; and two under the shelter test's roof.
-    const StoneTops tops(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
+    const StoneTops tops(geo.surfaces.corners(pxe::kSurfStone));
     std::vector<glm::vec3> feet;
     auto clear = [&](float x, float z, float apart) {
       for (const FireSite& f : built.fires)
@@ -794,18 +683,7 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
       const pxe::Vertex& v = verts[s][indices[s][i]];
       geo.solids.push_back({v.px, v.py, v.pz});
     }
-  // Only built structure keeps the rain off: the stone. A tree crown lets
-  // it through.
-  scene.shelter.build(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
-  {
-    std::vector<glm::vec3> solid;
-    for (int s : {pxe::kSurfGrass, pxe::kSurfDirt, pxe::kSurfStone, pxe::kSurfBark, pxe::kSurfFoam}) {
-      const std::vector<glm::vec3> c = cornersOf(verts[s], indices[s]);
-      solid.insert(solid.end(), c.begin(), c.end());
-    }
-    scene.ground.build(solid);
-    scene.waterTop.build(cornersOf(verts[pxe::kSurfWater], indices[pxe::kSurfWater]));
-  }
+  pxe::buildSceneMaps(scene, geo.surfaces);
   for (FireSite& f : built.fires) f.sheltered = scene.shelter.sheltered(f.base);
 }
 
@@ -815,10 +693,10 @@ BuiltScene buildRuins(const BuildOptions& options) {
   setUpRuins(built);
   RuinsGeometry geo;
   layOutRuins(options, built, geo);
-  auto& verts = geo.verts;
-  auto& indices = geo.indices;
-  const GroundIndex& ground = *geo.lawn;
-  const std::vector<Triangle>& leaves = geo.leaves;
+  auto& verts = geo.surfaces.vertices;
+  auto& indices = geo.surfaces.indices;
+  const pxe::TriangleGrid& ground = *geo.lawn;
+  const std::vector<pxe::Triangle>& leaves = geo.leaves;
   const std::vector<float>& leafArea = geo.leafArea;
   if (options.candles)
     std::fprintf(stderr, "pxe: %zu candles, %d on stone, %d on the lawn\n", geo.candles, geo.candlesOnStone,
@@ -827,21 +705,7 @@ BuiltScene buildRuins(const BuildOptions& options) {
     std::fprintf(stderr, "pxe: %s at %.1f, %.1f %s\n", f.size < 1.f ? "candle" : "fire", f.base.x, f.base.z,
                  f.sheltered ? "sheltered" : "open to the rain");
 
-  for (int s = 0; s < pxe::kSurfCount; ++s) {
-    if (indices[s].empty()) continue;
-    auto& target = (s == pxe::kSurfWater) ? scene.water : scene.meshes;
-    target.emplace_back();
-    target.back().upload(verts[s], indices[s]);
-  }
-  if (!verts[pxe::kSurfWater].empty()) {
-    scene.waterMin = glm::vec3{1e9f};
-    scene.waterMax = glm::vec3{-1e9f};
-    for (const pxe::Vertex& v : verts[pxe::kSurfWater]) {
-      scene.waterMin = glm::min(scene.waterMin, glm::vec3(v.px, v.py, v.pz));
-      scene.waterMax = glm::max(scene.waterMax, glm::vec3(v.px, v.py, v.pz));
-    }
-    scene.waterLevel = 0.5f * (scene.waterMin.y + scene.waterMax.y);
-  }
+  pxe::uploadScene(scene, geo.surfaces);
 
   std::mt19937 rng(7);
   std::uniform_real_distribution<float> unit(0.f, 1.f);
@@ -933,7 +797,7 @@ BuiltScene buildRuins(const BuildOptions& options) {
   for (float a : leafArea) cdf.push_back(total += a);
   auto samplePoint = [&](glm::vec3& p, glm::vec3& n) {
     const auto it = std::lower_bound(cdf.begin(), cdf.end(), unit(rng) * total);
-    const Triangle& t = leaves[static_cast<std::size_t>(
+    const pxe::Triangle& t = leaves[static_cast<std::size_t>(
         std::min<std::ptrdiff_t>(it - cdf.begin(), static_cast<std::ptrdiff_t>(cdf.size()) - 1))];
     float u = unit(rng), v = unit(rng);
     if (u + v > 1.f) {

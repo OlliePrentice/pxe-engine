@@ -12,6 +12,8 @@ add_library(pxe_engine
   src/fireflies.cpp
   src/shelter.cpp
   src/heightmap.cpp
+  src/scene_geometry.cpp
+  src/triangle_grid.cpp
   src/image.cpp
   src/window.cpp
   src/input.cpp
