@@ -1,6 +1,6 @@
 # Weather to lighting in the engine
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -17,12 +17,12 @@ Cycle: 1
 - Game: `WorldClock` gains `pxe::Weather weather() const` (game/src/settings.hpp/.cpp) filling it from its fields (windDir() for windDir, cloudSpeed for windStrength). main.cpp's four `lightingFor(scene, clock)` calls become `pxe::lightingAt(scene, clock.hour, clock.weather())`, and lightingFor is deleted.
 
 ## Acceptance criteria
-- [ ] `lightingFor` no longer exists in game/; its logic is in `pxe::lightingAt(scene, hour, weather)` in engine/src/lighting.cpp.
-- [ ] `pxe::Weather` exists with the fields under Decisions and no game content in names or comments.
-- [ ] `WorldClock::weather()` fills every field from the clock exactly as lightingFor read it.
-- [ ] Every former lightingFor call site (main.cpp:1071, 1124, 1205, 1488) uses the new overload.
-- [ ] Captures are byte-identical: build the cycle base and the new code, run `--capture` on each with `--hour 15`, `--hour 7 --rain 0.2`, `--hour 19 --rain 0.6`, `--hour 22`, and `--hour 15 --rain 0.6 --flash 120,40`, and `cmp` each pair. Record the commands and results in the handoff.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `lightingFor` no longer exists in game/; its logic is in `pxe::lightingAt(scene, hour, weather)` in engine/src/lighting.cpp. (7261cd1: engine/src/lighting.cpp lightingAt(scene, hour, weather); main.cpp has no lightingFor)
+- [x] `pxe::Weather` exists with the fields under Decisions and no game content in names or comments. (lighting.hpp struct Weather)
+- [x] `WorldClock::weather()` fills every field from the clock exactly as lightingFor read it. (settings.cpp WorldClock::weather: windDir() and cloudSpeed as lightingFor read them)
+- [x] Every former lightingFor call site (main.cpp:1071, 1124, 1205, 1488) uses the new overload. (the four call sites use pxe::lightingAt(scene, clock.hour, clock.weather()))
+- [x] Captures are byte-identical: build the cycle base and the new code, run `--capture` on each with `--hour 15`, `--hour 7 --rain 0.2`, `--hour 19 --rain 0.6`, `--hour 22`, and `--hour 15 --rain 0.6 --flash 120,40`, and `cmp` each pair. Record the commands and results in the handoff. (developer: all five cmp equal; orchestrator re-ran --hour 19 --rain 0.6 and the --flash capture: cmp equal, and the two differ from each other)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check in worktree, exit 0; no new warnings)
 
 ## Assets
 None
@@ -32,3 +32,5 @@ None
 - Any change to how anything looks.
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base 75f49c9 (worktree /Users/sampr/Projects/Games/pxe/pxe-engine-weather-lighting, branch weather-lighting)
+- Cycle 1: review passed, no issues; complete
