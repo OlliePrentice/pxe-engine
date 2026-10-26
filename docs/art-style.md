@@ -23,7 +23,7 @@ The standing style for every asset in the project. Tasks may override it, and sa
 
 ## Materials
 - One skinned mesh with its armature. glTF material order is the contract with the engine: material i is the character's actor material i. Name materials with the character's tag (`Fox_Fur`, `Fox_Cream`).
-- The engine has 16 shared actor-material slots per frame (`pxe::kActorMaterials`). Each character owns its own range, so characters never share a colour: the hero uses 0–7, the fox 8–11. A new character takes the next free range and loads with `SkinnedModel::load(path, firstMaterial)`.
+- The engine has 64 shared actor-material slots per frame (`pxe::kActorMaterials`). Each character owns its own range, so characters never share a colour: the hero uses 0–7, the fox 8–11. A new character takes the next free range and loads with `SkinnedModel::load(path, firstMaterial)`.
 
 ## Rigs
 - Rig the full skeleton the creature will need, even if the task only animates one clip, so later clips never mean re-rigging. A quadruped has root, hips, a spine chain, chest, neck, head, ears, four legs with upper/lower/paw, and a tail chain of at least four bones.

@@ -21,14 +21,21 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Rendering, shaders, toon ramps, edge pass, water, rain, god rays | engine | in place |
 | Meshes, glTF loading, skinning and animation clips | engine | in place |
 | Camera, lighting, day/night palette blending | engine | in place |
+| Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | **misplaced**: `lightingFor` in `game/src/main.cpp` |
 | Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
 | Window and main loop (GLFW) | engine | **misplaced**: `game/src/main.cpp` |
-| Input devices: keyboard and gamepad to raw input | engine | **misplaced**: `game/src/gamepad.cpp`, `pollInput` in `game/src/main.cpp` |
-| Audio playback (miniaudio) | engine | **misplaced**: `game/src/audio.cpp` |
-| Turning a `.glb` into a `pxe::Scene` (meshes, water, shadow-only, height maps, shelter, grass scattering) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
+| Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | **misplaced**: `game/src/gamepad.cpp` (which mixes device code with action mapping), `pollInput` and the mouse polling in `game/src/main.cpp` |
+| Audio playback (miniaudio) | engine | **misplaced**: `game/src/audio.cpp`, `game/src/miniaudio.cpp` |
+| Procedural weather sound (wind, rain, thunder) | engine | **misplaced**: `game/src/audio.cpp` |
+| Turning a `.glb` into a `pxe::Scene` (meshes, water, height maps, shelter, grass and leaf scattering, clearing grass) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
+| Writing images to PNG | engine | **misplaced**: `writePng` in `game/src/main.cpp` |
+| Second-order smoothing (`SecondOrder`) | engine | duplicated: a private copy in `engine/src/camera.cpp`, a public one in `game/src/hero.hpp`. Promote to the engine when a third user needs it |
+| Game-only data on `pxe::Scene` (`fires`, `focus`, `yawDegrees`): the engine never reads it | game | **misplaced**: `engine/include/pxe/scene.hpp` |
 | Which scene to build, and where objects are placed in it (`kTavernSpot`, `kRuinsFoxSpot`, ...) | game | in place |
 | Player character, fox, tavern, fireball | game | in place |
-| Input actions (what a key or button does), settings menu, which sounds play when | game | in place |
+| World clock and weather rules (`WorldClock`): time of day, when it rains, when lightning strikes, cloud drift, fires burning down and rain putting them out. The engine takes the results as data | game | in place |
+| Input actions (what a key or button does), settings menu (ImGui), which sounds play when | game | in place |
+| Command-line modes: capture, bench, self-test | game | in place |
 
 ## Misplaced code
 Code marked **misplaced** above is moved only by a dedicated refactor task, never as a side effect of a feature. Until then:
