@@ -8,21 +8,12 @@
 
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
+#include "pxe/image.hpp"
 #include "pxe/input.hpp"
 #include "pxe/lighting.hpp"
 #include "pxe/overlay.hpp"
 #include "pxe/renderer.hpp"
 #include "pxe/window.hpp"
-
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
 
 #include <glm/geometric.hpp>
 
@@ -32,7 +23,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -383,19 +373,6 @@ Options parseArgs(int argc, char** argv) {
     }
   }
   return opt;
-}
-
-bool writePng(const std::string& path, int w, int h, const std::vector<std::uint8_t>& bottomUp) {
-  if (w <= 0 || h <= 0 || bottomUp.size() < static_cast<std::size_t>(w * h * 4)) return false;
-  std::filesystem::path file(path);
-  if (file.has_parent_path()) std::filesystem::create_directories(file.parent_path());
-  std::vector<std::uint8_t> top(static_cast<std::size_t>(w * h * 4));
-  const int stride = w * 4;
-  for (int y = 0; y < h; ++y) {
-    std::memcpy(top.data() + static_cast<std::size_t>(h - 1 - y) * stride,
-                bottomUp.data() + static_cast<std::size_t>(y) * stride, stride);
-  }
-  return stbi_write_png(path.c_str(), w, h, 4, top.data(), stride) != 0;
 }
 
 struct Input {
@@ -1097,7 +1074,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
         bool ok = true;
         if (!opt.capture.empty()) {
-          ok = writePng(opt.capture, renderer.viewW(), renderer.viewH(),
+          ok = pxe::writePng(opt.capture, renderer.viewW(), renderer.viewH(),
                         renderer.readView()) &&
                ok;
           std::fprintf(stderr, "pxe: %s %s\n", ok ? "wrote" : "failed", opt.capture.c_str());
@@ -1105,7 +1082,7 @@ int main(int argc, char** argv) {
         if (!opt.windowPng.empty()) {
           const glm::ivec2 fbSize = window->framebufferSize();
           const int fbW = fbSize.x, fbH = fbSize.y;
-          const bool wrote = writePng(opt.windowPng, fbW, fbH, renderer.readPresented(fbW, fbH));
+          const bool wrote = pxe::writePng(opt.windowPng, fbW, fbH, renderer.readPresented(fbW, fbH));
           std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", wrote ? "wrote" : "failed", opt.windowPng.c_str(),
                        fbW, fbH);
           ok = wrote && ok;
@@ -1391,7 +1368,7 @@ int main(int argc, char** argv) {
             audio.thunder(glm::dot(clock.flashDir, frame.right) / std::max(glm::length(glm::vec2{clock.flashDir.x, clock.flashDir.z}), 1e-3f));
           }
           if (input.shot) {
-            const bool ok = writePng("shot.png", renderer.viewW(), renderer.viewH(),
+            const bool ok = pxe::writePng("shot.png", renderer.viewW(), renderer.viewH(),
                                      renderer.readView());
             std::fprintf(stderr, "pxe: %s shot.png\n", ok ? "wrote" : "failed");
           }
@@ -1399,7 +1376,7 @@ int main(int argc, char** argv) {
                     fps);
           ++frameCount;
           if (!opt.uiShot.empty() && frameCount == uiFrames) {
-            const bool ok = writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
+            const bool ok = pxe::writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
             std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", ok ? "wrote" : "failed", opt.uiShot.c_str(), fbW, fbH);
             if (!opt.brushes.empty()) std::fprintf(stderr, "pxe: brush picks within %.3f m of the scripted strokes\n", pickError);
             window->requestClose();

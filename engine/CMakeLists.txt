@@ -12,6 +12,7 @@ add_library(pxe_engine
   src/fireflies.cpp
   src/shelter.cpp
   src/heightmap.cpp
+  src/image.cpp
   src/window.cpp
   src/input.cpp
   src/overlay.cpp
@@ -34,6 +35,7 @@ target_include_directories(pxe_engine
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
   PRIVATE ${CMAKE_SOURCE_DIR}/third_party/khronos
   PRIVATE ${CMAKE_SOURCE_DIR}/third_party/cgltf
+  PRIVATE ${CMAKE_SOURCE_DIR}/third_party/stb
   PRIVATE ${imgui_SOURCE_DIR}/backends
   PRIVATE ${miniaudio_SOURCE_DIR}
 )
