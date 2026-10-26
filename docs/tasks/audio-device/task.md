@@ -33,3 +33,4 @@ None
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 6b447a3
 - Cycle 1: review: build passes, --audio-wav --rain 0.6 byte-identical (orchestrator re-checked, SHA-1 d038ea9a); ISSUE-001 open
+- Cycle 2: 2026-10-26 started, base fb93271; ISSUE-001
