@@ -28,7 +28,7 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | in place: `pxe::Input` |
 | Audio playback (miniaudio) | engine | in place: `pxe::AudioDevice` |
 | Turning a `.glb` into a `pxe::Scene` (meshes, water, height maps, shelter, grass and leaf scattering, clearing grass) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
-| Writing images to PNG | engine | **misplaced**: `writePng` in `game/src/main.cpp` |
+| Writing images to PNG | engine | in place: `pxe::writePng` |
 | Second-order smoothing (`SecondOrder`) | engine | duplicated: a private copy in `engine/src/camera.cpp`, a public one in `game/src/hero.hpp`. Promote to the engine when a third user needs it |
 | Game-only data on `pxe::Scene` (`fires`, `focus`, `yawDegrees`): the engine never reads it | game | **misplaced**: `engine/include/pxe/scene.hpp` |
 | Which scene to build, and where objects are placed in it (`kTavernSpot`, `kRuinsFoxSpot`, ...) | game | in place |

@@ -1,6 +1,6 @@
 # PNG writing in the engine
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -15,10 +15,10 @@ Cycle: 1
 - Game: main.cpp calls `pxe::writePng` at every former `writePng` call site and no longer includes stb; game/CMakeLists.txt drops the stb include path.
 
 ## Acceptance criteria
-- [ ] `grep -rn "stb\|writePng(" game/src` finds only calls to `pxe::writePng`.
-- [ ] `pxe::writePng` behaves as the old function (size check, parent directories, row flip).
-- [ ] A `--capture` PNG is byte-identical before and after, checked with `cmp` against the cycle base build. Record in the handoff.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `grep -rn "stb\|writePng(" game/src` finds only calls to `pxe::writePng`. (5a9ac17: only the four pxe::writePng calls)
+- [x] `pxe::writePng` behaves as the old function (size check, parent directories, row flip). (engine/src/image.cpp: same body as the old main.cpp writePng)
+- [x] A `--capture` PNG is byte-identical before and after, checked with `cmp` against the cycle base build. Record in the handoff. (developer: cmp equal vs 43e8f52; orchestrator: --hour 22 into a new subdirectory, cmp equal vs an older base build)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check exit 0; stb sprintf warning moved from main.cpp to image.cpp, not new)
 
 ## Assets
 None
@@ -29,3 +29,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 43e8f52
+- Cycle 1: review passed, no issues; complete
