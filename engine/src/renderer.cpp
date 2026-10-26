@@ -211,7 +211,7 @@ void Renderer::destroyTargets() {
   if (fireCubeDepth_) glDeleteTextures(1, &fireCubeDepth_);
   if (fboFireCube_) glDeleteFramebuffers(1, &fboFireCube_);
   fireCubes_ = fireCubeDepth_ = fboFireCube_ = 0;
-  for (ShadowCube& cube : cubes_) cube.drawnScene = nullptr;
+  for (ShadowCube& cube : cubes_) cube.drawn = false;
   if (fbo_) glDeleteFramebuffers(1, &fbo_);
   if (fboFinal_) glDeleteFramebuffers(1, &fboFinal_);
   if (fboRefl_) glDeleteFramebuffers(1, &fboRefl_);
@@ -220,7 +220,9 @@ void Renderer::destroyTargets() {
   if (fboFlash_) glDeleteFramebuffers(1, &fboFlash_);
   if (fboShadowStatic_) glDeleteFramebuffers(1, &fboShadowStatic_);
   fbo_ = fboShadow_ = fboFlash_ = fboShadowStatic_ = 0;
-  shadowScene_ = nullptr;
+  shadowValid_ = false;
+  shadowStaticValid_ = false;
+  flashValid_ = false;
 }
 
 unsigned Renderer::makeColor(int w, int h) {
@@ -495,7 +497,9 @@ void Renderer::init() {
 }
 
 void Renderer::upload(const Scene& scene) {
-  shadowScene_ = nullptr;
+  shadowValid_ = false;
+  shadowStaticValid_ = false;
+  flashValid_ = false;
   grid_.reset();
   fires_.clear();
   for (ShadowCube& cube : cubes_) cube = ShadowCube{};
@@ -796,7 +800,7 @@ void Renderer::updateFires(const Scene& scene, const FrameParams& params) {
   for (const FireLight& light : fireLights_) {
     if (light.cube < 0) continue;
     ShadowCube& cube = cubes_[light.cube];
-    if (cube.drawnScene == &scene && cube.drawnPos == light.pos) continue;
+    if (cube.drawn && cube.drawnPos == light.pos) continue;
     static const glm::vec3 dirs[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     static const glm::vec3 ups[6] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
     const glm::mat4 proj = glm::perspective(glm::radians(90.f), 1.f, 0.05f, 40.f);
@@ -812,7 +816,7 @@ void Renderer::updateFires(const Scene& scene, const FrameParams& params) {
       umat(progFireShadow_, "uLightViewProj", proj * glm::lookAt(firePos, firePos + dirs[i], ups[i]));
       for (const Mesh& m : scene.meshes) m.draw();
     }
-    cube.drawnScene = &scene;
+    cube.drawn = true;
     cube.drawnPos = firePos;
   }
 }
@@ -923,7 +927,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   // drawn into their own map when they change, copied in, and the
   // characters drawn over them.
   const bool actors = !params.actors.empty();
-  const bool sceneShadows = shadowScene_ != &scene || shadowLight_ != lighting.lightDir || crownShadows;
+  const bool sceneShadows = !shadowValid_ || shadowLight_ != lighting.lightDir || crownShadows;
   if (sceneShadows) {
     glBindFramebuffer(GL_FRAMEBUFFER, actors ? fboShadowStatic_ : fboShadow_);
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
@@ -931,7 +935,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glUseProgram(progShadow);
     umat(progShadow, "uLightViewProj", light.viewProj);
     for (const Mesh& m : scene.meshes) m.draw();
-    shadowScene_ = &scene;
+    shadowValid_ = true;
     shadowLight_ = lighting.lightDir;
     shadowStaticValid_ = actors;
   }
@@ -956,14 +960,14 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     shadowHadActors_ = actors;
   }
   // Lightning's map: drawn once when a flash strikes from a new direction.
-  if (lighting.flash > 0.f && (flashScene_ != &scene || flashLight_ != lighting.flashDir || crownShadows)) {
+  if (lighting.flash > 0.f && (!flashValid_ || flashLight_ != lighting.flashDir || crownShadows)) {
     glBindFramebuffer(GL_FRAMEBUFFER, fboFlash_);
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
     glClear(GL_DEPTH_BUFFER_BIT);
     glUseProgram(progShadow);
     umat(progShadow, "uLightViewProj", flash.viewProj);
     for (const Mesh& m : scene.meshes) m.draw();
-    flashScene_ = &scene;
+    flashValid_ = true;
     flashLight_ = lighting.flashDir;
   }
   glDisable(GL_POLYGON_OFFSET_FILL);
