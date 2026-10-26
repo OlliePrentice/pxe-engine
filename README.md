@@ -71,7 +71,7 @@ cmake --build build -j
 ./build/game/pxe
 ```
 
-The window defaults to 1920×1080, an exact 2× scale of the 960×540 target. Retina framebuffers use `glfwGetFramebufferSize`, and the upscale is `floor` of the fit so it stays an integer.
+The window defaults to 1920×1080, an exact 2× scale of the 960×540 target. Retina framebuffers use the window's framebuffer size (`pxe::Window::framebufferSize`), and the upscale is `floor` of the fit so it stays an integer.
 
 ### Linux
 

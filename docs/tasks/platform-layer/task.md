@@ -1,7 +1,7 @@
 # Platform layer: window, input and UI overlay in the engine
 Type: feature
-Status: open
-Cycle: 1
+Status: complete
+Cycle: 2
 
 ## Goal
 Move everything that talks to GLFW, and ImGui's GLFW and OpenGL backends, from the game into the engine, as three engine capabilities: a window with its timing, raw input from keyboard, mouse and gamepad, and a UI overlay that hosts Dear ImGui. docs/architecture.md marks all three engine and misplaced. Afterwards the game never includes GLFW or calls an ImGui backend: it asks the engine for a window, reads raw input from it and maps it to actions, and builds its settings menu with `ImGui::` widget calls between the overlay's begin and end. Every run mode behaves as it does today.
@@ -31,19 +31,19 @@ Move everything that talks to GLFW, and ImGui's GLFW and OpenGL backends, from t
   - game/CMakeLists.txt no longer links glfw.
 
 ## Acceptance criteria
-- [ ] `grep -rn "GLFW\|glfw" game/` finds nothing (GLFW mentioned in a comment is fine if it explains history, but there should be no includes, types or calls).
-- [ ] `grep -rn "ImGui_Impl\|imgui_impl" game/` finds nothing.
-- [ ] No header under engine/include/ includes `<GLFW/glfw3.h>` or names a GLFW type.
-- [ ] `pxe::Window`, `pxe::Input` and `pxe::Overlay` exist as described under Layering, with no game content in their names, APIs or comments.
-- [ ] Window hints, vsync rule (on only when requested and not headless) and the hidden window for headless modes and `--ui-shot` match today's main.cpp:877-891.
-- [ ] `pollInput` has no `static` variables, and every key and button maps to the same action as today's main.cpp:427-497 and gamepad.cpp:36-78. Tab and Start toggle the menu even when the keyboard is taken; nothing else is read then.
-- [ ] Dead zone, extra controller mapping string and flick-to-rotate thresholds have the same values as today.
-- [ ] The play loop's frame timing, fps average and dt clamp (main.cpp:1303-1315) behave as today, using `Window` time.
-- [ ] The menu's ImGui style is unchanged (font scale 1.2, rounding 6 and 4, window background alpha 0.92, dark colours).
-- [ ] Root CMakeLists `imgui` target is core only; `pxe_engine` compiles the two backends and links glfw PRIVATE and imgui PUBLIC; the game target links neither glfw nor the backends.
-- [ ] Captures are byte-identical before and after: build the cycle base, run `--capture` at `--hour 15`, `--hour 6 --rain 0.3` and `--hour 21`, and `--window-png` once, then the same on the new build, and `cmp` each pair. Record the commands and results in the handoff.
-- [ ] `--self-test` passes and `--bench 60` runs to completion on the new build; `--ui-shot` with the menu open (`--menu`) writes a PNG showing the menu. Record in the handoff.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `grep -rn "GLFW\|glfw" game/` finds nothing (GLFW mentioned in a comment is fine if it explains history, but there should be no includes, types or calls). (grep finds nothing)
+- [x] `grep -rn "ImGui_Impl\|imgui_impl" game/` finds nothing. (grep finds nothing)
+- [x] No header under engine/include/ includes `<GLFW/glfw3.h>` or names a GLFW type. (GLFW only in engine/src/window_impl.hpp, input.cpp, window.cpp, overlay.cpp)
+- [x] `pxe::Window`, `pxe::Input` and `pxe::Overlay` exist as described under Layering, with no game content in their names, APIs or comments. (engine/include/pxe/window.hpp, input.hpp, overlay.hpp)
+- [x] Window hints, vsync rule (on only when requested and not headless) and the hidden window for headless modes and `--ui-shot` match today's main.cpp:877-891. (Window::Window hints; main.cpp visible = !headless && uiShot empty, vsync = opt.vsync && !headless)
+- [x] `pollInput` has no `static` variables, and every key and button maps to the same action as today's main.cpp:427-497 and gamepad.cpp:36-78. Tab and Start toggle the menu even when the keyboard is taken; nothing else is read then. (main.cpp pollInput over pxe::Input; Tab/Start before the keyboardTaken return)
+- [x] Dead zone, extra controller mapping string and flick-to-rotate thresholds have the same values as today. (Input::kStickDeadZone 0.18, kExtraMappings in input.cpp, kFlickOut/kFlickBack in gamepad.cpp; flick still reads the raw axis, as before)
+- [x] The play loop's frame timing, fps average and dt clamp (main.cpp:1303-1315) behave as today, using `Window` time. (main.cpp loop uses Window::time with the same fps average and clamp)
+- [x] The menu's ImGui style is unchanged (font scale 1.2, rounding 6 and 4, window background alpha 0.92, dark colours). (SettingsMenu::init; orchestrator viewed --ui-shot --menu: menu styled as before)
+- [x] Root CMakeLists `imgui` target is core only; `pxe_engine` compiles the two backends and links glfw PRIVATE and imgui PUBLIC; the game target links neither glfw nor the backends. (CMakeLists.txt imgui core only; engine/CMakeLists.txt backends, glfw PRIVATE, imgui PUBLIC; game links pxe_engine only)
+- [x] Captures are byte-identical before and after: build the cycle base, run `--capture` at `--hour 15`, `--hour 6 --rain 0.3` and `--hour 21`, and `--window-png` once, then the same on the new build, and `cmp` each pair. Record the commands and results in the handoff. (developer: four cmp equal; orchestrator re-ran --hour 6 --rain 0.3 capture and --window-png against 75f49c9: cmp equal)
+- [x] `--self-test` passes and `--bench 60` runs to completion on the new build; `--ui-shot` with the menu open (`--menu`) writes a PNG showing the menu. Record in the handoff. (developer and orchestrator: self-test PASS; developer: bench 60 ran; ui-shot written)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check in worktree, exit 0; glfw duplicate-library link warning gone)
 
 ## Assets
 None
@@ -54,3 +54,7 @@ None
 - Any change to what the menu shows or how it looks.
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base 75f49c9 (worktree /Users/sampr/Projects/Games/pxe/pxe-engine-platform-layer, branch platform-layer)
+- Cycle 1: review passed, no issues; complete. Accepted deviation: the right-stick flick reads the raw axis (pxe::Input::gamepadAxis), keeping today's threshold
+- Cycle 2: 2026-10-26 started, base f4f95e7: merge engine-game-layering into platform-layer; conflict in game/src/settings.cpp (WorldClock::weather() from weather-lighting next to SettingsMenu::init)
+- Cycle 2: review passed: settings.cpp keeps WorldClock::weather() and SettingsMenu::init(pxe::Overlay&); fresh build exit 0; --hour 19 --rain 0.6 capture byte-identical to engine-game-layering 0e6e47b; complete

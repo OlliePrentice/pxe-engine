@@ -10,7 +10,9 @@
 #include <cstdint>
 #include <vector>
 
-struct GLFWwindow;
+namespace pxe {
+class Overlay;
+}
 
 namespace game {
 
@@ -108,12 +110,13 @@ struct BrushSettings {
   float radius = 1.f;  // metres
 };
 
-// Dear ImGui panel toggled with Tab. Drawn at window resolution on top of
-// the upscaled pixel art.
+// Dear ImGui panel toggled with Tab, built on the engine's overlay. Drawn at
+// window resolution on top of the upscaled pixel art.
 class SettingsMenu {
  public:
-  void init(GLFWwindow* window);
-  void shutdown();
+  // Draw through `overlay`, which must outlive the menu's use; applies the
+  // menu's style to it.
+  void init(pxe::Overlay& overlay);
 
   void toggle() { open_ = !open_; }
   bool open() const { return open_; }
@@ -131,7 +134,7 @@ class SettingsMenu {
             const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint, float fps);
 
  private:
-  bool ready_ = false;
+  pxe::Overlay* overlay_ = nullptr;
   bool open_ = false;
 };
 
