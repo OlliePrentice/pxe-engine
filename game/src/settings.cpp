@@ -112,10 +112,10 @@ void WorldClock::advance(float dt) {
   cloudOffset -= windDir() * kCloudDrift * dt * cloudSpeed;
 }
 
-void WorldClock::placeFires(const std::vector<pxe::FireSite>& sites) {
+void WorldClock::placeFires(const std::vector<FireSite>& sites) {
   fires.clear();
   nextFireId = 0;
-  for (const pxe::FireSite& site : sites) {
+  for (const FireSite& site : sites) {
     Fire f;
     f.id = nextFireId++;
     f.base = site.base;

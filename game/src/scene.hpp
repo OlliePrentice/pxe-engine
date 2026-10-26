@@ -92,7 +92,29 @@ struct BuildOptions {
   std::vector<BedFootprint> beds;
 };
 
-pxe::Scene buildScene(const BuildOptions& options = {});
+// A fire the scene starts with: where its flames rise from, whether a
+// structure roofs it over (from `pxe::Scene::shelter`), so rain cannot reach
+// it, and how big it is (1 a campfire, about 0.2 a candle; see
+// pxe::FireDraw).
+struct FireSite {
+  glm::vec3 base{0.f};
+  bool sheltered = false;
+  float size = 1.f;
+};
+
+// A built scene: what the engine draws and queries, and what the game starts
+// it with.
+struct BuiltScene {
+  pxe::Scene scene;
+  // Fires the scene starts with. The game owns them from then on, and can
+  // add, move and remove fires as it runs (see WorldClock).
+  std::vector<FireSite> fires;
+  // Where the camera starts.
+  glm::vec3 focus{0.f};
+  float yawDegrees = 45.f;
+};
+
+BuiltScene buildScene(const BuildOptions& options = {});
 
 // What foxes need of a scene before it is built (their beds clear the grass
 // as it is built): where beds may go, and what beds and walks keep clear of.

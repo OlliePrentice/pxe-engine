@@ -313,8 +313,9 @@ float hillHeight(float x, float z) {
   return hill + rip + det;
 }
 
-pxe::Scene buildHills(const BuildOptions& options) {
-  pxe::Scene scene;
+BuiltScene buildHills(const BuildOptions& options) {
+  BuiltScene built;
+  pxe::Scene& scene = built.scene;
   setPhasePalettes(scene);
   pxe::Palette& day = scene.palette[pxe::kPhaseDay][pxe::kSurfGrass];
   setRamp(day.band, 0x46766e, 0x83ab5c, 0xc7e487);
@@ -322,7 +323,7 @@ pxe::Scene buildHills(const BuildOptions& options) {
   setRamp(day.tip, 0x46766e, 0xa2c66c, 0xe2f3a8);
   scene.tLit = 0.75f;
   scene.tMid = 0.585f;
-  scene.yawDegrees = 45.f;
+  built.yawDegrees = 45.f;
 
   const int n = static_cast<int>(std::lround(2.f * kHalf / kGrid)) + 1;
   std::vector<pxe::Vertex> verts(static_cast<std::size_t>(n * n));
@@ -380,7 +381,7 @@ pxe::Scene buildHills(const BuildOptions& options) {
   const glm::vec3 right{-std::cos(kHillsYaw), 0.f, std::sin(kHillsYaw)};
   scene.sunEast = right;
   scene.sunSouth = flatForward;
-  scene.focus = glm::vec3{0.f, 2.f, 0.f};
+  built.focus = glm::vec3{0.f, 2.f, 0.f};
 
   std::mt19937 rng(7);
   std::uniform_real_distribution<float> unit(0.f, 1.f);
@@ -401,7 +402,7 @@ pxe::Scene buildHills(const BuildOptions& options) {
   } else {
     scatterGrass(scene, ground, options, patchiness, rng);
   }
-  return scene;
+  return built;
 }
 
 // ---------------------------------------------------------------------------
@@ -612,20 +613,21 @@ void addShelter(VertexLists verts, IndexLists indices, const GroundIndex& ground
 // Ruins: the pond-and-pillars scene from tools/blender/build_ruins.py.
 
 // Its camera, sun, ridge and colours.
-void setUpRuins(pxe::Scene& scene) {
+void setUpRuins(BuiltScene& built) {
+  pxe::Scene& scene = built.scene;
   setPhasePalettes(scene);
   scene.tLit = 0.6f;
   scene.tMid = 0.18f;
 
   // The Blender layout is built facing Blender +Y, which is glTF -Z.
-  scene.yawDegrees = 180.f;
+  built.yawDegrees = 180.f;
   const glm::vec3 forward{0.f, 0.f, -1.f};
   const glm::vec3 right{1.f, 0.f, 0.f};
   // Rises on the right of the screen and sets on the left, arcing over the
   // pond, so by mid-afternoon the pillars' left faces are lit as in the video.
   scene.sunEast = right;
   scene.sunSouth = forward;
-  scene.focus = glm::vec3{2.f, 1.f, -6.f};
+  built.focus = glm::vec3{2.f, 1.f, -6.f};
   // Wooded hills just past the edge of the frame. Pillar tops (about 10 m)
   // catch the first sun; the lawn waits until the sun is ~15 degrees up.
   scene.horizonCentre = glm::vec2{2.f, -6.f};
@@ -652,7 +654,8 @@ struct RuinsGeometry {
   std::vector<glm::vec3> solids;  // see SceneLayout
 };
 
-void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& geo) {
+void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& geo) {
+  pxe::Scene& scene = built.scene;
   const auto prims = pxe::loadGltf(std::string(PXE_ASSET_DIR) + "/scenes/ruins.glb");
   geo.prims = prims.size();
 
@@ -699,7 +702,7 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
   const GroundIndex& ground = *geo.lawn;
   std::mt19937 fireRng(11);
   const glm::vec2 campfire = kRuinsCampfire;
-  scene.fires.push_back({addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng)});
+  built.fires.push_back({addCampfire(verts, indices, ground, campfire.x, campfire.y, fireRng)});
   geo.campfires.push_back(campfire);
   if (options.shelterTest) {
     // A second fire under a stone shelter, and a third under a tree crown
@@ -707,7 +710,7 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
     // and no trunk close by).
     const glm::vec2 roofed{kShelterTestX, kShelterTestZ};
     addShelter(verts, indices, ground, roofed.x, roofed.y);
-    scene.fires.push_back({addCampfire(verts, indices, ground, roofed.x, roofed.y, fireRng)});
+    built.fires.push_back({addCampfire(verts, indices, ground, roofed.x, roofed.y, fireRng)});
     geo.campfires.push_back(roofed);
     std::vector<glm::vec3> crownCorners;
     for (const Triangle& t : leaves) crownCorners.insert(crownCorners.end(), {t.p[0], t.p[1], t.p[2]});
@@ -716,14 +719,14 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
     const std::vector<glm::vec3> bark = cornersOf(verts[pxe::kSurfBark], indices[pxe::kSurfBark]);
     std::optional<glm::vec3> under;
     float best = 1e9f;
-    for (float z = scene.focus.z - 12.f; z <= scene.focus.z + 10.f; z += 0.5f)
-      for (float x = scene.focus.x - 14.f; x <= scene.focus.x + 14.f; x += 0.5f) {
+    for (float z = built.focus.z - 12.f; z <= built.focus.z + 10.f; z += 0.5f)
+      for (float x = built.focus.x - 14.f; x <= built.focus.x + 14.f; x += 0.5f) {
         const auto hit = ground.at(x, z);
         if (!hit) continue;
-        const float d = glm::length(glm::vec2{x, z} - glm::vec2{scene.focus.x, scene.focus.z});
+        const float d = glm::length(glm::vec2{x, z} - glm::vec2{built.focus.x, built.focus.z});
         if (d >= best) continue;
         bool clear = true;
-        for (const pxe::FireSite& f : scene.fires) clear = clear && glm::length(glm::vec2{x - f.base.x, z - f.base.z}) > 3.f;
+        for (const FireSite& f : built.fires) clear = clear && glm::length(glm::vec2{x - f.base.x, z - f.base.z}) > 3.f;
         for (const glm::vec3& p : bark)
           clear = clear && (p.y > hit->pos.y + 2.5f || glm::length(glm::vec2{p.x - x, p.z - z}) > 1.2f);
         if (clear && crowns.coveredLines(hit->pos) == 9) {
@@ -732,7 +735,7 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
         }
       }
     if (under) {
-      scene.fires.push_back({addCampfire(verts, indices, ground, under->x, under->z, fireRng)});
+      built.fires.push_back({addCampfire(verts, indices, ground, under->x, under->z, fireRng)});
       geo.campfires.push_back({under->x, under->z});
     }
   }
@@ -743,15 +746,15 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
     const StoneTops tops(cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]));
     std::vector<glm::vec3> feet;
     auto clear = [&](float x, float z, float apart) {
-      for (const pxe::FireSite& f : scene.fires)
+      for (const FireSite& f : built.fires)
         if (glm::length(glm::vec2{x - f.base.x, z - f.base.z}) < (f.size < 1.f ? apart : 1.6f)) return false;
       for (const glm::vec3& f : feet)
         if (glm::length(glm::vec2{x - f.x, z - f.z}) < apart) return false;
       return true;
     };
     std::vector<glm::vec2> spots;
-    for (float z = scene.focus.z - 8.f; z <= scene.focus.z + 7.f; z += 0.25f)
-      for (float x = scene.focus.x - 12.f; x <= scene.focus.x + 12.f; x += 0.25f) spots.push_back({x, z});
+    for (float z = built.focus.z - 8.f; z <= built.focus.z + 7.f; z += 0.25f)
+      for (float x = built.focus.x - 12.f; x <= built.focus.x + 12.f; x += 0.25f) spots.push_back({x, z});
     std::mt19937 candleRng(41);
     std::shuffle(spots.begin(), spots.end(), candleRng);
     int& onStone = geo.candlesOnStone;
@@ -783,7 +786,7 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
         const auto hit = ground.at(kShelterTestX + sx, kShelterTestZ + 0.7f);
         if (hit) feet.push_back(hit->pos);
       }
-    for (const glm::vec3& foot : feet) scene.fires.push_back({addCandle(verts, indices, foot), false, kCandleSize});
+    for (const glm::vec3& foot : feet) built.fires.push_back({addCandle(verts, indices, foot), false, kCandleSize});
     geo.candles = feet.size();
   }
   for (int s = 0; s < pxe::kSurfCount; ++s)
@@ -803,14 +806,15 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
     scene.ground.build(solid);
     scene.waterTop.build(cornersOf(verts[pxe::kSurfWater], indices[pxe::kSurfWater]));
   }
-  for (pxe::FireSite& f : scene.fires) f.sheltered = scene.shelter.sheltered(f.base);
+  for (FireSite& f : built.fires) f.sheltered = scene.shelter.sheltered(f.base);
 }
 
-pxe::Scene buildRuins(const BuildOptions& options) {
-  pxe::Scene scene;
-  setUpRuins(scene);
+BuiltScene buildRuins(const BuildOptions& options) {
+  BuiltScene built;
+  pxe::Scene& scene = built.scene;
+  setUpRuins(built);
   RuinsGeometry geo;
-  layOutRuins(options, scene, geo);
+  layOutRuins(options, built, geo);
   auto& verts = geo.verts;
   auto& indices = geo.indices;
   const GroundIndex& ground = *geo.lawn;
@@ -819,7 +823,7 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   if (options.candles)
     std::fprintf(stderr, "pxe: %zu candles, %d on stone, %d on the lawn\n", geo.candles, geo.candlesOnStone,
                  geo.candlesOnLawn);
-  for (const pxe::FireSite& f : scene.fires)
+  for (const FireSite& f : built.fires)
     std::fprintf(stderr, "pxe: %s at %.1f, %.1f %s\n", f.size < 1.f ? "candle" : "fire", f.base.x, f.base.z,
                  f.sheltered ? "sheltered" : "open to the rain");
 
@@ -890,8 +894,8 @@ pxe::Scene buildRuins(const BuildOptions& options) {
     std::mt19937 flyRng(23);
     std::uniform_real_distribution<float> u(0.f, 1.f);
     for (int tries = 0; tries < 400 && scene.fireflyHomes.size() < 40; ++tries) {
-      const float x = scene.focus.x - 14.f + 28.f * u(flyRng);
-      const float z = scene.focus.z - 12.f + 22.f * u(flyRng);
+      const float x = built.focus.x - 14.f + 28.f * u(flyRng);
+      const float z = built.focus.z - 12.f + 22.f * u(flyRng);
       const auto hit = ground.at(x, z);
       if (!hit) continue;
       scene.fireflyHomes.push_back(hit->pos + glm::vec3{0.f, 0.5f + 1.2f * u(flyRng), 0.f});
@@ -900,7 +904,7 @@ pxe::Scene buildRuins(const BuildOptions& options) {
 
   // No grass in the fire pits.
   std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) {
-    for (const pxe::FireSite& f : scene.fires)
+    for (const FireSite& f : built.fires)
       if (glm::length(glm::vec2{g.px, g.pz} - glm::vec2{f.base.x, f.base.z}) < (f.size < 1.f ? 0.3f : 1.05f)) return true;
     return false;
   });
@@ -1003,45 +1007,45 @@ pxe::Scene buildRuins(const BuildOptions& options) {
   if (options.extraFires > 0) {
     std::mt19937 extraRng(31);
     std::uniform_real_distribution<float> u(0.f, 1.f);
-    const std::size_t want = scene.fires.size() + static_cast<std::size_t>(options.extraFires);
-    for (int tries = 0; tries < 2000 && scene.fires.size() < want; ++tries) {
-      const float x = scene.focus.x - 12.f + 24.f * u(extraRng);
-      const float z = scene.focus.z - 9.f + 16.f * u(extraRng);
+    const std::size_t want = built.fires.size() + static_cast<std::size_t>(options.extraFires);
+    for (int tries = 0; tries < 2000 && built.fires.size() < want; ++tries) {
+      const float x = built.focus.x - 12.f + 24.f * u(extraRng);
+      const float z = built.focus.z - 9.f + 16.f * u(extraRng);
       const auto hit = ground.at(x, z);
       if (!hit) continue;
       bool apart = true;
-      for (const pxe::FireSite& f : scene.fires) apart = apart && glm::length(glm::vec2{x - f.base.x, z - f.base.z}) > 1.5f;
+      for (const FireSite& f : built.fires) apart = apart && glm::length(glm::vec2{x - f.base.x, z - f.base.z}) > 1.5f;
       if (!apart) continue;
       const glm::vec3 base = hit->pos + glm::vec3{0.f, 0.08f, 0.f};
-      scene.fires.push_back({base, scene.shelter.sheltered(base)});
+      built.fires.push_back({base, scene.shelter.sheltered(base)});
     }
     std::fprintf(stderr, "pxe: %d extra fires\n", options.extraFires);
   }
   std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters\n", geo.prims, leafCount);
-  return scene;
+  return built;
 }
 
 }  // namespace
 
-pxe::Scene buildScene(const BuildOptions& options) {
-  pxe::Scene scene = (options.scene == "hills") ? buildHills(options) : buildRuins(options);
-  std::fprintf(stderr, "pxe: scene %s, %zu sprites\n", options.scene.c_str(), scene.grass.size());
-  return scene;
+BuiltScene buildScene(const BuildOptions& options) {
+  BuiltScene built = (options.scene == "hills") ? buildHills(options) : buildRuins(options);
+  std::fprintf(stderr, "pxe: scene %s, %zu sprites\n", options.scene.c_str(), built.scene.grass.size());
+  return built;
 }
 
 SceneLayout laidOut(const BuildOptions& options) {
   SceneLayout layout;
   if (options.scene == "hills") return layout;
-  pxe::Scene scene;
-  setUpRuins(scene);
+  BuiltScene built;
+  setUpRuins(built);
   RuinsGeometry geo;
-  layOutRuins(options, scene, geo);
+  layOutRuins(options, built, geo);
   layout.campfires = std::move(geo.campfires);
   layout.solids = std::move(geo.solids);
-  layout.ground = std::move(scene.ground);
+  layout.ground = std::move(built.scene.ground);
   layout.lawn.build(geo.lawnCorners);
-  layout.bedsLo = glm::vec2{scene.focus.x, scene.focus.z} - 20.f;
-  layout.bedsHi = glm::vec2{scene.focus.x, scene.focus.z} + 20.f;
+  layout.bedsLo = glm::vec2{built.focus.x, built.focus.z} - 20.f;
+  layout.bedsHi = glm::vec2{built.focus.x, built.focus.z} + 20.f;
   return layout;
 }
 

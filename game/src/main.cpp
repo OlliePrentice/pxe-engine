@@ -654,11 +654,12 @@ pxe::FrameParams makeParams(const Options& opt) {
   return params;
 }
 
-int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& scene) {
+int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const game::BuiltScene& built) {
+  const pxe::Scene& scene = built.scene;
   pxe::FrameParams params;
   params.lighting = pxe::lightingAt(scene, kCaptureHour);
-  for (std::uint32_t i = 0; i < scene.fires.size(); ++i)
-    params.fires.push_back({i, scene.fires[i].base, 1.f, 0.f, scene.fires[i].size});
+  for (std::uint32_t i = 0; i < built.fires.size(); ++i)
+    params.fires.push_back({i, built.fires[i].base, 1.f, 0.f, built.fires[i].size});
   params.framebufferW = 320;
   params.framebufferH = 180;
   params.present = false;
@@ -828,18 +829,19 @@ int main(int argc, char** argv) {
         }
       }
       for (const game::FoxBed& b : beds) build.beds.push_back({b.xz, game::Fox::kFootprint});
-      pxe::Scene scene;
+      game::BuiltScene built;
       try {
-        scene = game::buildScene(build);
+        built = game::buildScene(build);
       } catch (const std::exception& ex) {
         std::fprintf(stderr, "scene build failed: %s\n", ex.what());
         return 1;
       }
+      pxe::Scene& scene = built.scene;
       renderer.upload(scene);
 
       pxe::Camera camera;
-      camera.setYawRadians((opt.haveYaw ? opt.yawDeg : scene.yawDegrees) * 3.14159265f / 180.f);
-      camera.setTarget(opt.haveTarget ? opt.target : scene.focus);
+      camera.setYawRadians((opt.haveYaw ? opt.yawDeg : built.yawDegrees) * 3.14159265f / 180.f);
+      camera.setTarget(opt.haveTarget ? opt.target : built.focus);
       if (opt.slide != 0.f) {
         const float yaw = camera.yawRadians();
         const glm::vec3 flatForward{std::sin(yaw), 0.f, std::cos(yaw)};
@@ -902,7 +904,7 @@ int main(int argc, char** argv) {
         clock.lightning = opt.lightning;
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
-        clock.placeFires(scene.fires);
+        clock.placeFires(built.fires);
         game::Fireball ball;
         // With --hero, the hero stands at the view's focus facing the camera,
         // idling, kept out of any foxes (--foxes), which wake and walk as in play.
@@ -952,7 +954,7 @@ int main(int argc, char** argv) {
         }
         std::fprintf(stderr, "bench: wall %6.2f ms/frame (%.0f fps uncapped), %dx%d\n", wall, 1000.0 / wall, fbW, fbH);
       } else if (opt.selfTest) {
-        exitCode = selfTest(renderer, camera, scene);
+        exitCode = selfTest(renderer, camera, built);
       } else if (headless) {
         const glm::ivec2 fbSize = window->framebufferSize();
         const int fbW = fbSize.x, fbH = fbSize.y;
@@ -961,7 +963,7 @@ int main(int argc, char** argv) {
         clock.cloudCover = opt.clouds;
         clock.rain = opt.rain;
         clock.lightning = opt.lightning;
-        clock.placeFires(scene.fires);
+        clock.placeFires(built.fires);
         game::Fireball ball;
         for (game::WorldClock::Fire& f : clock.fires) {
           f.level = opt.fireLevel;
@@ -1105,7 +1107,7 @@ int main(int argc, char** argv) {
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
         clock.grassFireLife = opt.fireLife;
-        clock.placeFires(scene.fires);
+        clock.placeFires(built.fires);
         game::SoundSettings sound;
         sound.on = opt.sound;
         game::Audio audio;

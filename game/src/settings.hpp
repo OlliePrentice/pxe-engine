@@ -4,6 +4,7 @@
 #include <glm/vec3.hpp>
 
 #include "audio.hpp"
+#include "scene.hpp"
 #include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 
@@ -58,7 +59,7 @@ struct WorldClock {
   int strikes = 0;  // counts flashes, so the game can follow each with thunder
 
   // One burning fire per scene fire, sheltered as the scene says.
-  void placeFires(const std::vector<pxe::FireSite>& sites);
+  void placeFires(const std::vector<FireSite>& sites);
   // Light a new fire at `base` (sheltered from `shelter`); returns its id.
   std::uint32_t addFire(glm::vec3 base, const pxe::ShelterMap& shelter, float size = 1.f);
   void removeFire(std::uint32_t id);
