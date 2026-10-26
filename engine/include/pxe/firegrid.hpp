@@ -59,15 +59,20 @@ class FireGrid {
   FireGrid& operator=(const FireGrid&) = delete;
 
   void init(const std::string& shaderDir);
-  // Forget the last scene; the next advance builds the grid for its scene.
-  void reset() { scene_ = nullptr; }
-  bool running() const { return scene_ != nullptr; }
+  // Drop the grid; the next advance builds it afresh for the scene it is
+  // given. Call whenever the scene changes.
+  void reset() { built_ = false; }
+  // Whether the grid is built: from the first advance after construction or
+  // reset() until the next reset().
+  bool running() const { return built_; }
 
   // Bring the grid to `time` seconds, first setting alight the cells near
   // each of `ignite` (world xz) and painting `strokes`. `rain` 0 dry .. 1
   // downpour; `wind` world xz the wind blows toward, scaled by its strength.
   // Leaves GL state as the renderer expects (no blending, its framebuffer
-  // unbound).
+  // unbound). The first advance after construction or reset() builds the
+  // grid from `scene`; until the next reset(), every advance must be given
+  // that same scene.
   void advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite, const std::vector<Stroke>& strokes,
                float rain, glm::vec2 wind);
   // How long a fire set alight by hand keeps spreading, in seconds of
@@ -113,7 +118,7 @@ class FireGrid {
   unsigned patches_ = 0, fboPatches_ = 0;  // per patch: summed fire, fire-weighted x and z, summed embers
   unsigned crownPatches_ = 0;  // per patch: summed crown fire, fire-weighted x, z and height; drawn with patches_
   unsigned pbo_[2] = {}, crownPbo_[2] = {};
-  const Scene* scene_ = nullptr;
+  bool built_ = false;  // the grid is built for the scene given since the last reset()
   glm::vec2 min_{0.f};
   int w_ = 0, h_ = 0;    // cells
   int pw_ = 0, ph_ = 0;  // patches
