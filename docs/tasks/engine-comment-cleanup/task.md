@@ -1,6 +1,6 @@
 # Engine comment cleanup
 Type: fix
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -26,12 +26,12 @@ Engine comments name game content, which docs/architecture.md forbids ("No game 
 - Expected: each comment describes the capability in generic terms, with no game content, and is accurate.
 
 ## Acceptance criteria
-- [ ] Each comment listed under Reproduction is reworded in generic terms (e.g. "as the scene's stone does", "after the game has cleared some", "something moving over the ground").
-- [ ] readView's comment states the size correctly, preferably by naming RenderConfig::kViewW x kViewH rather than a number that can go stale.
-- [ ] The firelight comment in lighting.hpp sits directly above the firelight fields, and the god-ray comment above the god-ray fields.
-- [ ] `grep -rniE "fox|hero|tavern|ruins|fireball|brief" engine/` finds nothing that names game content (credits to t3ssel8r and generic nouns are fine).
-- [ ] The diff touches only comments in engine/.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] Each comment listed under Reproduction is reworded in generic terms (e.g. "as the scene's stone does", "after the game has cleared some", "something moving over the ground"). (ff0f900: mesh.frag, renderer.hpp uploadGrass, heightmap.hpp HeightMap, camera.cpp Camera::Camera, camera.hpp yaw_)
+- [x] readView's comment states the size correctly, preferably by naming RenderConfig::kViewW x kViewH rather than a number that can go stale. (renderer.hpp readView names RenderConfig::kViewW x kViewH)
+- [x] The firelight comment in lighting.hpp sits directly above the firelight fields, and the god-ray comment above the god-ray fields. (lighting.hpp: above fireLight; god-ray comment above rays)
+- [x] `grep -rniE "fox|hero|tavern|ruins|fireball|brief" engine/` finds nothing that names game content (credits to t3ssel8r and generic nouns are fine). (grep returns nothing)
+- [x] The diff touches only comments in engine/. (git diff 9cf156d..ff0f900 -- engine/: comment lines only)
+- [x] Project builds cleanly from a fresh build directory with CMake (fresh build-check, exit 0; only warnings are third_party/stb and the pre-existing glfw duplicate-library note)
 
 ## Assets
 None
@@ -42,3 +42,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base 14e2e12
+- Cycle 1: review passed, no issues; complete
