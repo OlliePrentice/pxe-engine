@@ -24,6 +24,7 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | **misplaced**: `lightingFor` in `game/src/main.cpp` |
 | Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
 | Window and main loop (GLFW) | engine | **misplaced**: `game/src/main.cpp` |
+| UI overlay: Dear ImGui set up against the window and OpenGL (context, platform and renderer backends, per-frame begin and end, whether the UI has the keyboard or mouse) | engine | **misplaced**: `SettingsMenu::init`, `shutdown` and `draw` in `game/src/settings.cpp` |
 | Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | **misplaced**: `game/src/gamepad.cpp` (which mixes device code with action mapping), `pollInput` and the mouse polling in `game/src/main.cpp` |
 | Audio playback (miniaudio) | engine | **misplaced**: `game/src/audio.cpp`, `game/src/miniaudio.cpp` |
 | Turning a `.glb` into a `pxe::Scene` (meshes, water, height maps, shelter, grass and leaf scattering, clearing grass) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
@@ -33,7 +34,7 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Which scene to build, and where objects are placed in it (`kTavernSpot`, `kRuinsFoxSpot`, ...) | game | in place |
 | Player character, fox, tavern, fireball | game | in place |
 | World clock and weather rules (`WorldClock`): time of day, when it rains, when lightning strikes, cloud drift, fires burning down and rain putting them out. The engine takes the results as data | game | in place |
-| Input actions (what a key or button does), settings menu (ImGui), which sounds play when | game | in place |
+| Input actions (what a key or button does), the settings menu's contents and style (its `ImGui::` widget calls), which sounds play when | game | in place |
 | The sounds themselves: sample files, or the recipe of a synthesised sound (the wind, rain and thunder synth in `game/src/audio.cpp`). A sound is content, like a model. Generic synthesis building blocks (noise, filters, envelopes) move to the engine when a second sound or game needs them | game | in place |
 | Command-line modes: capture, bench, self-test | game | in place |
 
