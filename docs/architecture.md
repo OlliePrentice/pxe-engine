@@ -26,7 +26,6 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Window and main loop (GLFW) | engine | **misplaced**: `game/src/main.cpp` |
 | Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | **misplaced**: `game/src/gamepad.cpp` (which mixes device code with action mapping), `pollInput` and the mouse polling in `game/src/main.cpp` |
 | Audio playback (miniaudio) | engine | **misplaced**: `game/src/audio.cpp`, `game/src/miniaudio.cpp` |
-| Procedural weather sound (wind, rain, thunder) | engine | **misplaced**: `game/src/audio.cpp` |
 | Turning a `.glb` into a `pxe::Scene` (meshes, water, height maps, shelter, grass and leaf scattering, clearing grass) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
 | Writing images to PNG | engine | **misplaced**: `writePng` in `game/src/main.cpp` |
 | Second-order smoothing (`SecondOrder`) | engine | duplicated: a private copy in `engine/src/camera.cpp`, a public one in `game/src/hero.hpp`. Promote to the engine when a third user needs it |
@@ -35,6 +34,7 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Player character, fox, tavern, fireball | game | in place |
 | World clock and weather rules (`WorldClock`): time of day, when it rains, when lightning strikes, cloud drift, fires burning down and rain putting them out. The engine takes the results as data | game | in place |
 | Input actions (what a key or button does), settings menu (ImGui), which sounds play when | game | in place |
+| The sounds themselves: sample files, or the recipe of a synthesised sound (the wind, rain and thunder synth in `game/src/audio.cpp`). A sound is content, like a model. Generic synthesis building blocks (noise, filters, envelopes) move to the engine when a second sound or game needs them | game | in place |
 | Command-line modes: capture, bench, self-test | game | in place |
 
 ## Misplaced code
