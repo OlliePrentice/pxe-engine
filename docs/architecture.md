@@ -30,7 +30,7 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Turning a `.glb` into a `pxe::Scene` (meshes, water, height maps, shelter, grass and leaf scattering, clearing grass) | engine | **misplaced**: the generic parts of `game/src/scene.cpp` |
 | Writing images to PNG | engine | in place: `pxe::writePng` |
 | Second-order smoothing (`SecondOrder`) | engine | duplicated: a private copy in `engine/src/camera.cpp`, a public one in `game/src/hero.hpp`. Promote to the engine when a third user needs it |
-| Game-only data on `pxe::Scene` (`fires`, `focus`, `yawDegrees`): the engine never reads it | game | **misplaced**: `engine/include/pxe/scene.hpp` |
+| Game-only data on `pxe::Scene` (`fires`, `focus`, `yawDegrees`): the engine never reads it | game | in place: `game::BuiltScene`, `game::FireSite` |
 | Which scene to build, and where objects are placed in it (`kTavernSpot`, `kRuinsFoxSpot`, ...) | game | in place |
 | Player character, fox, tavern, fireball | game | in place |
 | World clock and weather rules (`WorldClock`): time of day, when it rains, when lightning strikes, cloud drift, fires burning down and rain putting them out. The engine takes the results as data | game | in place |

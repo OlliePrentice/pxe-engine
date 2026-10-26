@@ -1,6 +1,6 @@
 # Game-only data out of pxe::Scene
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -17,11 +17,11 @@ Cycle: 1
 - Game: game/src/scene.hpp/.cpp own `FireSite` and the build result; main.cpp reads the camera start and fires from it; settings.hpp/.cpp take `game::FireSite`.
 
 ## Acceptance criteria
-- [ ] `grep -rn "FireSite\|focus\|yawDegrees\|fires" engine/include/pxe/scene.hpp` finds nothing.
-- [ ] No engine source refers to the removed fields.
-- [ ] `game::buildScene` returns the game build result; every former use of `scene.fires`, `scene.focus` and `scene.yawDegrees` in game/ reads it from there.
-- [ ] Captures are byte-identical to the cycle base: `--capture` with `--hour 15`, `--hour 21`, `--scene hills`, and `--hour 21 --candles --shelter-test --extra-fires 6`; plus the build log lines for fires ("pxe: fire at ...", "candle at ...") identical for the last one. Record commands and results in the handoff.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `grep -rn "FireSite\|focus\|yawDegrees\|fires" engine/include/pxe/scene.hpp` finds nothing. (dac6987: grep finds nothing)
+- [x] No engine source refers to the removed fields. (git diff touches only engine/include/pxe/scene.hpp in engine/)
+- [x] `game::buildScene` returns the game build result; every former use of `scene.fires`, `scene.focus` and `scene.yawDegrees` in game/ reads it from there. (game::BuiltScene; main.cpp, selfTest and placeFires read built.*)
+- [x] Captures are byte-identical to the cycle base: `--capture` with `--hour 15`, `--hour 21`, `--scene hills`, and `--hour 21 --candles --shelter-test --extra-fires 6`; plus the build log lines for fires ("pxe: fire at ...", "candle at ...") identical for the last one. Record commands and results in the handoff. (developer: four cmp equal plus fire log lines; orchestrator: --hour 21 --candles --shelter-test --extra-fires 6 --foxes 3, cmp equal against the pre-change build)
+- [x] Project builds cleanly from a fresh build directory with CMake. (fresh build-check exit 0)
 
 ## Assets
 None
@@ -31,3 +31,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-26 started, base b2a7e0b
+- Cycle 1: review passed, no issues; complete
