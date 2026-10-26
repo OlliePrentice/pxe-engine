@@ -32,3 +32,4 @@ None
 - Any change to how anything looks.
 
 ## Cycle log
+- Cycle 1: 2026-10-26 started, base 75f49c9 (worktree /Users/sampr/Projects/Games/pxe/pxe-engine-weather-lighting, branch weather-lighting)
