@@ -8,8 +8,9 @@
 // silhouette) catches a light rim; any other silhouette pixel darkens into
 // an outline. Wood, plaster, roof and oak take no rims, only the outline, on
 // every silhouette: indoors they are seen in shade, where a light line on
-// every plank groove would be noise. Indoors, oak and wood are inked along
-// their sharp creases too, so a bar top reads against its front.
+// every plank groove would be noise. Indoors, oak is inked along its sharp
+// creases too, so a bar top reads against its front; wood is not, so the
+// floor's plank grooves stay unlined.
 //
 // Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
 // grade, all drawn here from hashes. Splashes are hashed on cells of the
@@ -43,10 +44,12 @@ bool built(int surface) {
     return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak;
 }
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
-// Indoors, oak and wood take an ink line where the surface turns sharply
-// with no depth step: neighbouring normals more than 40 degrees apart.
+// Indoors, oak takes an ink line where the surface turns sharply with no
+// depth step: neighbouring normals more than 40 degrees apart. Only oak
+// pixels are inked; where oak meets wood, plaster or stone the line falls on
+// the oak side.
 uniform int uIndoors;  // 1 in a room (pxe::Scene::indoors)
-bool creased(int surface) { return surface == kSurfOak || surface == kSurfWood; }
+bool creased(int surface) { return surface == kSurfOak; }
 const float kCreaseCos = 0.766;  // cos 40 degrees
 uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
@@ -129,11 +132,11 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
         // drawn on the side that faces the light more.
         if (surface == kSurfBark && !behind && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour &&
             dot(n, nq) < 0.97 && dot(n, uLight) > dot(nq, uLight)) stroke = true;
-        // A crease inked once, one pixel wide: where both sides crease, on
-        // the side turned further from the camera (the narrower face on
-        // screen), or, where they turn from it alike - the two near sides of
-        // a table at the room's 45 degree yaw - on the side facing more
-        // toward +x. Against anything else (plaster, stone) on this side.
+        // A crease inked once, one pixel wide: where oak meets oak, on the
+        // side turned further from the camera (the narrower face on screen),
+        // or, where they turn from it alike - the two near sides of a table
+        // at the room's 45 degree yaw - on the side facing more toward +x.
+        // Against anything else (wood, plaster, stone), on this oak side.
         if (creases && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < kCreaseCos) {
             int sq = int(nq4.a * kSurfaceScale + 0.5) - 1;
             float toCam = dot(nq, uFwd) - dot(n, uFwd);  // < 0: this side faces the camera less

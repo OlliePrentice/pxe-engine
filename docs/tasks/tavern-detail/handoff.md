@@ -81,3 +81,23 @@ Build: pass (fresh Debug build directory, `cmake -S . -B <new dir> -DCMAKE_BUILD
 - **Roof's golden lit tone is warm.** Scaled exactly as Stone's (`dcb070` against day `bcac94`), it comes out as a warm grey-gold, `938d73`. Its shadow and mid tones are blue-grey. This follows the "scaled the way Stone's phases are" decision literally. The acceptance line's "blue-grey slate ramps in golden" could be read as wanting the lit tone cooler too.
 - **The hero takes no fill light.** Characters use their own `actorTone`, so indoors by day the hero keeps the old shading, while the furniture round them is lifted.
 - The fill direction is a constant tuned for the room's fixed 45° yaw. The camera can't turn indoors, so this holds.
+
+## Cycle 2
+Build: pass (fresh Debug build directory; no CMakePresets.json. The only warnings are the existing `stb_image_write.h` sprintf warning and the linker's duplicate-glfw note.)
+
+### Changes
+- `engine/shaders/edge.frag`: `creased()` is now `surface == kSurfOak` (was Oak or Wood). Only Oak pixels take crease ink. An Oak pixel creasing against Wood, Plaster or Stone inks on its own side, and Oak against Oak keeps the one-pixel tie-break. The header comment, the `creased()` comment and the tie-break comment now describe this.
+- `README.md`: the crease sentence now says the oak is inked along its sharp creases and where it meets the floor, and the floor's plank grooves are not.
+
+### Issues addressed
+- ISSUE-001: crease ink is on Oak pixels only, so the Wood floor's plank grooves are no longer inked.
+
+### How to playtest
+- `--scene tavern` (or walk in) by day. The floor's planks should show no dark line along each groove or plank end, as before this task.
+- The bar top against its front, table tops against their sides, chair and stool legs, the shelves and the barrels should still show a one-pixel dark crease line. Where furniture meets the floor, the line is on the furniture, not the floor.
+- Outdoors nothing changes: crease ink is indoors only.
+- Captures used: `--scene tavern --time 16 --capture`. Against cycle 1, 26,882 px changed, all floor groove ink removed. With crease ink forced off, 4,522 px differ, all on oak pieces.
+
+### Known limitations
+- None.
+
