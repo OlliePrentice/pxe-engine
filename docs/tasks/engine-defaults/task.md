@@ -1,7 +1,7 @@
 # Engine defaults that work for a new game
 Type: fix
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 Three engine defaults make a new game wrong until it overrides them, as the engine guide had to warn (docs/engine-guide.md):
@@ -16,6 +16,7 @@ Give each a default that is right, update the game to rely on the new defaults w
 - **Game scatter options:** the game's rescale in main.cpp goes. `game::BuildOptions` defaults its spacings and leaf density from the engine defaults rather than restating numbers. `--min-dist` now takes the clump spacing in metres as actually used (README already says "metres"); its default is the engine default.
 - **Framebuffer size:** `FrameParams::framebufferW/H` default to 0. `Renderer::render` throws `std::invalid_argument` when `present` is true and either is not positive. When `present` is false they are not used and may stay 0. Recommended over keeping a guessed default (silent) or having the renderer hold the window (a pointer kept between calls, which architecture.md rules out).
 - **Game framebuffer:** every `render` call with `present` true already sets the size; keep their values as they are. If any presenting path sets something other than `Window::framebufferSize()`, record it in handoff.md, don't change it in this task.
+- **Minimised window (cycle 2, ISSUE-001):** GLFW reports 0x0 for a minimised window on Windows. The engine keeps the throw; the game's interactive loop and the example's window loop skip drawing (render, overlay, swap) while the framebuffer has a zero dimension, keep polling events and updating, and don't busy-spin. The guide says so.
 - **Help text:** fix the game's `--help` text that says captures are 640x360 (they are `RenderConfig::kViewW` x `kViewH`, 960x540), and any other stale size in it.
 - **Example and guide:** the example drops its own tinted palettes and its density rescale and relies on the defaults; it still sets the framebuffer size. The guide is updated to match: palettes have a default (and how to override one surface/phase), scatter defaults are at the engine's density, framebuffer size is required when presenting and `render` throws otherwise. The guide's "Palettes start black" and rescale advice go.
 
@@ -46,3 +47,5 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-27 started, base ea2fd4a
+- Cycle 1: review: game output byte-identical (4 captures, window PNG, self-test); ISSUE-001 opened (minimised window throws)
+- Cycle 2: 2026-10-27 started, base 37a9732; ISSUE-001
