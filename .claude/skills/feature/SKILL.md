@@ -90,10 +90,10 @@ Every change is committed, so any cycle can be undone with `git revert`. The des
    - When it returns, confirm `handoff.md` has an entry for this cycle reporting a successful build, and that the cycle's work is committed (`git status` shows nothing of the developer's or designer's left uncommitted). If not, send it back with the reason.
 3. **Build check.** Build from a fresh directory yourself. Don't trust the developer's report:
    ```
-   cmake -S . -B build-check -DCMAKE_BUILD_TYPE=Debug --fresh
-   cmake --build build-check --parallel
+   cmake --preset check --fresh
+   cmake --build --preset check --clean-first
    ```
-   If the project has `CMakePresets.json`, use its presets instead. Record each distinct compile error as a `critical` issue. Record new warnings as `minor` issues, but only in files listed in the handoff.
+   `--clean-first` matters: `--fresh` alone keeps the object files, so unchanged files aren't recompiled and their warnings don't show. Record each distinct compile error as a `critical` issue. Record new warnings as `minor` issues, but only in files listed in the handoff.
 4. **Review.** Read the cycle's diff (`git diff <cycle base>..HEAD`) against the spec. Check that it leaves existing content alone unless `## Decisions` names the change. Check the layering against `## Layering`, and run the **alignment review** in `CLAUDE.md` against `docs/architecture.md` and `docs/engine-guide.md`. Discrepancies in this cycle's diff are issues. Discrepancies it reveals in code the task didn't touch become new alignment tasks, delegated without asking the user (see `CLAUDE.md` for when to stop and ask instead). For each acceptance criterion, find the code that satisfies it. Record anything that's missing or wrong as an issue, along with obvious regressions in code the change touched. Check that every asset the developer loads matches its `assets.md` entry.
 5. **Resolve.** For each issue the developer marked `fixed`, check it's actually gone in this cycle's build or review, then set it to `resolved`. If it isn't gone, set it back to `open` and increment `Reopened`.
 6. **Commit.** Commit `task.md` and `issues.md` with the message `<task-id> cycle <n>: review`.
@@ -131,7 +131,7 @@ Don't use the Agent tool's own worktree isolation: it makes a new temporary work
 Everything for a task happens in its worktree:
 - Its task folder, cycle base, `task.md` and `issues.md` edits and their commits.
 - Every delegation. Pass the worktree's absolute path along with the task folder, and tell the agent to work, build and commit only there.
-- Your build check, with the build directory inside the worktree: `cmake -S <worktree> -B <worktree>/build-check -DCMAKE_BUILD_TYPE=Debug --fresh`.
+- Your build check, run from the worktree so the `check` preset builds in `<worktree>/build-check`: `cd <worktree> && cmake --preset check --fresh && cmake --build --preset check --clean-first`.
 - Your review: `git -C <worktree> diff <cycle base>..HEAD`.
 
 ### Running them

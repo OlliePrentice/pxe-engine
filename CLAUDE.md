@@ -14,16 +14,19 @@ A C++20 engine for t3ssel8r-style 3D pixel art (`engine/`, library `pxe_engine`,
 - Never commit to `main`. Work on a branch.
 
 ## Build
+CMake presets (`CMakePresets.json`, needs CMake 3.21+) and a wrapper script that builds the engine, game and example, and can run one of them:
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-./build/game/pxe                      # the game
-./build/examples/minimal/pxe_minimal  # the example
+tools/build.sh                                        # release build into build/release
+tools/build.sh debug                                  # debug build into build/debug
+tools/build.sh release game -- --hour 21 --foxes 3    # build, then run the game with flags
+tools/build.sh release example -- --capture out.png   # build, then run the example
 ```
-For a clean check, build from a fresh directory (git-ignored):
+The binaries are `build/<config>/game/pxe` and `build/<config>/examples/minimal/pxe_minimal`. Run from the caller's directory, so relative output paths land there.
+
+For a clean check, reconfigure and recompile everything (`--fresh` alone keeps the object files, so it is not a clean build):
 ```bash
-cmake -S . -B build-check -DCMAKE_BUILD_TYPE=Debug --fresh
-cmake --build build-check --parallel
+cmake --preset check --fresh
+cmake --build --preset check --clean-first
 ```
 The only expected warning is stb_image_write's `sprintf` deprecation.
 
