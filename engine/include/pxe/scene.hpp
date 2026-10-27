@@ -48,8 +48,8 @@ struct FireSite {
   glm::vec3 base{0.f};
   bool sheltered = false;
   float size = 1.f;
-  // Lit only while the sun is below the horizon (a room's brazier): the
-  // game fades it in at dusk and out at dawn.
+  // Lit only while the sun is below the horizon (a room's brazier and
+  // sconces): the game fades it in at dusk and out at dawn.
   bool nightOnly = false;
 };
 

@@ -1275,12 +1275,13 @@ pxe::Scene buildTavern(const BuildOptions&) {
     }
   }
   // The hearth, a campfire's size, the brazier, the candles and the
-  // sconces, each roofed over. All but the brazier burn at every hour.
+  // sconces, each roofed over. The hearth and candles burn at every hour.
   scene.fires.push_back({kHearthFire, false, 1.f});
   // The brazier burns only at night (the game lights it at dusk).
   scene.fires.push_back({kBrazierFire, false, kBrazierSize, true});
   for (const glm::vec3& c : kRoomCandles) scene.fires.push_back({c, false, kRoomCandleSize});
-  for (const glm::vec3& c : kRoomSconces) scene.fires.push_back({c, false, kSconceSize});
+  // The sconces too burn only at night, as the brazier does.
+  for (const glm::vec3& c : kRoomSconces) scene.fires.push_back({c, false, kSconceSize, true});
   for (pxe::FireSite& f : scene.fires) {
     f.sheltered = scene.shelter.sheltered(f.base);
     const char* what = f.size >= 1.f            ? "hearth"

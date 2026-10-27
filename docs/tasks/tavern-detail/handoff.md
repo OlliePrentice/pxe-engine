@@ -156,3 +156,23 @@ Build: pass (fresh Debug build directory; no CMakePresets.json. The only warning
 - The Stone rim colour at night is still the scene's blue-violet rim (`7084c0`). The hearth's top edges show a faint bluish rim line, though the Stone palette itself has no blue-dominant tone.
 - The settings menu's fire count still counts the brazier as burning by day (its `lit` flag), and a fire brush on it by day does nothing visible until dusk.
 - The window panes assume nothing else is drawn just outside a window's outer face. True for `tavern_interior.glb` today.
+
+## Cycle 4
+Build: pass
+
+### Changes
+- game/src/scene.cpp: `buildTavern` pushes each `kRoomSconces` fire with `nightOnly = true`, exactly as the brazier is, so `WorldClock::followSun` lights them while the sun's elevation is below 0°, fades flame and light over `kNightFireFade` (~2 s) via `drawnLevel()`, and settles them at once when placed. Comment updated: only the hearth and candles burn at every hour. Hearth, candles, brazier, positions and sizes unchanged.
+- engine/include/pxe/scene.hpp: `FireSite::nightOnly` comment names the sconces as well as the brazier.
+- README.md: the tavern paragraph says the brazier and sconces are lit only at night and the hearth and candles at every hour.
+
+### Issues addressed
+- None (spec change, task.md cycle-4 criterion).
+
+### How to playtest
+- `--scene tavern --hour 10`: the four sconce irons (two on the hearth wall, two on the door wall) show no flame and cast no light; brazier also out; hearth and the seven candles burn.
+- `--scene tavern --hour 22`: all four sconces and the brazier burn and light their walls.
+- In play, run the clock through sunset and sunrise: sconces and brazier catch / go out together over about 2 s as the sun crosses the horizon. Entering the tavern at night shows them already lit (no fade-in on entry).
+- Verified with fresh-build captures at hour 10 (sconces out) and 22 (lit).
+
+### Known limitations
+- None.
