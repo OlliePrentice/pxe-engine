@@ -1,6 +1,6 @@
 # Tavern detail pass
 Type: feature
-Status: open
+Status: complete
 Cycle: 3
 
 ## Goal
@@ -55,16 +55,16 @@ Make the Sleeping Fox easier to read. Inside, the bar, tables and other furnitur
 - [x] `tools/blender/build_ruins.py`, `assets/scenes/ruins.glb` and `assets/scenes/tavern_door.glb` are unchanged. — `git diff 7749a4f..HEAD` touches none of them
 - [x] `docs/art-style.md` names `Oak` as an allowed material (light oak: interior furniture) and describes the Roof as slate. — art-style.md materials list and Roof wording (c41bd80)
 - [x] Every asset loaded matches its `assets.md` entry. — interior Oak/sconce bases and exterior figures match assets.md
-- [ ] (cycle 3) `tavern_exterior.glb` revision 4: every slate course is cut into staggered tiles, with joints about every 0.5 m offset by half a tile between courses. All revision-3 checks still pass (extents, height, doorway). ≤ 8,000 triangles.
-- [ ] (cycle 3) Outdoors, the edge pass draws crease ink on Roof pixels only (normals > ~40° apart, no silhouette step, one pixel wide). Every other outdoor surface's `edges()` result is unchanged.
-- [ ] (cycle 3) Oak's four-phase ramps: day `8c5a30 / b47a42 / d49c5c`. In every phase and tone, red > green > blue.
-- [ ] (cycle 3) In the tavern scene only, Stone's twilight and night ramps have no tone with blue above red. The ruins' Stone palette is byte-identical.
-- [ ] (cycle 3) The brazier's fire is lit only while the sun's elevation is below 0°, fading in and out over about 2 s. The hearth, candles and sconces stay lit at all hours.
-- [ ] (cycle 3) Indoors, each window casts a sky light whose colour and strength follow the time of day: warm white by day, amber in golden hour, violet-blue fading through twilight, faint cool moonlight at night. It reaches zero only for the moonlight floor at night, never earlier than sun elevation −14°. The sun patches still draw.
-- [ ] (cycle 3) The fill light takes the sky light's time-of-day tint, with its strength curve unchanged.
-- [ ] (cycle 3) Seen from inside, the window openings show the sky's current colour.
-- [ ] (cycle 3) Outdoor rendering is unchanged except the Roof (palette unchanged, crease ink and tile geometry new).
-- [ ] Project builds cleanly from a fresh build directory with CMake. — orchestrator fresh Debug build, cycle 2: pass, only existing stb/glfw warnings
+- [x] (cycle 3) `tavern_exterior.glb` revision 4: every slate course is cut into staggered tiles, with joints about every 0.5 m offset by half a tile between courses. All revision-3 checks still pass (extents, height, doorway). ≤ 8,000 triangles. — `build_tavern_exterior.py` `tile_checks`; 5,990 triangles; revision-3 checks pass (designer 66834f2); exterior capture shows tiles
+- [x] (cycle 3) Outdoors, the edge pass draws crease ink on Roof pixels only (normals > ~40° apart, no silhouette step, one pixel wide). Every other outdoor surface's `edges()` result is unchanged. — `edge.frag` `creased()` Roof outdoors, mix 0.65 capped ≤ 0.8× slate; ruins/hills default views 0 px changed (handoff)
+- [x] (cycle 3) Oak's four-phase ramps: day `8c5a30 / b47a42 / d49c5c`. In every phase and tone, red > green > blue. — `scene.cpp` `setPhasePalettes` Oak day 8c5a30/b47a42/d49c5c, all phases R>G>B
+- [x] (cycle 3) In the tavern scene only, Stone's twilight and night ramps have no tone with blue above red. The ruins' Stone palette is byte-identical. — `scene.cpp` `buildTavern` Stone twilight/night override; shared palette untouched
+- [x] (cycle 3) The brazier's fire is lit only while the sun's elevation is below 0°, fading in and out over about 2 s. The hearth, candles and sconces stay lit at all hours. — `FireSite::nightOnly`; `settings.cpp` `WorldClock::followSun` (2 s fade); `drawnLevel()` in `fireDraws`
+- [x] (cycle 3) Indoors, each window casts a sky light whose colour and strength follow the time of day: warm white by day, amber in golden hour, violet-blue fading through twilight, faint cool moonlight at night. It reaches zero only for the moonlight floor at night, never earlier than sun elevation −14°. The sun patches still draw. — `common.glsl` `skyLit`/`indoorColour`; `lighting.cpp` skyLight full to 0°, 0.15 moonlight from −14°; scene sky tints per phase
+- [x] (cycle 3) The fill light takes the sky light's time-of-day tint, with its strength curve unchanged. — `common.glsl` `indoorColour` tints fill and sky by `uSkyTint`; fill curve unchanged
+- [x] (cycle 3) Seen from inside, the window openings show the sky's current colour. — `sky.vert`/`sky.frag` panes at the far plane behind each opening, `renderer.cpp`
+- [x] (cycle 3) Outdoor rendering is unchanged except the Roof (palette unchanged, crease ink and tile geometry new). — developer captures: default ruins and hills views 0 px changed; only slate pixels changed near the tavern
+- [x] Project builds cleanly from a fresh build directory with CMake. — orchestrator fresh Debug build, cycle 2: pass, only existing stb/glfw warnings — orchestrator fresh Debug build, cycle 3: pass, only existing stb/glfw warnings
 
 ## Assets
 The standing style is `docs/art-style.md` (Buildings and props). Rebuild from the scripts, watched live through the Blender MCP, then rebuild headless and export. Never hand-edit a glb. Previews go beside each glb.
@@ -103,3 +103,4 @@ The standing style is `docs/art-style.md` (Buildings and props). Rebuild from th
 - Cycle 2: 2026-10-27 started, base HEAD after the cycle-1 review. Outstanding: ISSUE-001.
 - Cycle 2: developer 847d22b fixed ISSUE-001. Fresh build passes; ISSUE-001 resolved, no new issues. Task complete.
 - Cycle 3: 2026-10-27 reopened by the user after a playtest: tiles don't read, oak looks grey, the room goes dark too early. Base 4b479b7. Decisions under "Cycle 3 revisions".
+- Cycle 3: designer 66834f2 (exterior revision 4), developer 68e5dd5. Fresh build passes. Review: every cycle-3 criterion met; ISSUE-002 (settings menu counts the brazier as burning by day) wont-fix. Task complete.
