@@ -19,10 +19,11 @@ Unchanged: `tavern_door` (`tools/blender/build_tavern_door.py`, `assets/scenes/t
   - 66 of the revision-2 nodes have **identical geometry and transforms**. 26 are fully identical. The other 40 changed only their material, Wood to Oak, on exactly the pieces in the material table below.
   - `Sconce_1` to `Sconce_4` are new.
   - So every figure below that repeats revision 2 is confirmed unchanged, not just reprinted.
+- Exterior revision 4 (cycle 3) was parsed against revision 3 (HEAD `f739341`) the same way. `Foundation`, `Walls`, `Timbers`, `Windows`, `Doorway`, `Vestibule`, `Chimney` and `Sign` are still byte-identical. In `Gable_Front`, `Dormer_Front` and `Dormer_Back`, every Wood, Plaster and Dirt triangle is identical. Only `Roof`-material triangles changed.
 
 ---
 
-## tavern_exterior (revision 3)
+## tavern_exterior (revision 4)
 Source: tools/blender/build_tavern_exterior.py
 Export: assets/scenes/tavern_exterior.glb
 Preview: assets/scenes/tavern_exterior.png. Four views, ortho, 30° down, 48 px/m:
@@ -30,13 +31,18 @@ Preview: assets/scenes/tavern_exterior.png. Four views, ortho, 30° down, 48 px/
 2. Front-right.
 3. Front-left.
 4. Back-left, which shows the back dormer.
+
+Roof close-up (revision 4): assets/scenes/tavern_exterior_roof.png. Three panels of the same 12 × 7.5 m crop from the game's default camera:
+1. At the game's 24 px/m (scaled 3×, nearest neighbour), ray cast pixel by pixel and toon-shaded with the day palette. It applies the edge pass's outline (depth step > 0.35 m) and the cycle-3 crease rule on Roof pixels (neighbouring normals more than 40° apart, no silhouette step, one pixel on the side turned from the camera), mixed at 0.35 of the day ink `4c4c66`, the strength indoor Oak uses.
+2. The same, with the ink drawn solid, to show where every line falls.
+3. A smooth Workbench render at 72 px/m.
 Format: glb, static (no skin)
 Units and scale: 1 unit = 1 metre, hero scale
 Axes: +Y up. The door faces +Z (Blender -Y).
 Origin: the middle of the doorway's threshold at floor level (y = 0), as in revision 2.
-Triangles: **2,800** (budget 4,000). Revision 2 was 1,854.
+Triangles: **5,990** (budget 8,000). Revision 3 was 2,800; revision 2 was 1,854.
 - Foundation 252, Walls 288, Timbers 516, Windows 360, Doorway 36, Vestibule 48, Chimney 118, Sign 158: all as revision 2.
-- Roof 206, Gable_Front 342, Dormer_Front 238, Dormer_Back 238.
+- Roof 2,870, Gable_Front 616, Dormer_Front 364, Dormer_Back 364 (revision 3: 206, 342, 238, 238).
 
 Materials, in glTF order: Stone, Dirt, Wood, Plaster, Roof. No textures.
 - The order changed from revision 2's (Stone, Dirt, Wood, Roof, Plaster) because Plaster is now used before Roof. Static meshes are coloured by material name, so this has no effect in the engine.
@@ -49,11 +55,38 @@ Nodes and objects:
 - `Dormer_Front`, `Dormer_Back`: Plaster, Wood, a Dirt window pane, and Roof slates.
 
 Animations: none
-Revision: 3, 2026-10-27. A slate roof replaces the thatch, with a cross-gable and two dormers. Nothing else changed.
+Revision: 4, 2026-10-27 (cycle 3). Every slate course, roll and gable slope is cut into staggered tiles; the course step rises from 0.08 to 0.12 m. Nothing else changed.
+Revision 3, 2026-10-27: a slate roof replaces the thatch, with a cross-gable and two dormers.
+
+### Revision 4: tiles
+- **Tiles.** Every slate course is cut into tiles 0.5 m wide along the course by V notches. This covers all four main slopes, both slopes of the cross-gable and both slopes of each dormer.
+  - Each notch is 0.12 m across the top, and its bottom is 0.095 m straight down.
+  - Each notch face turns 51.8° from the tile on the main roof, and 49.9° on the gable and dormer slopes. Both are over the engine's 40° crease test.
+  - Each course's joints sit exactly half a tile along from the course below's.
+  - Main roof: joints keep 0.02 m in from the hips, so a hip-end tile is up to about a tile plus the notch wide at its top edge, wider at its foot (cut to the hip, as real slates are). Under the hip rolls.
+  - Gables and dormers: the joint grid starts at the gable's front edge (alternate courses start with a half and a whole tile). Joints that would be buried under the main slates are left out.
+- **Course lips.** The step at each course's foot is now 0.12 m (revision 3: 0.08). It shows 0.10 m above the course below (revision 3: 0.06), which is 2.1 px tall at 24 px/m from the default camera. The 0.06 m lip was about 1.25 px and often got no pixel, so no ink. The lip turns 53.5° from its course on the main roof and 48.7° on the gables.
+- **Rolls.** The ridge roll, the four hip rolls and the three gable ridge rolls are pinched every 0.5 m. Each pinch is 0.08 m long, and its faces turn 50° from the roll.
+- **Counts.** Main roof: 340 joints over 40 course strips (10 courses × 4 slopes). Gable_Front: 32 joints over 10 strips. Each dormer: 12 joints over 4 strips. Rolls: ridge 4, each hip 12, gable ridges 5, 4 and 4.
+- **Heights unchanged.** The ridge rides on the course tops (0.02 m above the bed), not the lip height, so the roof top is still **y 8.66**. The gables' depth into the main roof (2.45 m and 1.75 m), seats, eaves, ridges and finial tops are unchanged.
+- **Ink check from the default camera** (`render_roof_preview`, panel 2). Every one of the 78 front-slope joints and 83 front-lip sample points visible in the crop takes crease ink at 24 px/m. 8,047 of the 25,582 Roof pixels in the crop are inked.
+  - Faces turned away from the camera can't be inked from that view. This affects the right hip slope's lips and the cross-gable's right-slope lips, which face away from yaw 167.5°. Their tile joints still ink.
+  - The gable and dormer slopes run front to back. From the default camera their lips are near edge-on, so their bands read mainly through the joints.
+
+### Tile joint checks (build_tavern_exterior.py `tile_checks`; the build fails if any breaks)
+| Rule | Result |
+|---|---|
+| Joints along each course exactly 0.5 m apart (every slope, gable and dormer) | Pass |
+| Each course's joints half a tile (0.25 m) along from the course below's | Pass |
+| No stretch of a main-roof course wider than a tile + notch + hip margin without a joint; every gable and dormer front tile ≤ 0.5 m | Pass |
+| Both faces of every notch, and every course lip, turn > 40° from the tile | Pass: notches ≥ 49.9°, lips ≥ 48.7° |
+| Front slope from the default camera: each notch ≥ 2 px across and each lip ≥ 2 px tall at 24 px/m; both notch faces face the camera | Pass: notches about 2.8 px, lips 2.1 px |
+| Ridge, hip and gable ridge rolls pinched every 0.5 m, pinch faces > 40° | Pass: 50° |
+| ≤ 8,000 triangles | Pass: 5,990 |
 
 ### The new roof
 - **Main roof.** Hipped slate at 45°, over revision 2's eave line (x -4.55 to 5.35, z -7.1 to 0.8), with the eave underside still at y 4.35.
-  - A thin eave edge (top y 4.6), then 10 stepped courses up every slope. Each course tilts out from its bed, so its lower edge stands 0.08 m proud of the course below. The slope reads as bands about 0.54 m apart on the slant, about 13 px at 24 px/m.
+  - A thin eave edge (top y 4.6), then 10 stepped courses up every slope. Each course tilts out from its bed, so its lower edge stands 0.12 m proud of its bed (0.10 m above the course below; revision 3: 0.08 m) and is cut into staggered tiles (revision 4, above). The slope reads as bands about 0.54 m apart on the slant, about 13 px at 24 px/m.
   - Ridge and hip rolls. The ridge runs x -0.6 to 1.4 at z -3.15.
 - **Cross-gable** (`Gable_Front`), facing +Z, over the door.
   - The face is 2.8 m wide (x -1.4 to 1.4) in the front wall's plaster plane (z 0.17). It rises from where it meets the main slates (y ≈ 5.13).
@@ -67,7 +100,7 @@ Revision: 3, 2026-10-27. A slate roof replaces the thatch, with a cross-gable an
   - Each has the same slated 50° gable roof, carved bargeboards, pendant and finial. The finial tops are at **y 7.62**.
   - The front face is at z -0.15. The back face is at z -6.15.
 
-### Rule checks (build_tavern_exterior.py `roof_checks`; the build fails if any breaks)
+### Rule checks (build_tavern_exterior.py `roof_checks`; the build fails if any breaks). Revision 4: all still pass, with the same figures.
 | Rule | Result |
 |---|---|
 | Everything new (`Roof`, `Gable_Front`, `Dormer_*`) inside revision 2's eaves in plan (x -4.55 to 5.35, z -7.1 to 0.8) | Pass. Roof: x -4.55 to 5.35, z -7.1 to 0.8. Gable_Front: x -1.6 to 1.6, z -2.28 to 0.42. Dormer_Front: x 1.96 to 3.24, z -1.9 to 0.03. Dormer_Back: x -0.24 to 1.04, z -6.33 to -4.4. |
@@ -239,4 +272,8 @@ Each also passes the existing door-swing and spawn checks. Sconce_3's nearest fi
   - The cross-gable's Wood and Plaster over the doorway rectangle start at y 4.98, above the 3.3 m headroom cut-off. So `kTavernDoorway` and `kTavernVestibule` still clear the way in.
 - **Shelter.** The new gable and dormer slates are `Roof`, so they join the thatch's role in `scene.shelter`. The roof's plan coverage is unchanged.
 - **The exterior is now lower at the top:** 8.66 for the ridge (was 9.13), and 8.9 overall (the chimney pot). Nothing in the code reads the old height as far as these assets go.
+- **Roof crease ink (cycle 3, exterior revision 4).** Every tile joint and course lip turns at least 48.7° from its neighbour with no depth step (≤ 0.12 m), so the Oak test (`dot < 0.766`, `|dq - d| < kSilhouette`) fires on Roof pixels as-is.
+  - At Oak's 0.35 mix with the day ink `4c4c66`, a line on slate mid `5a6676` comes out about `55 5d 70`, only 5–9 levels darker. Panel 1 of `tavern_exterior_roof.png` shows that, and it is faint. Panel 2 shows where the ink falls.
+  - If the lines don't read in game, raise the mix for Roof crease ink. That's your call; the geometry doesn't need to change.
+  - The notches dip below the slate beds in places. The main roof is closed underneath by its eave soffit, and the gable soffits face down, so the game's camera never sees them.
 - **Sconces:** add a sheltered fire of size 0.35 at each flame base above, transformed with the room as the candles are. The sconces need no blockers; they hang at 2.1 m and up on the walls.

@@ -4,7 +4,11 @@ assets/scenes/tavern_exterior.glb.
 Run headless (builds, checks, exports, then renders the preview beside the glb):
     /Applications/Blender.app/Contents/MacOS/Blender -b -P tools/blender/build_tavern_exterior.py
     PXE_TAVERN_OUT=/some/dir ... writes the glb and preview there instead.
-    PXE_SKIP_PREVIEW=1 ... skips the preview.
+    PXE_SKIP_PREVIEW=1 ... skips the previews.
+    tavern_exterior_roof.png beside it: the roof close up from the game's
+    default camera - at the game's 24 px/m as the engine would ink it (ray
+    cast, toon-shaded, crease ink on Roof), the same with the ink solid, and
+    a smooth render at 72 px/m.
 
 Or step by step in an open Blender, to watch it go together:
     import runpy; tx = runpy.run_path(".../build_tavern_exterior.py", run_name="tavern")
@@ -23,7 +27,12 @@ gabled dormer on each long slope (revision 3: Plaster faces, Wood framing,
 carved bargeboards and finials, slated as the roof; they stay inside the
 revision-2 eaves and over the plinth, which the build checks); a stone chimney up the right-hand end wall (Stone); dark
 recessed window panes (Dirt) behind Wood mullions; and a hanging sign by the
-door, a Wood board with a sleeping fox in Plaster on both faces. The doorway
+door, a Wood board with a sleeping fox in Plaster on both faces.
+Revision 4 cuts every slate course - main slopes, hips, ridge, the gable's
+and the dormers' slopes - into staggered tiles about TILE wide: a V notch at
+each joint, its two faces turned more than 40 degrees from the tile, the
+joints of each course half a tile along from the course below's, so the
+engine's crease ink draws a line on every joint as well as every course lip. The doorway
 is empty - the door model (build_tavern_door.py) hangs there - and opens on
 a short dark vestibule (Dirt walls, Wood floor) so the open door shows an
 inside rather than the back of the walls.
@@ -48,6 +57,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.environ.get("PXE_TAVERN_OUT") or os.path.normpath(os.path.join(HERE, "..", "..", "assets", "scenes"))
 OUT = os.path.join(OUT_DIR, "tavern_exterior.glb")
 PREVIEW = os.path.join(OUT_DIR, "tavern_exterior.png")
+ROOF_PREVIEW = os.path.join(OUT_DIR, "tavern_exterior_roof.png")
 COLLECTION = "Tavern_Exterior"
 
 
@@ -119,7 +129,22 @@ EAVE_LOW, EAVE_TOP = 4.35, 4.6      # the slate eave's underside and the top of 
 EAVE_CHAMFER = 0.1                  # the slopes start this far in from the eave line
 PITCH = math.radians(45)
 COURSES = 10                        # slate courses up each main slope, eave to ridge
-COURSE_T = 0.08                     # the step at each course's lower edge
+COURSE_T = 0.12                     # the step at each course's lower edge (revision 3: 0.08)
+COURSE_E = 0.02                     # each course's top edge stands this far above its bed
+# Revision 4: tiles. Along every course a V notch every TILE, half a tile
+# along from the course below's; the notch is JOINT_W wide across the top and
+# its bottom JOINT_DZ below the tile, straight down, so each of its faces turns
+# more than CREASE_DEG from the tile (the engine inks normals more than 40
+# degrees apart). The course lip shows COURSE_T - COURSE_E (0.1 m, two pixels
+# at 24 px/m from the game's camera); revision 3's 0.06 m lip was barely one.
+TILE = 0.5
+JOINT_W = 0.12
+JOINT_DZ = 0.095
+JOINT_MARGIN = 0.02                 # a notch keeps this far in from a hip
+SKIRT = 0.09                        # each lip reaches this far below its bed, closing the notches above it
+ROLL_JOINT_HW = 0.04                # ridge and hip rolls: a pinch every TILE, this half-width
+CREASE_DEG = 40.0                   # checked: every notch face and lip turns more than this from its tile
+PX_PER_M = 24.0                     # the game's pixel scale
 GABLE_PITCH = math.radians(50)      # the cross-gable and the dormers, a little steeper
 # The cross-gable over the door (its face in the front wall's plaster plane,
 # facing -y) and one dormer on each long slope. hw: the face's half-width;
@@ -143,7 +168,7 @@ SIGN_X = (SIGN_POST[0] + SIGN_POST[1]) / 2
 SIGN_Y = (-0.45, -1.65)             # the board's span out from the wall
 SIGN_Z = (2.75, 3.75)
 BRACKET_Z = 4.05
-TRI_BUDGET = 4000
+TRI_BUDGET = 8000                   # revision 4 (revision 3: 4,000)
 PLINTH_SIZE = (9.0, 7.0)            # checked
 MIN_VESTIBULE = 2.5                 # checked: the trigger zone's depth
 MIN_SIGN_TO_JAMB = 0.3              # checked: the sign's nearest part to the jamb's outer edge
@@ -294,9 +319,24 @@ def roof_height(x, y):
     return roof_base(roof_inset(x, y)) + COURSE_T
 
 
-def roll(part, a, b, r, mat="Roof"):
-    """A triangular-section roll (ridge or hip tiles) from a to b."""
+def face_normal(pts, facing):
+    n = (pts[1] - pts[0]).cross(pts[2] - pts[0])
+    if n.length < 1e-9:
+        n = (pts[2] - pts[0]).cross(pts[3] - pts[0])
+    n.normalize()
+    return n if n.dot(Vector(facing)) >= 0 else -n
+
+
+def angle_deg(a, b):
+    return math.degrees(math.acos(max(-1.0, min(1.0, a.dot(b)))))
+
+
+def roll(part, a, b, r, mat="Roof", tiled=None):
+    """A triangular-section roll (ridge or hip tiles) from a to b. With
+    `tiled` (a list for the record), cut into tiles: a pinch every TILE, its
+    faces turned about 50 degrees from the roll's, so each joint is inked."""
     a, b = Vector(a), Vector(b)
+    length = (b - a).length
     d = (b - a).normalized()
     side = d.cross(Vector((0, 0, 1)))
     if side.length < 1e-4:
@@ -305,12 +345,41 @@ def roll(part, a, b, r, mat="Roof"):
     up = side.cross(d).normalized()
     if up.z < 0:
         up = -up
-    ring_a = [a + side * r - up * r * 0.4, a + up * r * 0.75, a - side * r - up * r * 0.4]
-    ring_b = [b + side * r - up * r * 0.4, b + up * r * 0.75, b - side * r - up * r * 0.4]
-    for i in range(2):
-        part.face([ring_a[i], ring_b[i], ring_b[i + 1], ring_a[i + 1]], mat, up + (side if i == 0 else -side))
-    part.face(ring_a, mat, -d)
-    part.face(ring_b, mat, d)
+    prof = [side * r - up * r * 0.4, up * r * 0.75, -side * r - up * r * 0.4]
+    stations = [(0.0, 1.0)]
+    joints = []
+    if tiled is not None:
+        # Each side face lies 0.492 r from the axis; pinch it in by enough
+        # to turn the notch's faces 50 degrees over ROLL_JOINT_HW.
+        f = 1.0 - ROLL_JOINT_HW * math.tan(math.radians(50)) / (0.492 * r)
+        s = TILE / 2
+        while s + ROLL_JOINT_HW < length - 0.1:
+            if s - ROLL_JOINT_HW > 0.1:
+                joints.append(s)
+                stations += [(s - ROLL_JOINT_HW, 1.0), (s, f), (s + ROLL_JOINT_HW, 1.0)]
+            s += TILE
+    stations.append((length, 1.0))
+    rings = [[a + d * s + p * f for p in prof] for s, f in stations]
+    faces = []
+    for ra, rb in zip(rings, rings[1:]):
+        row = []
+        for i in range(2):
+            facing = up + (side if i == 0 else -side)
+            pts = [ra[i], rb[i], rb[i + 1], ra[i + 1]]
+            part.face(pts, mat, facing)
+            row.append(face_normal(pts, facing))
+        faces.append(row)
+    part.face(rings[0], mat, -d)
+    part.face(rings[-1], mat, d)
+    if tiled is not None:
+        # stations: 0, then (in, pinch, out) per joint: faces 3j+1 and 3j+2
+        # are the notch's, 3j and 3j+3 the tiles either side.
+        angles = []
+        for j in range(len(joints)):
+            for i in range(2):
+                tile = faces[3 * j][i]
+                angles += [angle_deg(tile, faces[3 * j + 1][i]), angle_deg(tile, faces[3 * j + 2][i])]
+        tiled.append({"length": length, "joints": joints, "angles": angles, "r": r})
 
 
 def prism_uz(part, outline, v0, v1, mat, P, out):
@@ -357,7 +426,7 @@ def gable_frame(g):
     return P, Vector((0, out, 0)), seat, eave, ridge, we, zb, depth
 
 
-def build_gable(part, g):
+def build_gable(part, g, tiling=None, roll_tiling=None):
     """A gable on the roof: a Plaster body under a slated gable roof in
     stepped courses with a ridge roll; Wood framing on its face (or a dark
     window for a dormer); carved bargeboards with stepped notches under the
@@ -365,14 +434,18 @@ def build_gable(part, g):
     P, OUT, seat, eave, ridge, we, zb, depth = gable_frame(g)
     hw = g["hw"]
     foot = seat - 0.15
-    t, e = COURSE_T, 0.02
+    t, e = COURSE_T, COURSE_E
     v0 = -g["ov_front"]
     # Body: the face and cheeks, just under the roof's underside.
     b = 0.03
     prism_uz(part, [(-hw, foot), (hw, foot), (hw, eave - b), (0.0, ridge - b), (-hw, eave - b)],
              0.0, depth, "Plaster", P, OUT)
     # Slates: courses up each side, a lip at each course's lower edge, the
-    # front end of each course, an underside, and a ridge roll.
+    # front end of each course, an underside, and a ridge roll. Revision 4:
+    # each course cut into tiles along v by V notches, half a tile along from
+    # the course below's; a notch that would be buried under the main slates
+    # is left out. Where a notch's bottom dips below the next course's lip,
+    # a small cap closes it.
     n = g["courses"]
     for sg in (-1, 1):
         us = [sg * we * (1 - k / n) for k in range(n + 1)]
@@ -381,11 +454,48 @@ def build_gable(part, g):
         for k in range(n):
             ua, ub = us[k], us[k + 1]
             za, zu = zb(ua), zb(ub)
+            facing = (sg * 0.5, 0, 1)
             part.face([P(ua, v0, za), P(ua, depth, za), P(ua, depth, za + t), P(ua, v0, za + t)], "Roof", (sg, 0, -0.2))
-            part.face([P(ua, v0, za + t), P(ua, depth, za + t), P(ub, depth, zu + e), P(ub, v0, zu + e)], "Roof",
-                      (sg * 0.5, 0, 1))
+            joints = []
+            for jj in range(0, 40):
+                vj = v0 + TILE / 2 + (jj + 0.5 * (k % 2)) * TILE
+                if vj + JOINT_W / 2 > depth - JOINT_MARGIN:
+                    break
+                buried = all(roof_base(roof_inset(*P(u, vj, 0).xy)) > z for u, z in ((ua, za + t), (ub, zu + e)))
+                if not buried:
+                    joints.append(vj)
+            cuts = [(v0, 0.0)]
+            for vj in joints:
+                cuts += [(vj - JOINT_W / 2, 0.0), (vj, JOINT_DZ), (vj + JOINT_W / 2, 0.0)]
+            cuts.append((depth, 0.0))
+            normals = []
+            for (va, da), (vb, db) in zip(cuts, cuts[1:]):
+                pts = [P(ua, va, za + t - da), P(ua, vb, za + t - db), P(ub, vb, zu + e - db), P(ub, va, zu + e - da)]
+                part.face(pts, "Roof", facing)
+                normals.append(face_normal(pts, facing))
+            if k < n - 1:
+                h = JOINT_W / 2 * (JOINT_DZ - e) / JOINT_DZ
+                for vj in joints:
+                    part.face([P(ub, vj - h, zu), P(ub, vj, zu + e - JOINT_DZ), P(ub, vj + h, zu)], "Roof", (sg, 0, 0))
             part.face([P(ua, v0, za), P(ua, v0, za + t), P(ub, v0, zu + e), P(ub, v0, zu)], "Roof", OUT)
-    roll(part, P(0, v0, ridge + e + 0.02), P(0, depth, ridge + e + 0.02), 0.13)
+            tile_n = normals[0]
+            angles = []
+            for jj in range(len(joints)):
+                angles += [angle_deg(tile_n, normals[3 * jj + 1]), angle_deg(tile_n, normals[3 * jj + 2])]
+            mv = (ua + ub) / 2
+            mz = (za + t + zu + e) / 2
+            if tiling is not None:
+                tiling.append({
+                    "part": g["name"], "slope": "left" if sg < 0 else "right", "course": k, "joints": joints,
+                    "upper": (v0, depth), "angles": angles,
+                    "lip_angle": angle_deg(tile_n, Vector((sg, 0, 0))), "tile_normal": tile_n,
+                    "notch": [(normals[3 * jj + 1], normals[3 * jj + 2]) for jj in range(len(joints))],
+                    "groove_pts": [(P(mv, vj - JOINT_W / 2, mz), P(mv, vj, mz - JOINT_DZ), P(mv, vj + JOINT_W / 2, mz))
+                                   for vj in joints],
+                    "lip": (P(ua, v0, za + t), P(ua, depth, za + t), t - e),
+                })
+    roll(part, P(0, v0, ridge + e + 0.02), P(0, depth, ridge + e + 0.02), 0.13,
+         tiled=None if roll_tiling is None else roll_tiling.setdefault(g["name"] + " ridge", []))
     # Face timbers (proud of the plaster) or the dormer's window.
     tv0, tv1 = -0.06, 0.0
     for sg in (-1, 1):
@@ -465,6 +575,8 @@ class Builder:
         self.coll = None
         self.posts = {}  # wall -> [(s0, s1)] post spans, for the braces and the sign
         self.gable_figs = {}  # gable or dormer name -> its heights (build_gable)
+        self.tiling = []  # one record per slate course per slope (revision 4's tiles)
+        self.roll_tiling = {}  # roll name -> [its tiling record]
 
     def start(self):
         """Fresh Tavern_Exterior collection; the rest of the scene is left alone."""
@@ -652,8 +764,9 @@ class Builder:
         """Hipped slate at 45 degrees over revision 2's eave line: a thin
         eave edge, then COURSES stepped courses up every slope - each course
         tilts out a little from its bed, so its lower edge stands COURSE_T
-        proud of the course below and the slope reads as bands - and ridge
-        and hip rolls."""
+        proud of the course below and the slope reads as bands - each course
+        cut into staggered tiles by V notches (revision 4), and ridge and hip
+        rolls, tiled the same way."""
         part = Part("Roof")
         x0, x1, y0, y1 = EAVES
         c = EAVE_CHAMFER
@@ -675,32 +788,74 @@ class Builder:
             part.face([low[i], low[j], mid[j], mid[i]], "Roof", outs[i])
             part.face([mid[i], mid[j], bed[j], bed[i]], "Roof", outs[i] + Vector((0, 0, 1)))
         insets = [c + (R - c) * k / COURSES for k in range(COURSES + 1)]
-        e = 0.02
+        e = COURSE_E
         ridge_z = roof_base(R) + e
         ridge = [Vector((x0 + R, ym, ridge_z)), Vector((x1 - R, ym, ridge_z))]
+        # Each slope's own frame: s along its courses, t in from its eave
+        # line (plan). The hips run at 45 degrees in plan, so a course at
+        # inset t spans s from s0 + t to s1 - t.
+        spans = [(x0, x1), (y0, y1), (x0, x1), (y0, y1)]
+        slope_names = ["front", "right", "back", "left"]
+
+        def plan(i, s, t):
+            return [(s, y0 + t), (x1 - t, s), (s, y1 - t), (x0 + t, s)][i]
         for k in range(COURSES):
-            lo, lo_t = ring(insets[k], 0.0), ring(insets[k], COURSE_T)
+            a, b = insets[k], insets[k + 1]
+            za, zu = roof_base(a) + COURSE_T, roof_base(b) + e
+            # The lip, all round; above the eave course it reaches SKIRT below
+            # its bed, so the notches of the course below end against it.
+            lo, lo_t = ring(a, -SKIRT if k else 0.0), ring(a, COURSE_T)
             for i in range(4):
                 j = (i + 1) % 4
                 part.face([lo[i], lo[j], lo_t[j], lo_t[i]], "Roof", outs[i] - Vector((0, 0, 0.2)))
-            if k < COURSES - 1:
-                hi = ring(insets[k + 1], e)
-                for i in range(4):
-                    j = (i + 1) % 4
-                    part.face([lo_t[i], lo_t[j], hi[j], hi[i]], "Roof", outs[i] + Vector((0, 0, 1)))
-            else:
-                part.face([lo_t[0], lo_t[1], ridge[1], ridge[0]], "Roof", outs[0] + Vector((0, 0, 1)))
-                part.face([lo_t[1], lo_t[2], ridge[1]], "Roof", outs[1] + Vector((0, 0, 1)))
-                part.face([lo_t[2], lo_t[3], ridge[0], ridge[1]], "Roof", outs[2] + Vector((0, 0, 1)))
-                part.face([lo_t[3], lo_t[0], ridge[0]], "Roof", outs[3] + Vector((0, 0, 1)))
+            for i in range(4):
+                s0, s1 = spans[i]
+                sc = (s0 + s1) / 2
+                up_lo, up_hi = s0 + b, s1 - b
+                joints = []
+                for jj in range(-40, 41):
+                    sj = sc + (jj + 0.5 * (k % 2)) * TILE
+                    if sj - JOINT_W / 2 >= up_lo + JOINT_MARGIN and sj + JOINT_W / 2 <= up_hi - JOINT_MARGIN:
+                        joints.append(sj)
+                cuts = [(s0 + a, up_lo, 0.0)]
+                for sj in joints:
+                    cuts += [(sj - JOINT_W / 2,) * 2 + (0.0,), (sj, sj, JOINT_DZ), (sj + JOINT_W / 2,) * 2 + (0.0,)]
+                cuts.append((s1 - a, up_hi, 0.0))
+                facing = outs[i] + Vector((0, 0, 1))
+
+                def pt(s, t, z, sink):
+                    px, py = plan(i, s, t)
+                    return Vector((px, py, z - sink))
+                normals = []
+                for (sa_lo, sa_up, da), (sb_lo, sb_up, db) in zip(cuts, cuts[1:]):
+                    pts = [pt(sa_lo, a, za, da), pt(sb_lo, a, za, db), pt(sb_up, b, zu, db)]
+                    if sb_up - sa_up > 1e-6:
+                        pts.append(pt(sa_up, b, zu, da))
+                    part.face(pts, "Roof", facing)
+                    normals.append(face_normal(pts, facing))
+                tile_n = normals[0]
+                lip_n = outs[i]
+                angles = []
+                for jj in range(len(joints)):
+                    angles += [angle_deg(tile_n, normals[3 * jj + 1]), angle_deg(tile_n, normals[3 * jj + 2])]
+                self.tiling.append({
+                    "part": "Roof", "slope": slope_names[i], "course": k, "joints": joints,
+                    "upper": (up_lo, up_hi), "angles": angles, "lip_angle": angle_deg(tile_n, lip_n),
+                    "tile_normal": tile_n, "notch": [(normals[3 * jj + 1], normals[3 * jj + 2]) for jj in range(len(joints))],
+                    "groove_pts": [(pt(sj - JOINT_W / 2, (a + b) / 2, (za + zu) / 2, 0.0),
+                                    pt(sj, (a + b) / 2, (za + zu) / 2, JOINT_DZ),
+                                    pt(sj + JOINT_W / 2, (a + b) / 2, (za + zu) / 2, 0.0)) for sj in joints],
+                    "lip": (lo_t[i], lo_t[(i + 1) % 4], COURSE_T - e),
+                })
         # Ridge and hip rolls, the hips starting a little in from the corners
-        # so the rolls stay inside the eave line.
+        # so the rolls stay inside the eave line; tiled.
         lift = Vector((0, 0, 0.04))
         r0, r1 = ridge[0] + lift, ridge[1] + lift
-        roll(part, r0, r1, 0.2)
+        roll(part, r0, r1, 0.2, tiled=self.roll_tiling.setdefault("Roof ridge", []))
         start = ring(c + 0.3, COURSE_T + 0.04)
-        for corner, end in ((start[0], r0), (start[3], r0), (start[1], r1), (start[2], r1)):
-            roll(part, corner, end, 0.17)
+        for name, corner, end in (("hip front-left", start[0], r0), ("hip back-left", start[3], r0),
+                                  ("hip front-right", start[1], r1), ("hip back-right", start[2], r1)):
+            roll(part, corner, end, 0.17, tiled=self.roll_tiling.setdefault("Roof " + name, []))
         part.finish(self.coll)
 
     def gables(self):
@@ -709,7 +864,7 @@ class Builder:
         carved bargeboards and finials, slated as the roof."""
         for g in [CROSS_GABLE] + DORMERS:
             part = Part(g["name"])
-            self.gable_figs[g["name"]] = build_gable(part, g)
+            self.gable_figs[g["name"]] = build_gable(part, g, self.tiling, self.roll_tiling)
             part.finish(self.coll)
 
     def chimney(self):
@@ -873,8 +1028,8 @@ def check(b):
             for i in range(3):
                 lo[i] = min(lo[i], v.co[i])
                 hi[i] = max(hi[i], v.co[i])
-    if total > TRI_BUDGET * 1.05:
-        problems.append(f"{total} triangles, budget about {TRI_BUDGET}")
+    if total > TRI_BUDGET:
+        problems.append(f"{total} triangles, budget {TRI_BUDGET}")
     if not any(a <= SIGN_X <= b for a, b in b.posts["front"]):
         problems.append(f"the sign at x = {SIGN_X} hangs off no post: front posts {b.posts['front']}")
     if abs(lo.z - FOOT) > 1e-4:
@@ -904,6 +1059,7 @@ def check(b):
     if CHIMNEY_TOP < roof_at + 1.0:
         problems.append(f"chimney top {CHIMNEY_TOP} is less than 1 m above the roof ({roof_at:.2f})")
     problems += roof_checks(b)
+    problems += tile_checks(b)
     return problems, total, per, lo, hi
 
 
@@ -968,7 +1124,122 @@ def roof_checks(b):
     return problems
 
 
+
+
 DEFAULT_VIEW_YAW = 180.0 - 12.5
+
+
+def view_axes(yaw_deg=DEFAULT_VIEW_YAW, pitch_deg=30.0):
+    """The game camera's forward, right and up in Blender, as render_preview
+    aims it: looking along yaw, pitch degrees down."""
+    yaw, pitch = math.radians(yaw_deg), math.radians(pitch_deg)
+    fwd = Vector((math.sin(yaw) * math.cos(pitch), -math.cos(yaw) * math.cos(pitch), -math.sin(pitch)))
+    right = fwd.cross(Vector((0, 0, 1))).normalized()
+    up = right.cross(fwd).normalized()
+    return fwd, right, up
+
+
+def tile_stats(b):
+    """Joint and tile counts per part, for the log and assets.md."""
+    out = {}
+    for rec in b.tiling:
+        o = out.setdefault(rec["part"], {"courses": 0, "joints": 0, "min_notch_deg": 180.0, "min_lip_deg": 180.0})
+        o["courses"] += 1
+        o["joints"] += len(rec["joints"])
+        o["min_notch_deg"] = round(min([o["min_notch_deg"]] + rec["angles"]), 1)
+        o["min_lip_deg"] = round(min(o["min_lip_deg"], rec["lip_angle"]), 1)
+    for name, recs in b.roll_tiling.items():
+        for rec in recs:
+            out[name] = {"joints": len(rec["joints"]), "min_notch_deg": round(min(rec["angles"] or [180.0]), 1)}
+    return out
+
+
+def tile_checks(b):
+    """Revision 4's tile joint pattern, on every slate course of every slope
+    (main roof, cross-gable, dormers) and every roll:
+    - joints exactly TILE apart along each course;
+    - each course's joints half a tile along from the course below's;
+    - no stretch of a course wider than a tile (plus the notch and the hip
+      margin) left without a joint, except where it is buried;
+    - both faces of every notch, and every course lip, turned more than
+      CREASE_DEG from the tile, so the engine's crease test (normals more
+      than 40 degrees apart) fires on each;
+    - on the front slope, the one the game's default camera faces, each
+      notch at least 2 px across and each lip at least 2 px tall at 24 px/m."""
+    problems = []
+    eps = 1e-6
+    fwd, right, up = view_axes()
+    by = {}
+    for rec in b.tiling:
+        by.setdefault((rec["part"], rec["slope"]), {})[rec["course"]] = rec
+    if not by:
+        return ["no tiled courses recorded"]
+    for (part, slope), courses in sorted(by.items()):
+        tag = f"{part} {slope}"
+        for k in sorted(courses):
+            rec = courses[k]
+            js = rec["joints"]
+            for a, c in zip(js, js[1:]):
+                if abs((c - a) - TILE) > eps:
+                    problems.append(f"{tag} course {k}: joints {a:.3f} and {c:.3f} are not {TILE} apart")
+            lo, hi = rec["upper"]
+            if part == "Roof":
+                reach = TILE + JOINT_W / 2 + JOINT_MARGIN + eps
+                if js:
+                    if js[0] - lo > reach or hi - js[-1] > reach:
+                        problems.append(f"{tag} course {k}: an end tile wider than a tile ({js[0] - lo:.2f}, {hi - js[-1]:.2f})")
+                elif hi - lo >= JOINT_W + 2 * JOINT_MARGIN + TILE:
+                    problems.append(f"{tag} course {k}: {hi - lo:.2f} m with no joint")
+            else:
+                if not js and k == 0:
+                    problems.append(f"{tag} course {k}: no joints")
+                if js and js[0] - lo > TILE + eps:
+                    problems.append(f"{tag} course {k}: its front tile is {js[0] - lo:.2f} m")
+            for ang in rec["angles"]:
+                if ang <= CREASE_DEG:
+                    problems.append(f"{tag} course {k}: a notch face turns only {ang:.1f} degrees")
+                    break
+            if rec["lip_angle"] <= CREASE_DEG:
+                problems.append(f"{tag} course {k}: its lip turns only {rec['lip_angle']:.1f} degrees")
+            below = courses.get(k - 1)
+            if below and below["joints"] and js:
+                for sj in js:
+                    off = (sj - below["joints"][0]) % TILE
+                    if abs(off - TILE / 2) > 1e-4:
+                        problems.append(f"{tag} course {k}: joint at {sj:.3f} is {off:.3f} along from the course "
+                                        f"below's, not half a tile")
+                        break
+            if part == "Roof" and slope == "front":
+                for p0, pc, p1 in rec["groove_pts"]:
+                    d = p1 - p0
+                    px = math.hypot(d.dot(right), d.dot(up)) * PX_PER_M
+                    if px < 2.0:
+                        problems.append(f"{tag} course {k}: a notch is {px:.2f} px across at {PX_PER_M:g} px/m")
+                        break
+                for n0, n1 in rec["notch"]:
+                    if n0.dot(-fwd) <= 0 or n1.dot(-fwd) <= 0:
+                        problems.append(f"{tag} course {k}: a notch face turns away from the default camera")
+                        break
+                a, c, h = rec["lip"]
+                along = c - a
+                sa = Vector((along.dot(right), along.dot(up))).normalized()
+                hv = Vector((0, 0, h))
+                sh = Vector((hv.dot(right), hv.dot(up)))
+                tall = abs(sa.x * sh.y - sa.y * sh.x) * PX_PER_M
+                if tall < 2.0:
+                    problems.append(f"{tag} course {k}: its lip is {tall:.2f} px tall at {PX_PER_M:g} px/m")
+    for name, recs in b.roll_tiling.items():
+        for rec in recs:
+            js = rec["joints"]
+            if rec["length"] > TILE + 0.3 and not js:
+                problems.append(f"{name}: no joints along {rec['length']:.2f} m")
+            for a, c in zip(js, js[1:]):
+                if abs((c - a) - TILE) > eps:
+                    problems.append(f"{name}: joints not {TILE} apart")
+                    break
+            if any(ang <= CREASE_DEG for ang in rec["angles"]):
+                problems.append(f"{name}: a pinch turns only {min(rec['angles']):.1f} degrees")
+    return problems
 
 
 def render_preview(b):
@@ -1032,6 +1303,178 @@ def render_preview(b):
     print("wrote", PREVIEW)
 
 
+def render_roof_preview(b):
+    """tavern_exterior_roof.png: the roof close up from the game's default
+    camera, three panels of the same crop (12 x 7.5 m):
+    1. at the game's 24 px/m, ray cast pixel by pixel and toon-shaded with
+       the engine's day palette, with its edge pass's outline (depth step
+       > 0.35 m) and crease ink on Roof pixels (neighbouring normals more
+       than 40 degrees apart, one pixel wide, on the side turned from the
+       camera), mixed in as the engine mixes it (0.35 of the day ink);
+    2. the same with the ink drawn solid, to show where every line falls;
+    3. a smooth Workbench render at 72 px/m.
+    Panels 1 and 2 are scaled up 3x, nearest neighbour.
+    Returns how many joints and lips on the front slope, seen in the crop,
+    take ink."""
+    import numpy as np
+
+    scene = bpy.context.scene
+    dg = bpy.context.evaluated_depsgraph_get()
+    fwd, right, up = view_axes()
+    centre = Vector((0.4, 3.0, 6.7))
+    width_m, height_m = 12.0, 7.5
+    W, H = int(width_m * PX_PER_M), int(height_m * PX_PER_M)
+    scale = 3
+    day = {"Roof": ((0x3c, 0x44, 0x54), (0x5a, 0x66, 0x76), (0x7e, 0x8a, 0x98))}
+    for name, col in MATERIALS.items():
+        if name not in day:
+            # Others: the preview colour as mid, darker and lighter round it.
+            c = [((v ** (1 / 2.2)) * 255) for v in col]
+            day[name] = (tuple(v * 0.7 for v in c), tuple(c), tuple(min(255, v * 1.2) for v in c))
+    sun = Vector((-0.35, -0.55, 0.76)).normalized()
+    ink_col = np.array((0x4c, 0x4c, 0x66), dtype=np.float32)
+    mats = list(MATERIALS)
+    N = np.zeros((H, W, 3), dtype=np.float32)
+    D = np.full((H, W), 1e9, dtype=np.float32)
+    S = np.full((H, W), -1, dtype=np.int32)
+    C = np.zeros((H, W, 3), dtype=np.float32)
+    C[:] = (110, 128, 96)
+    for row in range(H):
+        sy = ((row + 0.5) / H - 0.5) * height_m
+        for col in range(W):
+            sx = ((col + 0.5) / W - 0.5) * width_m
+            origin = centre + right * sx + up * sy - fwd * 60.0
+            hit, loc, nrm, idx, obj, _ = scene.ray_cast(dg, origin, fwd)
+            if not hit:
+                continue
+            mat = obj.data.materials[obj.data.polygons[idx].material_index].name
+            n = nrm.normalized()
+            if n.dot(fwd) > 0:
+                n = -n
+            N[row, col] = n
+            D[row, col] = (loc - origin).dot(fwd)
+            S[row, col] = mats.index(mat)
+            ndl = n.dot(sun)
+            tone = 2 if ndl > 0.6 else (1 if ndl > 0.2 else 0)
+            C[row, col] = day[mat][tone]
+    roof_i = mats.index("Roof")
+    timbered = {mats.index(m) for m in ("Wood", "Plaster", "Roof", "Stone")}
+    ink = np.zeros((H, W), dtype=bool)
+    f = np.array(fwd, dtype=np.float32)
+    for row in range(H):
+        for col in range(W):
+            sp = S[row, col]
+            if sp not in timbered:
+                continue
+            n, d = N[row, col], D[row, col]
+            for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                r2, c2 = row + dr, col + dc
+                if not (0 <= r2 < H and 0 <= c2 < W):
+                    continue
+                dq, nq, sq = D[r2, c2], N[r2, c2], S[r2, c2]
+                if dq - d > 0.35:
+                    ink[row, col] = True
+                    break
+                if sp == roof_i and sq >= 0 and abs(dq - d) < 0.35 and float(n @ nq) < math.cos(math.radians(40)):
+                    to_cam = float(nq @ f) - float(n @ f)
+                    if sq != roof_i or to_cam < -1e-3 or (abs(to_cam) <= 1e-3 and n[0] > nq[0]):
+                        ink[row, col] = True
+                        break
+    mixed = C.copy()
+    mixed[ink] = mixed[ink] * 0.65 + ink_col * 0.35
+    solid = C.copy()
+    solid[ink] = (20, 18, 30)
+
+    # How many of the front slope's joints and lips, seen in the crop, take ink.
+    def pixel_of(p):
+        v = p - centre
+        col = int(math.floor((v.dot(right) / width_m + 0.5) * W))
+        row = int(math.floor((v.dot(up) / height_m + 0.5) * H))
+        return row, col
+
+    def seen(p):
+        origin = p - fwd * 60.0
+        hit, loc, *_ = scene.ray_cast(dg, origin, fwd)
+        return hit and (loc - p).length < 0.15
+
+    def inked_near(p, reach=1):
+        row, col = pixel_of(p)
+        if not (reach <= row < H - reach and reach <= col < W - reach):
+            return None
+        return bool(ink[row - reach:row + reach + 1, col - reach:col + reach + 1].any())
+    joints_seen = joints_inked = lips_seen = lips_inked = 0
+    for rec in b.tiling:
+        if rec["part"] != "Roof" or rec["slope"] != "front":
+            continue
+        for p0, pc, p1 in rec["groove_pts"]:
+            if not seen(pc):
+                continue
+            got = inked_near(pc)
+            if got is None:
+                continue
+            joints_seen += 1
+            joints_inked += got
+        a, c, h = rec["lip"]
+        steps = max(1, int((c - a).length / 0.5))
+        for k in range(1, steps):
+            p = a.lerp(c, k / steps) - Vector((0, 0, h / 2))
+            if not seen(p + Vector((0, 0, h / 2 - 0.01))):
+                continue
+            got = inked_near(p)
+            if got is None:
+                continue
+            lips_seen += 1
+            lips_inked += got
+
+    # Panel 3: Workbench at 72 px/m, the same crop.
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.color_type = "MATERIAL"
+    scene.display.shading.show_object_outline = True
+    scene.render.resolution_x, scene.render.resolution_y = W * scale, H * scale
+    scene.render.resolution_percentage = 100
+    world = bpy.data.worlds.get("preview") or bpy.data.worlds.new("preview")
+    world.color = srgb(110, 128, 96)
+    scene.world = world
+    cam_data = bpy.data.cameras.new("roof_preview")
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = width_m
+    cam = bpy.data.objects.new("roof_preview", cam_data)
+    scene.collection.objects.link(cam)
+    scene.camera = cam
+    cam.location = centre - fwd * 60.0
+    cam.rotation_euler = fwd.to_track_quat("-Z", "Y").to_euler()
+    path = os.path.join(os.path.dirname(ROOF_PREVIEW), "_tavern_exterior_roof_smooth.png")
+    scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    bpy.data.objects.remove(cam)
+    bpy.data.cameras.remove(cam_data)
+    img = bpy.data.images.load(path)
+    smooth = np.empty(W * scale * H * scale * 4, dtype=np.float32)
+    img.pixels.foreach_get(smooth)
+    smooth = smooth.reshape(H * scale, W * scale, 4)
+    bpy.data.images.remove(img)
+    os.remove(path)
+
+    # A new (byte) image's pixels are its display values, as the loaded
+    # render's are: no colour transform either way.
+    def to_rgba(c):
+        big = np.repeat(np.repeat(c / 255.0, scale, axis=0), scale, axis=1)
+        return np.concatenate([big, np.ones(big.shape[:2] + (1,), dtype=np.float32)], axis=2)
+    gap = np.ones((H * scale, 8, 4), dtype=np.float32)
+    sheet = np.concatenate([to_rgba(mixed), gap, to_rgba(solid), gap, smooth], axis=1)
+    out = bpy.data.images.new("tavern_exterior_roof", sheet.shape[1], sheet.shape[0])
+    out.pixels.foreach_set(sheet.astype(np.float32).ravel())
+    out.filepath_raw = ROOF_PREVIEW
+    out.file_format = "PNG"
+    out.save()
+    bpy.data.images.remove(out)
+    print("wrote", ROOF_PREVIEW)
+    return {"front_joints_seen": joints_seen, "front_joints_inked": joints_inked,
+            "front_lip_points_seen": lips_seen, "front_lip_points_inked": lips_inked,
+            "roof_ink_pixels": int(ink[S == roof_i].sum()), "roof_pixels": int((S == roof_i).sum())}
+
+
 def export():
     os.makedirs(OUT_DIR, exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -1056,11 +1499,14 @@ def main():
     print(f"tavern_exterior: bounds (Blender) {tuple(round(c, 3) for c in lo)} .. {tuple(round(c, 3) for c in hi)}")
     for k, v in figures(b).items():
         print(f"tavern_exterior: {k}: {v}")
+    for k, v in tile_stats(b).items():
+        print(f"tavern_exterior: tiles: {k}: {v}")
     if problems:
         raise RuntimeError("the exterior fails its checks:\n  " + "\n  ".join(problems))
     export()
     if not os.environ.get("PXE_SKIP_PREVIEW"):
         render_preview(b)
+        print(f"tavern_exterior: roof preview ink: {render_roof_preview(b)}")
 
 
 if __name__ == "__main__" and bpy.app.background:
