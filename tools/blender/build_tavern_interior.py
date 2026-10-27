@@ -51,9 +51,15 @@ prints every figure assets.md quotes, in engine coordinates.
 Axes and origin (Blender): the floor's centre, its top at z = 0. Exported
 +Y up: engine (x, y, z) = Blender (x, z, -y). Static, flat-shaded.
 
-Material names are the contract with the engine: Wood, Plaster, Stone,
-Dirt, and Roof on the shadow-only roof only. (The brazier's iron is Dirt and
-its bowl Stone.)
+Material names are the contract with the engine: Wood, Oak, Plaster,
+Stone, Dirt, and Roof on the shadow-only roof only. (The brazier's iron is
+Dirt and its bowl Stone; the sconces' iron and dishes are Stone.)
+
+Revision 3: the furniture is light Oak (the bar, every table, the trestle
+and its benches, every chair and stool, the back shelves, the barrels' wood,
+the stage's lip and the hearth's mantel); the floor, wall timbers, frames,
+sill and skirting stay Wood. Four wall sconces (Sconce_1..4) hang on posts
+of the drawn walls, their flames at 2.6 m. Nothing else moved.
 """
 
 import math
@@ -83,8 +89,9 @@ def srgb(r, g, b):
 # the same as build_tavern_exterior.py.
 MATERIALS = {
     "Wood": srgb(118, 76, 44),
+    "Oak": srgb(180, 140, 90),       # light oak: the furniture (revision 3)
     "Plaster": srgb(230, 216, 184),
-    "Roof": srgb(120, 98, 58),
+    "Roof": srgb(90, 102, 118),      # slate, as the exterior (shadow-only here)
     "Stone": (0.50, 0.42, 0.30),
     "Dirt": (0.25, 0.22, 0.19),
 }
@@ -159,6 +166,24 @@ TRI_BUDGET = 20000
 WALKWAY = 2.0              # every gap between furniture groups, walls, stage and hearth
 PATH = 2.5                 # clear path width from the door to the bar, hearth and every table
 TOUCH = 0.1                # a group this close to a wall stands against it (no walkway)
+# Revision 3: four wall sconces, each on a post of a drawn wall (wall, the
+# post's centre along the wall's run), clear of the windows, the shelves and
+# the hearth: over the stage, over the bar's far end, between the door and
+# the +x window, and in the +x wall's corner by the -z cutaway.
+SCONCES = [("posz", -11.175), ("posz", 7.408), ("posx", 4.15), ("posx", 8.375)]
+SCONCE_FLAME_Z = 2.6       # the flame base, at about 2.6 m (hero scale)
+SCONCE_OUT = 0.38          # the dish's centre out from the post's face
+SCONCE_CLEAR = 0.3         # checked: from any part to a window, the shelves or the hearth
+# Revision 3: the furniture is light Oak. These objects are Oak (some keep
+# Dirt or Stone parts), and no other object has Oak. Stage and Hearth keep
+# Wood too: the stage's planked top (a floor) and the hearth's logs; only
+# the stage's lip and the hearth's mantel are Oak.
+OAK_ONLY = ("Bar", "Shelves", "Table_A", "Table_B", "Table_C", "Table_D", "Table_E", "Table_F", "Chair_", "Bench_",
+            "Stool_", "Barrel_")
+OAK_AND_WOOD = ("Stage", "Hearth")
+# These keep Wood and have no Oak: the floor, the wall timbers, the window
+# and door frames, the sill, and the cutaway stubs' skirting.
+WOOD_KEPT = ("Floor", "Timbers", "Wall_PosX", "Wall_PosZ", "Doorway", "Threshold", "WallStub_NegX", "WallStub_NegZ")
 
 
 def engine(p):
@@ -294,7 +319,7 @@ def place(x, y, yaw=0.0, z=0.0):
 
 class Builder:
     STEPS = ["start", "floor", "walls", "timbers", "doorway", "cutaway", "hearth", "stage", "bar", "shelves",
-             "barrels", "tables", "brazier", "candles"]
+             "barrels", "tables", "brazier", "candles", "sconces"]
 
     def __init__(self):
         self.coll = None
@@ -302,6 +327,8 @@ class Builder:
         self.seats = {}     # chair/stool/bench name -> (centre xy, radius, rectangle half extents, yaw)
         self.fire = None
         self.brazier_fire = None
+        self.posts = {}     # drawn wall -> [(s0, s1)] post spans
+        self.sconce_flames = []  # sconce flame base points (Blender)
         # Furniture groups for the walkway checks: a table with its chairs,
         # the bar with its stools, ... Gaps inside a group are not walkways.
         self.groups = {}
@@ -445,6 +472,7 @@ class Builder:
                 for k in range(1, panels):
                     s = a1 + k * width + (k - 1) * POST_W
                     posts.append((s, s + POST_W))
+            self.posts[wall] = sorted((a, b) for a, b in posts if b - a > 1e-6 and not (wall == "posx" and a < t0))
             for a, b in posts:
                 if b - a < 1e-6 or (wall == "posx" and a < t0):
                     continue
@@ -499,7 +527,7 @@ class Builder:
         part.box((fx1, -RY, 0.3), (cx + 1.8, face, top), "Stone")
         part.box((cx - 1.8, -RY, top), (cx + 1.8, face, 2.75), "Stone")
         part.box((fx0, -RY, 0.3), (fx1, -RY + 0.2, top), "Dirt")         # sooty back
-        part.box((cx - 2.0, face, 2.75), (cx + 2.0, face + 0.25, 2.95), "Wood")  # mantel
+        part.box((cx - 2.0, face, 2.75), (cx + 2.0, face + 0.25, 2.95), "Oak")  # mantel
         part.box((cx - 1.5, -RY, 2.75), (cx + 1.5, -RY + 1.0, WALL_H), "Stone")  # breast
         part.box((cx - 1.6, -RY, 2.95), (cx + 1.6, -RY + 1.1, 3.15), "Stone")    # a course jutting out
         # Ash and logs.
@@ -519,7 +547,7 @@ class Builder:
         part = Part("Stage")
         lip = STAGE_H - 0.06
         part.prism_z(STAGE, -0.05, 0.12, "Dirt", top=False)
-        part.prism_z(STAGE, 0.12, lip, "Wood", top=False, bottom=False)
+        part.prism_z(STAGE, 0.12, lip, "Oak", top=False, bottom=False)  # the lip: Oak
         # Planks along x, the cut corner trimming their ends.
         (cx0, cy0), (cx1, cy1) = STAGE[2], STAGE[3]
 
@@ -556,16 +584,16 @@ class Builder:
         part = Part("Bar")
         x0, x1 = BAR_RUN
         y0, y1 = BAR_D
-        part.box((x0, y0, 0.0), (x1, y1, BAR_TOP - 0.1), "Wood", m=f)
-        part.box((x0, y0 - 0.1, BAR_TOP - 0.1), (x1 + 0.1, y1 + 0.2, BAR_TOP), "Wood", m=f)
+        part.box((x0, y0, 0.0), (x1, y1, BAR_TOP - 0.1), "Oak", m=f)
+        part.box((x0, y0 - 0.1, BAR_TOP - 0.1), (x1 + 0.1, y1 + 0.2, BAR_TOP), "Oak", m=f)
         n = 6
         for k in range(n + 1):
             x = x0 + 0.2 + (x1 - x0 - 0.2) * k / n
-            part.box((x - 0.06, y1, 0.0), (x + 0.06, y1 + 0.05, BAR_TOP - 0.1), "Wood", m=f)
+            part.box((x - 0.06, y1, 0.0), (x + 0.06, y1 + 0.05, BAR_TOP - 0.1), "Oak", m=f)
         part.box((x0, y1, 0.0), (x1, y1 + 0.04, 0.18), "Dirt", m=f)    # kick plinth
-        part.box((x0 + 0.2, y1 + 0.28, 0.32), (x1 - 0.1, y1 + 0.36, 0.40), "Wood", m=f)  # foot rail
+        part.box((x0 + 0.2, y1 + 0.28, 0.32), (x1 - 0.1, y1 + 0.36, 0.40), "Oak", m=f)  # foot rail
         for x in (x0 + 0.3, x1 - 0.2):
-            part.box((x - 0.03, y1, 0.32), (x + 0.03, y1 + 0.36, 0.40), "Wood", m=f)
+            part.box((x - 0.03, y1, 0.32), (x + 0.03, y1 + 0.36, 0.40), "Oak", m=f)
         self.group("Bar", part.finish(self.coll))
         mugs = Part("Bar_Mugs")
         for s, d in ((-6.8, 3.05), (-4.4, 3.45)):
@@ -590,13 +618,13 @@ class Builder:
     def _stool(self, name, x, y, yaw=0.0):
         part = Part(name)
         m = place(x, y, yaw)
-        part.prism_z(ngon(8, 0.28, math.pi / 8), 1.10, 1.18, "Wood", m=m)
+        part.prism_z(ngon(8, 0.28, math.pi / 8), 1.10, 1.18, "Oak", m=m)
         for k in range(4):
             a = math.pi / 4 + k * math.pi / 2
             cx, cy = 0.17 * math.cos(a), 0.17 * math.sin(a)
-            part.box((cx - 0.035, cy - 0.035, 0.0), (cx + 0.035, cy + 0.035, 1.10), "Wood", m=m)
-        part.box((-0.17, -0.025, 0.42), (0.17, 0.025, 0.48), "Wood", m=m)
-        part.box((-0.025, -0.17, 0.62), (0.025, 0.17, 0.68), "Wood", m=m)
+            part.box((cx - 0.035, cy - 0.035, 0.0), (cx + 0.035, cy + 0.035, 1.10), "Oak", m=m)
+        part.box((-0.17, -0.025, 0.42), (0.17, 0.025, 0.48), "Oak", m=m)
+        part.box((-0.025, -0.17, 0.62), (0.025, 0.17, 0.68), "Oak", m=m)
         self.group("Bar", part.finish(self.coll))
         self.seats[name] = ((x, y), 0.28, (0.28, 0.28), yaw)
 
@@ -609,12 +637,12 @@ class Builder:
         x0, x1 = BAR_RUN
         x0 += 0.15          # clear of the back wall's posts
         y0, y1 = 0.0, SHELF_D
-        part.box((x0, y0, 0.0), (x1, y1, 1.1), "Wood", m=f)
+        part.box((x0, y0, 0.0), (x1, y1, 1.1), "Oak", m=f)
         for x in (x0 + 0.05, (x0 + x1) / 2, x1 - 0.05):
-            part.box((x - 0.05, y0, 1.1), (x + 0.05, y0 + 0.45, 3.7), "Wood", m=f)
+            part.box((x - 0.05, y0, 1.1), (x + 0.05, y0 + 0.45, 3.7), "Oak", m=f)
         boards = [1.95, 2.75, 3.55]
         for z in boards:
-            part.box((x0, y0, z), (x1, y0 + 0.45, z + 0.07), "Wood", m=f)
+            part.box((x0, y0, z), (x1, y0 + 0.45, z + 0.07), "Oak", m=f)
         self.group("Shelves", part.finish(self.coll))
         bottles = Part("Bottles")
         mugs = Part("Shelf_Mugs")
@@ -637,7 +665,7 @@ class Builder:
         """Five barrels in a huddle against the back wall: ten staves' worth
         of facets, bellied, with two dark hoops near each end."""
         profile = [(0.0, 0.42), (0.16, 0.45), (0.26, 0.465), (0.72, 0.5), (1.19, 0.465), (1.29, 0.45), (1.45, 0.42)]
-        mats = ["Wood", "Dirt", "Wood", "Wood", "Dirt", "Wood"]
+        mats = ["Oak", "Dirt", "Oak", "Oak", "Dirt", "Oak"]
         for i, (x, y) in enumerate(BARRELS):
             part = Part(f"Barrel_{i + 1}")
             part.lathe(profile, 10, (x, y, 0.0), mats, phase=0.3 * i)
@@ -648,12 +676,12 @@ class Builder:
         part = Part(name)
         m = place(x, y, yaw)
         s = 0.33
-        part.box((-s, -s, 0.66), (s, s, 0.74), "Wood", m=m)
+        part.box((-s, -s, 0.66), (s, s, 0.74), "Oak", m=m)
         for cx in (-s + 0.05, s - 0.05):
-            part.box((cx - 0.04, -s + 0.01, 0.0), (cx + 0.04, -s + 0.09, 0.66), "Wood", m=m)
-            part.box((cx - 0.04, s - 0.09, 0.0), (cx + 0.04, s - 0.01, 1.52), "Wood", m=m)
+            part.box((cx - 0.04, -s + 0.01, 0.0), (cx + 0.04, -s + 0.09, 0.66), "Oak", m=m)
+            part.box((cx - 0.04, s - 0.09, 0.0), (cx + 0.04, s - 0.01, 1.52), "Oak", m=m)
         for z in (1.08, 1.38):
-            part.box((-s + 0.01, s - 0.08, z), (s - 0.01, s - 0.02, z + 0.1), "Wood", m=m)
+            part.box((-s + 0.01, s - 0.08, z), (s - 0.01, s - 0.02, z + 0.1), "Oak", m=m)
         self.group(key, part.finish(self.coll))
         self.seats[name] = ((x, y), math.hypot(s, s), (s, s), yaw)
 
@@ -662,10 +690,10 @@ class Builder:
         part = Part(name)
         length, depth, _ = BENCH
         hl, hd = length / 2, depth / 2
-        part.box((x - hl, y - hd, 0.66), (x + hl, y + hd, 0.74), "Wood")
+        part.box((x - hl, y - hd, 0.66), (x + hl, y + hd, 0.74), "Oak")
         for lx in (x - hl + 0.3, x + hl - 0.3):
-            part.box((lx - 0.05, y - hd + 0.04, 0.0), (lx + 0.05, y + hd - 0.04, 0.66), "Wood")
-        part.box((x - hl + 0.35, y - 0.03, 0.3), (x + hl - 0.35, y + 0.03, 0.4), "Wood")
+            part.box((lx - 0.05, y - hd + 0.04, 0.0), (lx + 0.05, y + hd - 0.04, 0.66), "Oak")
+        part.box((x - hl + 0.35, y - 0.03, 0.3), (x + hl - 0.35, y + 0.03, 0.4), "Oak")
         self.group(key, part.finish(self.coll))
         self.seats[name] = ((x, y), math.hypot(hl, hd), (hl, hd), 0.0)
 
@@ -678,24 +706,24 @@ class Builder:
             part = Part(key)
             if kind == "square":
                 h = 0.8
-                part.box((x - h, y - h, TABLE_H - 0.08), (x + h, y + h, TABLE_H), "Wood")
+                part.box((x - h, y - h, TABLE_H - 0.08), (x + h, y + h, TABLE_H), "Oak")
                 for sx in (-1, 1):
                     for sy in (-1, 1):
                         lx, ly = x + sx * (h - 0.14), y + sy * (h - 0.14)
-                        part.box((lx - 0.06, ly - 0.06, 0.0), (lx + 0.06, ly + 0.06, TABLE_H - 0.08), "Wood")
+                        part.box((lx - 0.06, ly - 0.06, 0.0), (lx + 0.06, ly + 0.06, TABLE_H - 0.08), "Oak")
                 for sy in (-1, 1):
                     part.box((x - h + 0.14, y + sy * (h - 0.14) - 0.03, TABLE_H - 0.24),
-                             (x + h - 0.14, y + sy * (h - 0.14) + 0.03, TABLE_H - 0.08), "Wood")
+                             (x + h - 0.14, y + sy * (h - 0.14) + 0.03, TABLE_H - 0.08), "Oak")
                 reach = h + 0.45
             elif kind == "round":
-                part.prism_z(ngon(8, 0.85, math.pi / 8, x, y), TABLE_H - 0.08, TABLE_H, "Wood")
-                part.prism_z(ngon(6, 0.11, 0.0, x, y), 0.08, TABLE_H - 0.08, "Wood", top=False)
+                part.prism_z(ngon(8, 0.85, math.pi / 8, x, y), TABLE_H - 0.08, TABLE_H, "Oak")
+                part.prism_z(ngon(6, 0.11, 0.0, x, y), 0.08, TABLE_H - 0.08, "Oak", top=False)
                 for yaw in (0.0, math.pi / 2):
-                    part.box((-0.5, -0.07, 0.0), (0.5, 0.07, 0.1), "Wood", m=place(x, y, yaw + 0.4))
+                    part.box((-0.5, -0.07, 0.0), (0.5, 0.07, 0.1), "Oak", m=place(x, y, yaw + 0.4))
                 reach = 0.85 + 0.42
             else:  # trestle
                 hl, hw = TRESTLE[0] / 2, TRESTLE[1] / 2
-                part.box((x - hl, y - hw, TABLE_H - 0.09), (x + hl, y + hw, TABLE_H), "Wood")
+                part.box((x - hl, y - hw, TABLE_H - 0.09), (x + hl, y + hw, TABLE_H), "Oak")
                 for tx in (x - hl + 0.55, x + hl - 0.55):
                     # An A-frame trestle: two splayed legs, a cross bar and a foot.
                     for sy in (-1, 1):
@@ -703,14 +731,14 @@ class Builder:
                                 (sy * 0.2, TABLE_H - 0.09)]
                         a = [Vector((tx - 0.06, y + q[0], q[1])) for q in quad]
                         b = [Vector((tx + 0.06, y + q[0], q[1])) for q in quad]
-                        part.face(a, "Wood", (-1, 0, 0))
-                        part.face(b, "Wood", (1, 0, 0))
+                        part.face(a, "Oak", (-1, 0, 0))
+                        part.face(b, "Oak", (1, 0, 0))
                         for i in range(4):
                             j = (i + 1) % 4
-                            part.face([a[i], a[j], b[j], b[i]], "Wood")
-                    part.box((tx - 0.07, y - hw + 0.02, 0.0), (tx + 0.07, y + hw - 0.02, 0.1), "Wood")
-                    part.box((tx - 0.05, y - 0.32, TABLE_H - 0.3), (tx + 0.05, y + 0.32, TABLE_H - 0.09), "Wood")
-                part.box((x - hl + 0.6, y - 0.05, 0.35), (x + hl - 0.6, y + 0.05, 0.47), "Wood")  # stretcher
+                            part.face([a[i], a[j], b[j], b[i]], "Oak")
+                    part.box((tx - 0.07, y - hw + 0.02, 0.0), (tx + 0.07, y + hw - 0.02, 0.1), "Oak")
+                    part.box((tx - 0.05, y - 0.32, TABLE_H - 0.3), (tx + 0.05, y + 0.32, TABLE_H - 0.09), "Oak")
+                part.box((x - hl + 0.6, y - 0.05, 0.35), (x + hl - 0.6, y + 0.05, 0.47), "Oak")  # stretcher
                 off = hw + BENCH[2] + BENCH[1] / 2
                 part.finish(self.coll)
                 self.group(key, bpy.data.objects[key])
@@ -767,6 +795,38 @@ class Builder:
             part.prism_z(ngon(6, 0.045, 0.0, x, y), z + 0.03, z + 0.25, "Plaster")
             self.group(key, part.finish(self.coll))
             self.flames.append((x, y, z + 0.25))
+
+    def sconces(self):
+        """Four wall sconces on posts of the drawn walls: an iron bracket
+        (Stone) - a back plate on the post, an arm and a diagonal strut - and
+        an open flame dish (Stone) holding a dark fuel bed (Dirt). The
+        engine draws each flame at its base point (SCONCE_FLAME_Z)."""
+        for i, (wall, s) in enumerate(SCONCES):
+            part = Part(f"Sconce_{i + 1}")
+            d_face = -POST_PROUD
+            fz = SCONCE_FLAME_Z
+            # Back plate and arm (wall_box: s along the wall, d into the room negative).
+            part.wall_box(wall, s - 0.08, s + 0.08, d_face - 0.04, d_face, fz - 0.5, fz + 0.05, "Stone")
+            part.wall_box(wall, s - 0.03, s + 0.03, d_face - SCONCE_OUT, d_face - 0.04, fz - 0.17, fz - 0.12, "Stone")
+            # Strut: a diagonal from low on the plate to under the arm.
+            quad = [(d_face - 0.04, fz - 0.46), (d_face - 0.04, fz - 0.38), (d_face - 0.26, fz - 0.17),
+                    (d_face - 0.33, fz - 0.17)]
+            a = [Vector(wall_point(wall, s - 0.025, d, z)) for d, z in quad]
+            b = [Vector(wall_point(wall, s + 0.025, d, z)) for d, z in quad]
+            side = b[0] - a[0]
+            part.face(a, "Stone", -side)
+            part.face(b, "Stone", side)
+            centre = sum(a, Vector()) / 4
+            for k in range(4):
+                j = (k + 1) % 4
+                part.face([a[k], a[j], b[j], b[k]], "Stone", (a[k] + a[j]) / 2 - centre)
+            # The dish, with its dark fuel bed inside the rim.
+            c = Vector(wall_point(wall, s, d_face - SCONCE_OUT, 0.0))
+            part.lathe([(0.0, 0.05), (0.05, 0.11), (0.12, 0.16)], 8, (c.x, c.y, fz - 0.16),
+                       ["Stone", "Stone"])
+            part.prism_z(ngon(8, 0.12, math.pi / 8, c.x, c.y), fz - 0.04, fz - 0.02, "Dirt", bottom=False)
+            part.finish(self.coll)
+            self.sconce_flames.append((c.x, c.y, fz))
 
     def build_all(self):
         for step in self.STEPS:
@@ -984,6 +1044,8 @@ def figures(b):
             math.hypot(v.co.x - bx, v.co.y - by) for v in braz.data.vertices), 3),
             "top": round(world_bounds(braz)[1].z, 3)},
         "candles_engine": [engine(c) for c in b.flames],
+        "sconces_engine": {f"Sconce_{i + 1}": engine(c) for i, c in enumerate(b.sconce_flames)},
+        "materials_by_object": {o.name: [m.name for m in o.data.materials] for o in b.coll.objects},
         "hinge_engine": engine(hinge),
         "doorway_centre_engine": engine((RX + WALL_T / 2, DOOR_Y, 0.0)),
         "doorway_inner_face_centre_engine": engine((RX, DOOR_Y, 0.0)),
@@ -995,6 +1057,61 @@ def figures(b):
         "view_extent_m": tuple(round(v, 2) for v in view_extent(b)),
         "seats": seats,
     }
+
+
+def oak_checks(b):
+    """Oak on exactly the furniture the task lists; Wood kept on the floor,
+    wall timbers, frames, sill and skirting."""
+    problems = []
+    for obj in b.coll.objects:
+        mats = {m.name for m in obj.data.materials}
+        n = obj.name
+        if n.startswith(OAK_ONLY) and not n.endswith("_Mugs"):
+            if "Oak" not in mats or "Wood" in mats:
+                problems.append(f"{n}: want Oak and no Wood, has {sorted(mats)}")
+        elif n in OAK_AND_WOOD:
+            if not {"Oak", "Wood"} <= mats:
+                problems.append(f"{n}: want Oak (lip or mantel) and Wood, has {sorted(mats)}")
+        elif "Oak" in mats:
+            problems.append(f"{n}: Oak is only for the listed furniture")
+        if n in WOOD_KEPT and "Wood" not in mats:
+            problems.append(f"{n}: should keep Wood")
+    for n in WOOD_KEPT + OAK_AND_WOOD:
+        if n not in bpy.data.objects:
+            problems.append(f"{n}: missing")
+    return problems
+
+
+def sconce_checks(b):
+    """Four sconces, each on a post of a drawn wall, the flame at about
+    2.6 m, every part SCONCE_CLEAR from the windows, the shelves and the
+    hearth."""
+    problems = []
+    if len(b.sconce_flames) != 4:
+        problems.append(f"{len(b.sconce_flames)} sconces, want 4")
+    clear_of = [bpy.data.objects["Shelves"], bpy.data.objects["Hearth"]]
+    boxes = [world_bounds(o) for o in clear_of]
+    for i, (wall, s) in enumerate(SCONCES):
+        name = f"Sconce_{i + 1}"
+        if not any(abs((p0 + p1) / 2 - s) < 1e-3 for p0, p1 in b.posts[wall]):
+            problems.append(f"{name}: s {s} is not on a post of {wall}: {b.posts[wall]}")
+        obj = bpy.data.objects[name]
+        lo, hi = world_bounds(obj)
+        if abs(b.sconce_flames[i][2] - 2.6) > 0.1:
+            problems.append(f"{name}: flame at {b.sconce_flames[i][2]}")
+        # Windows on this wall: the gap along the run.
+        s_lo, s_hi = (lo.x, hi.x) if wall == "posz" else (lo.y, hi.y)
+        for w0, w1 in WINDOWS[wall]:
+            gap = max(w0 - s_hi, s_lo - w1)
+            if gap < SCONCE_CLEAR:
+                problems.append(f"{name}: {gap:.2f} m from the window {w0}..{w1}")
+        for o, (blo, bhi) in zip(clear_of, boxes):
+            gx = max(blo.x - hi.x, lo.x - bhi.x, 0.0)
+            gy = max(blo.y - hi.y, lo.y - bhi.y, 0.0)
+            gz = max(blo.z - hi.z, lo.z - bhi.z, 0.0)
+            if math.sqrt(gx * gx + gy * gy + gz * gz) < SCONCE_CLEAR:
+                problems.append(f"{name}: within {SCONCE_CLEAR} m of {o.name}")
+    return problems
 
 
 def check(b):
@@ -1057,6 +1174,8 @@ def check(b):
     for k, ok in paths.items():
         if k != "spawn_clearance" and not ok:
             problems.append(f"no {PATH} m path from the door to {k}")
+    problems += oak_checks(b)
+    problems += sconce_checks(b)
     w, h = view_extent(b)
     if w > VIEW[0] or h > VIEW[1]:
         problems.append(f"the room is {w:.1f} x {h:.1f} m on screen, more than the {VIEW} view")

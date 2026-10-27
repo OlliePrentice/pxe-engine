@@ -16,9 +16,12 @@ The building: a single-storey inn at hero scale (1.6x real), its stone
 plinth 9 x 7 m (8.8 x 6.8 m over the timber faces). A plinth that reaches
 0.6 m below the origin so it sits on uneven lawn; a timber frame (Wood) of
 corner posts, posts, sole plate, two rails, wall plate and braces, standing
-proud of cream plaster panels (Plaster); a hipped thatch roof (Roof) at 45
-degrees in two courses with a ridge roll, its ridge lower than the house is
-wide; a stone chimney up the right-hand end wall (Stone); dark
+proud of cream plaster panels (Plaster); a hipped slate roof (Roof) at 45
+degrees in stepped overlapping courses with ridge and hip rolls, its ridge
+lower than the house is wide, with a cross-gable over the door and a small
+gabled dormer on each long slope (revision 3: Plaster faces, Wood framing,
+carved bargeboards and finials, slated as the roof; they stay inside the
+revision-2 eaves and over the plinth, which the build checks); a stone chimney up the right-hand end wall (Stone); dark
 recessed window panes (Dirt) behind Wood mullions; and a hanging sign by the
 door, a Wood board with a sleeping fox in Plaster on both faces. The doorway
 is empty - the door model (build_tavern_door.py) hangs there - and opens on
@@ -60,7 +63,7 @@ def srgb(r, g, b):
 MATERIALS = {
     "Wood": srgb(118, 76, 44),
     "Plaster": srgb(230, 216, 184),
-    "Roof": srgb(120, 98, 58),
+    "Roof": srgb(90, 102, 118),      # slate: the engine's day mid tone (5a6676)
     "Stone": (0.50, 0.42, 0.30),
     "Dirt": (0.25, 0.22, 0.19),
 }
@@ -110,11 +113,25 @@ WINDOWS = {
 }
 DOORWAY = (-DOOR_W / 2 - JAMB, DOOR_W / 2 + JAMB)  # the hole the jambs and door fill, on the front
 VESTIBULE = (-1.9, 1.9, 3.0)        # x0, x1 and the back wall's face (y)
-# Roof
+# Roof (revision 3: slate). The eave line and underside are revision 2's.
 EAVE_OUT = 0.55
-EAVE_LOW, EAVE_TOP = 4.35, 4.9      # thatch edge, underside and top
+EAVE_LOW, EAVE_TOP = 4.35, 4.6      # the slate eave's underside and the top of its edge
+EAVE_CHAMFER = 0.1                  # the slopes start this far in from the eave line
 PITCH = math.radians(45)
-COURSE_STEP = 2.0                   # the upper course starts this far in from the eave
+COURSES = 10                        # slate courses up each main slope, eave to ridge
+COURSE_T = 0.08                     # the step at each course's lower edge
+GABLE_PITCH = math.radians(50)      # the cross-gable and the dormers, a little steeper
+# The cross-gable over the door (its face in the front wall's plaster plane,
+# facing -y) and one dormer on each long slope. hw: the face's half-width;
+# rise: its eave above the main slates where the face meets them.
+CROSS_GABLE = dict(name="Gable_Front", cx=0.0, face_y=Y0 + PROUD, out=-1, hw=1.4, rise=0.45,
+                   ov_side=0.2, ov_front=0.25, courses=5, window=False)
+DORMERS = [
+    dict(name="Dormer_Front", cx=2.6, face_y=Y0 + 0.4, out=-1, hw=0.5, rise=0.85,
+         ov_side=0.14, ov_front=0.18, courses=2, window=True),
+    dict(name="Dormer_Back", cx=(X0 + X1) / 2, face_y=Y1 - 0.4, out=1, hw=0.5, rise=0.85,
+         ov_side=0.14, ov_front=0.18, courses=2, window=True),
+]
 # Chimney, up the right-hand end wall, standing a little past the eaves
 CHIMNEY_Y = (3.6, 5.2)
 CHIMNEY_X = (X1 - 0.3, X1 + 0.75)
@@ -130,6 +147,17 @@ TRI_BUDGET = 4000
 PLINTH_SIZE = (9.0, 7.0)            # checked
 MIN_VESTIBULE = 2.5                 # checked: the trigger zone's depth
 MIN_SIGN_TO_JAMB = 0.3              # checked: the sign's nearest part to the jamb's outer edge
+# Revision 3's roof rules (checked): everything the new roof adds stays inside
+# revision 2's eaves in plan, its top at most MAX_RISE above revision 2's
+# ridge, and nothing of it over the doorway or vestibule below HEADROOM.
+REV2_RIDGE_TOP = 9.13
+MAX_RISE = 0.5
+HEADROOM = 3.3
+REV2_PLAN = (-4.55, 5.59, -1.77, 7.1)   # the whole exterior's plan outline (Blender x0, x1, y0, y1)
+ROOF_PARTS = ["Roof", CROSS_GABLE["name"]] + [d["name"] for d in DORMERS]
+# Engine rectangles (assets.md / scene.cpp kTavernDoorway, kTavernVestibule) in Blender (x0, x1, y0, y1).
+DOORWAY_RECT = (-1.1, 1.1, -0.85, 0.25)
+VESTIBULE_RECT = (-1.9, 1.9, 0.25, 3.0)
 
 
 def wall_point(wall, s, v, z):
@@ -247,46 +275,196 @@ class Part:
         return obj
 
 
-def hip_roof(part, x0, x1, y0, y1, z_low, z_top, mat, chamfer=0.25):
-    """A hipped roof solid over the rectangle at its eave: an underside at
-    z_low, a thatch edge that rises vertically then rolls in (a chamfer) to
-    z_top, then four slopes at PITCH up to the ridge. The roof surface meets
-    the eave line at z_top, inset by `chamfer` so the edge reads as rounded."""
-    t = math.tan(PITCH)
-    ridge_inset = (y1 - y0) / 2
-    ridge_z = z_top + (ridge_inset - chamfer) * t
-    zc = z_top - chamfer * 0.6
-    ring_low = [(x0, y0, z_low), (x1, y0, z_low), (x1, y1, z_low), (x0, y1, z_low)]
-    ring_mid = [(x0, y0, zc), (x1, y0, zc), (x1, y1, zc), (x0, y1, zc)]
-    c = chamfer
-    ring_top = [(x0 + c, y0 + c, z_top), (x1 - c, y0 + c, z_top), (x1 - c, y1 - c, z_top), (x0 + c, y1 - c, z_top)]
-    ym = (y0 + y1) / 2
-    ridge = [(x0 + ridge_inset, ym, ridge_z), (x1 - ridge_inset, ym, ridge_z)]
-    part.face(list(reversed(ring_low)), mat)
+def roof_base(inset):
+    """Height of the main roof's slate bed (under the courses) at `inset` in
+    from the eave line. Each course stands up to COURSE_T above it."""
+    return EAVE_TOP + (inset - EAVE_CHAMFER) * math.tan(PITCH)
+
+
+EAVES = (X0 - EAVE_OUT, X1 + EAVE_OUT, Y0 - EAVE_OUT, Y1 + EAVE_OUT)
+
+
+def roof_inset(x, y):
+    ex0, ex1, ey0, ey1 = EAVES
+    return min(x - ex0, ex1 - x, y - ey0, ey1 - y)
+
+
+def roof_height(x, y):
+    """The top of the main roof's slates over (x, y), at most (a course's step)."""
+    return roof_base(roof_inset(x, y)) + COURSE_T
+
+
+def roll(part, a, b, r, mat="Roof"):
+    """A triangular-section roll (ridge or hip tiles) from a to b."""
+    a, b = Vector(a), Vector(b)
+    d = (b - a).normalized()
+    side = d.cross(Vector((0, 0, 1)))
+    if side.length < 1e-4:
+        side = Vector((1, 0, 0))
+    side.normalize()
+    up = side.cross(d).normalized()
+    if up.z < 0:
+        up = -up
+    ring_a = [a + side * r - up * r * 0.4, a + up * r * 0.75, a - side * r - up * r * 0.4]
+    ring_b = [b + side * r - up * r * 0.4, b + up * r * 0.75, b - side * r - up * r * 0.4]
+    for i in range(2):
+        part.face([ring_a[i], ring_b[i], ring_b[i + 1], ring_a[i + 1]], mat, up + (side if i == 0 else -side))
+    part.face(ring_a, mat, -d)
+    part.face(ring_b, mat, d)
+
+
+def prism_uz(part, outline, v0, v1, mat, P, out):
+    """A prism over an outline (u, z) in a gable's face plane, from v0 to v1
+    (v into the roof). P maps (u, v, z) to Blender; `out` is the face's
+    outward direction."""
+    front = [P(u, v0, z) for u, z in outline]
+    back = [P(u, v1, z) for u, z in outline]
+    part.face(front, mat, out)
+    part.face(back, mat, -out)
+    n = len(outline)
+    area = sum(outline[i][0] * outline[(i + 1) % n][1] - outline[(i + 1) % n][0] * outline[i][1] for i in range(n))
+    for i in range(n):
+        j = (i + 1) % n
+        du, dz = outline[j][0] - outline[i][0], outline[j][1] - outline[i][1]
+        nu, nz = (dz, -du) if area > 0 else (-dz, du)
+        part.face([front[i], front[j], back[j], back[i]], mat, (nu, 0.0, nz))
+
+
+def gable_frame(g):
+    """The gable's or dormer's local frame and heights: u across the face,
+    v into the roof, z up."""
+    cx, face_y, out = g["cx"], g["face_y"], g["out"]
+
+    def P(u, v, z):
+        return Vector((cx + u, face_y - out * v, z))
+    tp = math.tan(GABLE_PITCH)
+    seat = roof_base(roof_inset(cx, face_y))      # the main slate bed where the face meets it
+    eave = seat + g["rise"]
+    ridge = eave + g["hw"] * tp                   # the gable roof's underside at the ridge
+    we = g["hw"] + g["ov_side"]
+
+    def zb(u):
+        return ridge - abs(u) * tp
+    # Run the gable roof back until its ridge and both eaves are buried under
+    # the main slates.
+    depth = 0.3
+    while depth < 6.0:
+        ok = all(roof_base(roof_inset(*P(u, depth, 0).xy)) > z
+                 for u, z in ((0.0, ridge + 0.3), (-we, zb(we) + COURSE_T + 0.1), (we, zb(we) + COURSE_T + 0.1)))
+        if ok:
+            break
+        depth += 0.05
+    return P, Vector((0, out, 0)), seat, eave, ridge, we, zb, depth
+
+
+def build_gable(part, g):
+    """A gable on the roof: a Plaster body under a slated gable roof in
+    stepped courses with a ridge roll; Wood framing on its face (or a dark
+    window for a dormer); carved bargeboards with stepped notches under the
+    rake, a pendant at the apex and a finial above it."""
+    P, OUT, seat, eave, ridge, we, zb, depth = gable_frame(g)
+    hw = g["hw"]
+    foot = seat - 0.15
+    t, e = COURSE_T, 0.02
+    v0 = -g["ov_front"]
+    # Body: the face and cheeks, just under the roof's underside.
+    b = 0.03
+    prism_uz(part, [(-hw, foot), (hw, foot), (hw, eave - b), (0.0, ridge - b), (-hw, eave - b)],
+             0.0, depth, "Plaster", P, OUT)
+    # Slates: courses up each side, a lip at each course's lower edge, the
+    # front end of each course, an underside, and a ridge roll.
+    n = g["courses"]
+    for sg in (-1, 1):
+        us = [sg * we * (1 - k / n) for k in range(n + 1)]
+        part.face([P(us[0], v0, zb(us[0])), P(us[0], depth, zb(us[0])), P(0, depth, ridge), P(0, v0, ridge)],
+                  "Roof", (0, 0, -1))
+        for k in range(n):
+            ua, ub = us[k], us[k + 1]
+            za, zu = zb(ua), zb(ub)
+            part.face([P(ua, v0, za), P(ua, depth, za), P(ua, depth, za + t), P(ua, v0, za + t)], "Roof", (sg, 0, -0.2))
+            part.face([P(ua, v0, za + t), P(ua, depth, za + t), P(ub, depth, zu + e), P(ub, v0, zu + e)], "Roof",
+                      (sg * 0.5, 0, 1))
+            part.face([P(ua, v0, za), P(ua, v0, za + t), P(ub, v0, zu + e), P(ub, v0, zu)], "Roof", OUT)
+    roll(part, P(0, v0, ridge + e + 0.02), P(0, depth, ridge + e + 0.02), 0.13)
+    # Face timbers (proud of the plaster) or the dormer's window.
+    tv0, tv1 = -0.06, 0.0
+    for sg in (-1, 1):
+        prism_uz(part, [(sg * (hw - 0.14), foot), (sg * hw, foot), (sg * hw, eave - b), (sg * (hw - 0.14), eave - b)],
+                 tv0, tv1, "Wood", P, OUT)
+    if g["window"]:
+        sill = seat + 0.15
+        lintel = eave - 0.17
+        prism_uz(part, [(-hw, foot), (hw, foot), (hw, sill), (-hw, sill)], tv0, tv1, "Wood", P, OUT)
+        prism_uz(part, [(-hw, lintel), (hw, lintel), (hw, eave - b), (-hw, eave - b)], tv0, tv1, "Wood", P, OUT)
+        prism_uz(part, [(-(hw - 0.14), sill), (hw - 0.14, sill), (hw - 0.14, lintel), (-(hw - 0.14), lintel)],
+                 -0.03, 0.0, "Dirt", P, OUT)
+        prism_uz(part, [(-0.04, sill), (0.04, sill), (0.04, lintel), (-0.04, lintel)], tv0, -0.03, "Wood", P, OUT)
+        post = [(-0.06, eave - b), (0.06, eave - b), (0.06, zb(0.06) - 0.05), (0.0, ridge - 0.05),
+                (-0.06, zb(0.06) - 0.05)]
+        prism_uz(part, post, tv0, tv1, "Wood", P, OUT)
+    else:
+        beam = eave - 0.2
+        prism_uz(part, [(-hw, beam), (hw, beam), (hw, eave - b), (-hw, eave - b)], tv0, tv1, "Wood", P, OUT)
+        post = [(-0.08, eave - b), (0.08, eave - b), (0.08, zb(0.08) - 0.05), (0.0, ridge - 0.05),
+                (-0.08, zb(0.08) - 0.05)]
+        prism_uz(part, post, tv0, tv1, "Wood", P, OUT)
+        hb = (ridge - eave) * 0.45
+        for sg in (-1, 1):
+            quad = [(sg * (hw - 0.2), eave - b), (sg * (hw - 0.45), eave - b), (sg * 0.08, eave + hb),
+                    (sg * 0.08, eave + hb + 0.25)]
+            prism_uz(part, quad, tv0, tv1, "Wood", P, OUT)
+    # Bargeboards: a board under each rake, its lower edge carved in steps
+    # (tooth, notch, tooth...), ending in a short tail at the eave.
+    bv0, bv1 = -0.11, -0.06
+    depth_b = 0.26 if hw > 1 else 0.18
+    notch = 0.09 if hw > 1 else 0.06
+    tooth, gap = (0.22, 0.13) if hw > 1 else (0.16, 0.1)
+    s_end = we - 0.02
+    for sg in (-1, 1):
+        top = [(0.0, ridge - 0.01), (s_end, zb(s_end) - 0.01)]
+        bottom = [(s_end, zb(s_end) - depth_b - 0.12)]  # the tail at the eave
+        s, deep = s_end - 0.1, True
+        bottom.append((s, zb(s) - depth_b))
+        while True:
+            s2 = s - (tooth if deep else gap)
+            if s2 < 0.12:
+                break
+            d, d2 = (depth_b, depth_b - notch) if deep else (depth_b - notch, depth_b)
+            bottom += [(s2, zb(s2) - d), (s2, zb(s2) - d2)]
+            s, deep = s2, not deep
+        bottom.append((0.0, ridge - (depth_b if deep else depth_b - notch)))
+        pts = [(sg * u, z) for u, z in top + bottom]
+        # top goes apex -> eave, bottom eave -> apex: one loop.
+        prism_uz(part, pts, bv0, bv1, "Wood", P, OUT)
+    # Pendant under the apex and the finial above it.
+    dz = ridge - depth_b
+    prism_uz(part, [(-0.06, dz + 0.02), (0.06, dz + 0.02), (0.06, dz - 0.22), (0.0, dz - 0.36), (-0.06, dz - 0.22)],
+             bv0, bv1, "Wood", P, OUT)
+    vc, sh = (bv0 + bv1) / 2, 0.045
+    base = ridge - 0.1
+    lo, hi = P(-sh, vc - sh, base), P(sh, vc + sh, ridge + 0.42)
+    part.box(tuple(min(lo[i], hi[i]) for i in range(3)), tuple(max(lo[i], hi[i]) for i in range(3)), "Wood")
+    k = 0.09 if hw > 1 else 0.07
+    zb_, zm, zt = ridge + 0.36, ridge + 0.54, ridge + (0.85 if hw > 1 else 0.72)
+    ring = [P(k, vc, zm), P(0, vc + k, zm), P(-k, vc, zm), P(0, vc - k, zm)]
+    cb, ct = P(0, vc, zb_), P(0, vc, zt)
+    centre = P(0, vc, zm)
     for i in range(4):
         j = (i + 1) % 4
-        part.face([ring_low[i], ring_low[j], ring_mid[j], ring_mid[i]], mat)
-        part.face([ring_mid[i], ring_mid[j], ring_top[j], ring_top[i]], mat)
-    # Slopes: front and back trapezoids, the hipped ends triangles.
-    part.face([ring_top[0], ring_top[1], ridge[1], ridge[0]], mat)
-    part.face([ring_top[1], ring_top[2], ridge[1]], mat)
-    part.face([ring_top[2], ring_top[3], ridge[0], ridge[1]], mat)
-    part.face([ring_top[3], ring_top[0], ridge[0]], mat)
-    return ring_top, ridge
-
-
-def roof_height(x, y, x0, x1, y0, y1, z_top, chamfer=0.25):
-    """Height of hip_roof's slopes over (x, y)."""
-    inset = min(x - x0, x1 - x, y - y0, y1 - y)
-    return z_top + (inset - chamfer) * math.tan(PITCH)
+        mid = (ring[i] + ring[j]) / 2 - centre
+        part.face([ring[i], ring[j], ct], "Wood", mid + Vector((0, 0, 0.5)))
+        part.face([ring[j], ring[i], cb], "Wood", mid - Vector((0, 0, 0.5)))
+    return {"face_y": g["face_y"], "seat": seat, "eave": eave, "ridge": ridge, "depth": depth,
+            "finial_top": zt, "we": we}
 
 
 class Builder:
-    STEPS = ["start", "foundation", "walls", "timbers", "windows", "doorway", "roof", "chimney", "sign"]
+    STEPS = ["start", "foundation", "walls", "timbers", "windows", "doorway", "roof", "gables", "chimney", "sign"]
 
     def __init__(self):
         self.coll = None
         self.posts = {}  # wall -> [(s0, s1)] post spans, for the braces and the sign
+        self.gable_figs = {}  # gable or dormer name -> its heights (build_gable)
 
     def start(self):
         """Fresh Tavern_Exterior collection; the rest of the scene is left alone."""
@@ -471,43 +649,68 @@ class Builder:
     # ---- roof -------------------------------------------------------------
 
     def roof(self):
-        """Steep hipped thatch in two courses - the upper one laps over the
-        lower with a thick rolled edge, so the roof reads as layered thatch -
-        and a ridge roll along the ridge and down the hips."""
+        """Hipped slate at 45 degrees over revision 2's eave line: a thin
+        eave edge, then COURSES stepped courses up every slope - each course
+        tilts out a little from its bed, so its lower edge stands COURSE_T
+        proud of the course below and the slope reads as bands - and ridge
+        and hip rolls."""
         part = Part("Roof")
-        ex0, ex1, ey0, ey1 = X0 - EAVE_OUT, X1 + EAVE_OUT, Y0 - EAVE_OUT, Y1 + EAVE_OUT
-        hip_roof(part, ex0, ex1, ey0, ey1, EAVE_LOW, EAVE_TOP, "Roof")
-        c = COURSE_STEP
-        z_at = roof_height(ex0 + c, (ey0 + ey1) / 2, ex0, ex1, ey0, ey1, EAVE_TOP)
-        lap = 0.12
-        top2, ridge = hip_roof(part, ex0 + c - lap, ex1 - c + lap, ey0 + c - lap, ey1 - c + lap,
-                               z_at - 0.3, z_at + 0.3, "Roof", chamfer=0.18)
-        # Ridge roll: a triangular-section roll along the ridge and each hip.
-        r = 0.32
+        x0, x1, y0, y1 = EAVES
+        c = EAVE_CHAMFER
+        R = (y1 - y0) / 2
+        ym = (y0 + y1) / 2
 
-        def roll(a, b):
-            a, b = Vector(a), Vector(b)
-            d = (b - a).normalized()
-            side = d.cross(Vector((0, 0, 1)))
-            if side.length < 1e-4:
-                side = Vector((1, 0, 0))
-            side.normalize()
-            up = side.cross(d).normalized()
-            if up.z < 0:
-                up = -up
-            ring_a = [a + side * r - up * 0.12, a + up * r * 0.75, a - side * r - up * 0.12]
-            ring_b = [b + side * r - up * 0.12, b + up * r * 0.75, b - side * r - up * 0.12]
-            for i in range(2):
-                part.face([ring_a[i], ring_b[i], ring_b[i + 1], ring_a[i + 1]], "Roof", up + (side if i == 0 else -side))
-            part.face(ring_a, "Roof", -d)
-            part.face(ring_b, "Roof", d)
-
-        lift = Vector((0, 0, 0.05))
-        r0, r1 = Vector(ridge[0]) + lift, Vector(ridge[1]) + lift
-        roll(r0, r1)
-        for corner, end in ((top2[0], r0), (top2[3], r0), (top2[1], r1), (top2[2], r1)):
-            roll(Vector(corner) + Vector((0, 0, 0.08)), end)
+        def ring(a, dz):
+            z = roof_base(a) + dz
+            return [Vector((x0 + a, y0 + a, z)), Vector((x1 - a, y0 + a, z)), Vector((x1 - a, y1 - a, z)),
+                    Vector((x0 + a, y1 - a, z))]
+        outs = [Vector((0, -1, 0)), Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((-1, 0, 0))]
+        low = [Vector((x0, y0, EAVE_LOW)), Vector((x1, y0, EAVE_LOW)), Vector((x1, y1, EAVE_LOW)), Vector((x0, y1, EAVE_LOW))]
+        zc = EAVE_TOP - c * 0.6
+        mid = [Vector((p.x, p.y, zc)) for p in low]
+        bed = ring(c, 0.0)
+        part.face(list(reversed(low)), "Roof", (0, 0, -1))
+        for i in range(4):
+            j = (i + 1) % 4
+            part.face([low[i], low[j], mid[j], mid[i]], "Roof", outs[i])
+            part.face([mid[i], mid[j], bed[j], bed[i]], "Roof", outs[i] + Vector((0, 0, 1)))
+        insets = [c + (R - c) * k / COURSES for k in range(COURSES + 1)]
+        e = 0.02
+        ridge_z = roof_base(R) + e
+        ridge = [Vector((x0 + R, ym, ridge_z)), Vector((x1 - R, ym, ridge_z))]
+        for k in range(COURSES):
+            lo, lo_t = ring(insets[k], 0.0), ring(insets[k], COURSE_T)
+            for i in range(4):
+                j = (i + 1) % 4
+                part.face([lo[i], lo[j], lo_t[j], lo_t[i]], "Roof", outs[i] - Vector((0, 0, 0.2)))
+            if k < COURSES - 1:
+                hi = ring(insets[k + 1], e)
+                for i in range(4):
+                    j = (i + 1) % 4
+                    part.face([lo_t[i], lo_t[j], hi[j], hi[i]], "Roof", outs[i] + Vector((0, 0, 1)))
+            else:
+                part.face([lo_t[0], lo_t[1], ridge[1], ridge[0]], "Roof", outs[0] + Vector((0, 0, 1)))
+                part.face([lo_t[1], lo_t[2], ridge[1]], "Roof", outs[1] + Vector((0, 0, 1)))
+                part.face([lo_t[2], lo_t[3], ridge[0], ridge[1]], "Roof", outs[2] + Vector((0, 0, 1)))
+                part.face([lo_t[3], lo_t[0], ridge[0]], "Roof", outs[3] + Vector((0, 0, 1)))
+        # Ridge and hip rolls, the hips starting a little in from the corners
+        # so the rolls stay inside the eave line.
+        lift = Vector((0, 0, 0.04))
+        r0, r1 = ridge[0] + lift, ridge[1] + lift
+        roll(part, r0, r1, 0.2)
+        start = ring(c + 0.3, COURSE_T + 0.04)
+        for corner, end in ((start[0], r0), (start[3], r0), (start[1], r1), (start[2], r1)):
+            roll(part, corner, end, 0.17)
         part.finish(self.coll)
+
+    def gables(self):
+        """The cross-gable over the door, facing the street (-y), and a small
+        gabled dormer on each long slope: Plaster faces, Wood framing,
+        carved bargeboards and finials, slated as the roof."""
+        for g in [CROSS_GABLE] + DORMERS:
+            part = Part(g["name"])
+            self.gable_figs[g["name"]] = build_gable(part, g)
+            part.finish(self.coll)
 
     def chimney(self):
         """A stone stack up the right-hand end wall: a broad base to above the
@@ -629,6 +832,12 @@ def figures(b):
                         "y": (SIGN_Z[0], BRACKET_Z + 0.3), "board_y": SIGN_Z,
                         "clear_of_jamb": round(SIGN_X - 0.1 - DOORWAY[1], 3)},
         "ridge_top_engine_y": round(max(v.co.z for v in bpy.data.objects["Roof"].data.vertices), 3),
+        "roof_top_engine_y": round(max(v.co.z for n in ROOF_PARTS for v in bpy.data.objects[n].data.vertices), 3),
+        "roof_parts_plan_engine": {n: (lambda vs: {"x": (round(min(v.x for v in vs), 3), round(max(v.x for v in vs), 3)),
+                                                   "z": (round(-max(v.y for v in vs), 3), round(-min(v.y for v in vs), 3)),
+                                                   "y": (round(min(v.z for v in vs), 3), round(max(v.z for v in vs), 3))})(
+            [v.co for v in bpy.data.objects[n].data.vertices]) for n in ROOF_PARTS},
+        "gables": {n: {k: round(v, 3) for k, v in g.items()} for n, g in b.gable_figs.items()},
         "chimney_engine": {"x": CHIMNEY_X, "z": (-CHIMNEY_Y[1], -CHIMNEY_Y[0]),
                            "cap_x": tuple(round(v, 3) for v in (
                                min(v.co.x for v in bpy.data.objects["Chimney"].data.vertices),
@@ -690,16 +899,82 @@ def check(b):
     # The chimney's top stands clear of the roof where it passes.
     chimney = bpy.data.objects["Chimney"]
     ex0, ex1, ey0, ey1 = X0 - EAVE_OUT, X1 + EAVE_OUT, Y0 - EAVE_OUT, Y1 + EAVE_OUT
-    roof_at = max(roof_height(min(v.co.x, ex1), v.co.y, ex0, ex1, ey0, ey1, EAVE_TOP)
+    roof_at = max(roof_height(min(v.co.x, ex1), v.co.y)
                   for v in chimney.data.vertices if v.co.x < ex1)
     if CHIMNEY_TOP < roof_at + 1.0:
         problems.append(f"chimney top {CHIMNEY_TOP} is less than 1 m above the roof ({roof_at:.2f})")
+    problems += roof_checks(b)
     return problems, total, per, lo, hi
 
 
+def roof_checks(b):
+    """Revision 3's rules for everything the new roof adds (ROOF_PARTS):
+    - in plan, inside revision 2's eaves;
+    - its top at most MAX_RISE above revision 2's ridge;
+    - nothing over the doorway or the vestibule below HEADROOM;
+    - its timber, plaster and glass (which, unlike Roof, go into the
+      engine's scene.ground) over the plinth, so the ground's highest
+      surface grows nowhere past the walls;
+    - each gable's and dormer's roof buried under the main slates at its back;
+    - the whole exterior's plan outline still revision 2's."""
+    problems = []
+    ex0, ex1, ey0, ey1 = EAVES
+    px0, px1, py0, py1 = X0 - PLINTH_OUT, X1 + PLINTH_OUT, Y0 - PLINTH_OUT, Y1 + PLINTH_OUT
+    eps = 1e-5
+    top = -1e9
+    for name in ROOF_PARTS:
+        obj = bpy.data.objects[name]
+        mesh = obj.data
+        vs = [v.co for v in mesh.vertices]
+        for v in vs:
+            top = max(top, v.z)
+            if not (ex0 - eps <= v.x <= ex1 + eps and ey0 - eps <= v.y <= ey1 + eps):
+                problems.append(f"{name}: a vertex at ({v.x:.3f}, {v.y:.3f}) is outside revision 2's eaves")
+                break
+        for poly in mesh.polygons:
+            pts = [vs[i] for i in poly.vertices]
+            lo_x, hi_x = min(p.x for p in pts), max(p.x for p in pts)
+            lo_y, hi_y = min(p.y for p in pts), max(p.y for p in pts)
+            low = min(p.z for p in pts)
+            for label, (rx0, rx1, ry0, ry1) in (("doorway", DOORWAY_RECT), ("vestibule", VESTIBULE_RECT)):
+                if hi_x > rx0 and lo_x < rx1 and hi_y > ry0 and lo_y < ry1 and low < HEADROOM:
+                    problems.append(f"{name}: a face over the {label} comes down to y {low:.2f}")
+            mat = mesh.materials[poly.material_index].name
+            if mat != "Roof":
+                for p in pts:
+                    inside = px0 - eps <= p.x <= px1 + eps and py0 - eps <= p.y <= py1 + eps
+                    over_door = (DOORWAY_RECT[0] <= p.x <= DOORWAY_RECT[1] and DOORWAY_RECT[2] <= p.y <= DOORWAY_RECT[3]
+                                 and p.z > HEADROOM)
+                    if not (inside or over_door):
+                        problems.append(f"{name}: {mat} at ({p.x:.3f}, {p.y:.3f}, {p.z:.2f}) is past the plinth")
+                        break
+    if top > REV2_RIDGE_TOP + MAX_RISE + eps:
+        problems.append(f"the roof's top is at {top:.3f}, more than {MAX_RISE} m above revision 2's {REV2_RIDGE_TOP}")
+    for g in [CROSS_GABLE] + DORMERS:
+        P, OUT, seat, eave, ridge, we, zb, depth = gable_frame(g)
+        for u, z in ((0.0, ridge + 0.3), (-we, zb(we) + COURSE_T + 0.1), (we, zb(we) + COURSE_T + 0.1)):
+            p = P(u, depth, 0)
+            if roof_base(roof_inset(p.x, p.y)) <= z:
+                problems.append(f"{g['name']}: its roof's back end at u {u:.2f} stands out of the main slates")
+    lo = Vector((1e9, 1e9, 0))
+    hi = Vector((-1e9, -1e9, 0))
+    for obj in b.coll.objects:
+        for v in obj.data.vertices:
+            lo.x, lo.y = min(lo.x, v.co.x), min(lo.y, v.co.y)
+            hi.x, hi.y = max(hi.x, v.co.x), max(hi.y, v.co.y)
+    plan = (lo.x, hi.x, lo.y, hi.y)
+    if any(abs(a - c) > 0.006 for a, c in zip(plan, REV2_PLAN)):
+        problems.append(f"the plan outline is {tuple(round(v, 3) for v in plan)}, revision 2's was {REV2_PLAN}")
+    return problems
+
+
+DEFAULT_VIEW_YAW = 180.0 - 12.5
+
+
 def render_preview(b):
-    """tavern_exterior.png: three views at 30 degrees down, orthographic, as
-    the engine's camera sees it - from the front-right, front-left and back-left -
+    """tavern_exterior.png: four views at 30 degrees down, orthographic, as
+    the engine's camera sees it - from the game's default camera as the
+    tavern is placed, then from the front-right, front-left and back-left -
     each at twice the game's pixel scale (48 px/m)."""
     import numpy as np
 
@@ -732,6 +1007,9 @@ def render_preview(b):
         paths.append(path)
 
     centre = ((X0 + X1) / 2, (Y0 + Y1) / 2, 3.8)
+    # The ruins' default camera (yaw 180) as it sees the tavern placed at
+    # kTavernYaw (12.5 degrees): 167.5 degrees in the tavern's own frame.
+    shoot("default_camera", DEFAULT_VIEW_YAW, centre)
     shoot("front_right", 180 + 45, centre)
     shoot("front_left", 180 - 45, centre)
     shoot("back_left", 45, centre)
