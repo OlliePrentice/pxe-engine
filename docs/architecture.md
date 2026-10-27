@@ -2,6 +2,8 @@
 
 The project is two things: **pxe**, a reusable engine for pixel-art 3D games in this style (`engine/`, the `pxe_engine` library, namespace `pxe`), and **the game**, one implementation built on it (`game/`, the `pxe` executable, namespace `game`). Every piece of code belongs to exactly one of them, and where it goes is decided on purpose, never by where the nearest similar code happens to be.
 
+How to use the engine (CMake, start-up order, the frame loop, building a scene, its contracts) is in [engine-guide.md](engine-guide.md).
+
 ## The test
 Would a different game in this style need this code, unchanged? Yes: it is engine. No: it is game.
 

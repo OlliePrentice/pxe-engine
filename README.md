@@ -61,7 +61,7 @@ The characters are built the same way: [`tools/blender/build_hooded_hero.py`](to
 
 ## Build
 
-C++20, CMake 3.20+, and a network connection the first time (GLFW and glm are fetched). OpenGL 4.1 core, GLSL 410.
+C++20, CMake 3.20+, and a network connection the first time (GLFW, glm, Dear ImGui and miniaudio are fetched). OpenGL 4.1 core, GLSL 410.
 
 ### macOS (Apple Silicon or Intel)
 
