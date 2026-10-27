@@ -1,5 +1,5 @@
 ## ISSUE-001: Minimising the window on Windows makes render throw
-Status: fixed
+Status: resolved
 Severity: major
 Source: review
 Found in cycle: 1
