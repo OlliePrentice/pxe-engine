@@ -149,7 +149,7 @@ Step by step:
 - **Input.** `Window::pollEvents()` first, then `Input::update(window)`. `keyDown` is the state now. `keyPressed` is true only on the frame a key goes down. The mouse (`mousePosition` in framebuffer pixels from the top left, `mouseDown`, `mousePressed`) and the first connected gamepad (`gamepadDown`, `gamepadPressed`, `gamepadStick` with a dead zone, `gamepadAxis` raw) work the same way. What a key does is the game's decision. If an `Overlay` is up, skip game keys while `Overlay::wantsKeyboard()` is true and clicks while `wantsMouse()` is true.
 - **Game update.** Move your characters, advance your clock and weather, and update the camera (`Camera::update(dt)`).
 - **Lighting.** `pxe::lightingAt(scene, hour, weather)` turns the hour (0-24) and a `pxe::Weather` into a `pxe::Lighting`: the sun or moon direction, the palettes blended for the time of day, clouds, wind, rain, god rays, firefly and firelight colours and any lightning flash. Use this three-argument form. The two-argument `lightingAt(scene, hour)` leaves clouds, wind, rain, firelight and firefly light at zero, so fires draw flames but light nothing. `Weather` holds what your game decides: `cloudCover`, `cloudOffset`, `cloudStrength`, `windDir`, `windStrength`, `rain`, `flash` and `flashDir`. A default `Weather{}` is clear and dry, with the wind at its default strength (1) blowing toward +x.
-- **Render.** Fill a `pxe::FrameParams` and call `Renderer::render(scene, camera.frame(renderer.rtW(), renderer.rtH()), params)`. Pass the renderer's padded target size (`rtW()`, `rtH()`) to `Camera::frame`, not the window's. Set `framebufferW` and `framebufferH` to `Window::framebufferSize()` every frame, as the defaults are 1920x1080 and the window may be resized or on a high-DPI display. Set `time` to seconds of game time. It drives grass wind, fire, fireflies and water. Hold it fixed for repeatable captures. With `present` true (the default), `render` ends by scaling the view into the window's framebuffer, centred with black borders.
+- **Render.** Fill a `pxe::FrameParams` and call `Renderer::render(scene, camera.frame(renderer.rtW(), renderer.rtH()), params)`. Pass the renderer's padded target size (`rtW()`, `rtH()`) to `Camera::frame`, not the window's. Set `framebufferW` and `framebufferH` to `Window::framebufferSize()` every frame, as the window may be resized or on a high-DPI display. They default to 0, and `render` throws `std::invalid_argument` if `present` is true and either is not positive. With `present` false they are not used and may stay 0. Set `time` to seconds of game time. It drives grass wind, fire, fireflies and water. Hold it fixed for repeatable captures. With `present` true (the default), `render` ends by scaling the view into the window's framebuffer, centred with black borders.
 - **Overlay.** Between `Overlay::begin()` and `Overlay::end()` the game calls ImGui itself. `end()` draws the UI over the presented frame, so call it after `render` and before `swap`:
 
   ```cpp
@@ -174,26 +174,15 @@ A `pxe::Scene` is plain data plus GPU meshes:
 - `grass`: every grass and leaf sprite (`GrassInstance`).
 - `ground`, `waterTop` (`HeightMap`) and `shelter` (`ShelterMap`): the maps the game queries.
 - `fireflyHomes`: points the fireflies wander round.
-- `palette[kPhaseCount][kSurfCount]`, `rim[kPhaseCount]`, `ink[kPhaseCount]`: colours per phase of the day (`kPhaseDay`, `kPhaseGolden`, `kPhaseTwilight`, `kPhaseNight`) and per surface.
+- `palette[kPhaseCount][kSurfCount]`, `rim[kPhaseCount]`, `ink[kPhaseCount]`: colours per phase of the day (`kPhaseDay`, `kPhaseGolden`, `kPhaseTwilight`, `kPhaseNight`) and per surface. A new `Scene` starts with the engine's default palettes.
 - `tLit`, `tMid`: the toon ramp's N·L thresholds.
 - `sunEast`, `sunSouth`, `sunPeakDegrees`: the sun's path.
 - `horizonCentre`, `horizonRadius`, `horizonHeight`, `horizonRelief`: an optional ridge round the scene that the rising sun must clear.
 - `boundsMin`, `boundsMax`: the scene's extent. Shadow maps are fitted to these.
 
-Every vertex names its surface: `kSurfGrass`, `kSurfDirt`, `kSurfStone`, `kSurfBark`, `kSurfLeaf`, `kSurfWater` or `kSurfFoam`. Each surface has its own ramp. **Palettes start black.** Set `band`, `detail` and `tip` (shadow, mid, lit) for every surface you use, in all four phases, and `rim` and `ink` per phase. `lightingAt` cross-fades the phases by sun elevation. The example sets day colours by hand and tints them for the other phases:
+Every vertex names its surface: `kSurfGrass`, `kSurfDirt`, `kSurfStone`, `kSurfBark`, `kSurfLeaf`, `kSurfWater` or `kSurfFoam`. Each surface has its own ramp: `band`, `detail` and `tip`, each shadow, mid and lit. A default-constructed `Scene` already has every ramp of every surface in all four phases, and `rim` and `ink` per phase: the engine's reference style, sampled from t3ssel8r's videos (day from his scene video; golden hour, twilight and night from his day/night video). `lightingAt` cross-fades the phases by sun elevation. The example keeps them all.
 
-```cpp
-for (int ph = 0; ph < pxe::kPhaseCount; ++ph) {
-  for (int s = 0; s < pxe::kSurfCount; ++s)
-    for (int b = 0; b < 3; ++b) {
-      scene.palette[ph][s].band[b] = hex(day[s].band[b]) * tint[ph];
-      scene.palette[ph][s].detail[b] = hex(day[s].detail[b]) * tint[ph];
-      scene.palette[ph][s].tip[b] = hex(day[s].tip[b]) * tint[ph];
-    }
-  scene.rim[ph] = hex(0xf5f0dc) * tint[ph];
-  scene.ink[ph] = hex(0x4c4c66) * tint[ph];
-}
-```
+To change the look, overwrite only the ramps you want different, after constructing the scene. For a brighter lit band on day grass, set `scene.palette[pxe::kPhaseDay][pxe::kSurfGrass].band[2]` (a linear 0..1 `glm::vec3`); for a different outline at night, `scene.ink[pxe::kPhaseNight]`. The phases cross-fade, so a ramp changed in one phase only gives way to the default colours as the time of day moves on. Change it in every phase to keep the new look all day.
 
 The sun rises from `sunEast`, peaks toward `sunSouth` at `sunPeakDegrees` above the horizon and sets opposite `sunEast`. The moon crosses the same arc at night. Choose them relative to your camera: the example puts sunrise on the view's right and noon ahead of it.
 
@@ -247,20 +236,16 @@ Grass and leaves are `GrassInstance` sprites in `scene.grass`, scattered after t
 
 ```cpp
 std::mt19937 rng(7);
-const float density = pxe::RenderConfig::kPixelsPerUnit / 16.f;
-pxe::GrassScatter grass;
-grass.clumpSpacing /= density;
-grass.tuftSpacing /= density;
 const pxe::TriangleGrid ground(pxe::trianglesOf(groundVerts, groundIdx), 1.f);
-pxe::scatterGrass(scene, ground, grass, rng);
+pxe::scatterGrass(scene, ground, pxe::GrassScatter{}, rng);
 pxe::dropGrassUnder(scene, geometry, {pxe::kSurfStone, pxe::kSurfBark});
-pxe::scatterLeaves(scene, crown, 6.f * density * density, rng);
+pxe::scatterLeaves(scene, crown, pxe::kDefaultLeafDensity, rng);
 ```
 
 - `scatterGrass(scene, ground, params, rng)` carpets the triangles of a `TriangleGrid` with blade clumps (Poisson-disk spaced by `GrassScatter::clumpSpacing`) and, when `tufts` is set, a sparser layer of tufts (`tuftSpacing`). `GrassScatter::height` is a 0..1 field over xz that sets clump height. The default is `pxe::grassPatchiness`. Build the `TriangleGrid` from the triangles grass should grow on, not from walls or roofs. The second argument is the bucket size in metres.
-- `GrassScatter`'s default spacings are tuned at 16 pixels per metre. The engine draws at `RenderConfig::kPixelsPerUnit` (24), so divide both spacings by `kPixelsPerUnit / 16` to keep the intended density on screen, as above.
+- `GrassScatter`'s default spacings are already at the engine's pixel density (`RenderConfig::kPixelsPerUnit`): they were tuned at 16 pixels per metre and are scaled to keep the same density on screen. Use them as they are, or set your own in metres.
 - `dropGrassUnder(scene, geometry, {surfaces})` removes grass rooted beneath the given surfaces. Ground that runs on under a stone or trunk would otherwise show grass through its faces. It works over the scene's bounds, so call it after `uploadScene`.
-- `scatterLeaves(scene, crowns, density, rng)` covers crown triangles with leaf clusters, about `density` per square metre. 6 per square metre at 16 px/m looks right, so scale it by the square of the density factor.
+- `scatterLeaves(scene, crowns, density, rng)` covers crown triangles with leaf clusters, about `density` per square metre. `pxe::kDefaultLeafDensity` is the engine's default, at its pixel density.
 - `poissonDisk(lo, hi, minDist, rng, accept)` is the sampler underneath, for scattering your own things.
 
 Leaves and grass are drawn with their surface's `detail` and `tip` colours as well as `band`.
@@ -388,8 +373,8 @@ Every public header, in `engine/include/pxe/`, namespace `pxe`.
 - **`mesh.hpp`.** `Surface` (`kSurfGrass` .. `kSurfFoam`, `kSurfCount`), `Vertex`, `Mesh`. Also `SkinVertex` and `SkinnedMesh`, a skinned mesh uploaded once at rest.
 - **`overlay.hpp`.** `Overlay`: Dear ImGui over the window (`begin`, `end`, `wantsKeyboard`, `wantsMouse`).
 - **`renderer.hpp`.** `Renderer` (`init`, `upload`, `uploadGrass`, `render`, `readView`, `readPresented`, `rayThrough`, `windowPoint`, `viewW`, `viewH`, `rtW`, `rtH`, `setProfiling`, `passTimes`). Also `FrameParams`, `FireDraw`, `PointLight`, `ActorDraw` and `PassTimes`.
-- **`scatter.hpp`.** `scatterGrass` with `GrassScatter`, `dropGrassUnder`, `scatterLeaves`, `poissonDisk` and `grassPatchiness`.
-- **`scene.hpp`.** `Scene`, `GrassInstance`, `Palette` and `Phase` (`kPhaseDay` .. `kPhaseNight`, `kPhaseCount`).
+- **`scatter.hpp`.** `scatterGrass` with `GrassScatter`, `dropGrassUnder`, `scatterLeaves` with `kDefaultLeafDensity`, `poissonDisk` and `grassPatchiness`.
+- **`scene.hpp`.** `Scene` (constructed with the default palettes), `GrassInstance`, `Palette` and `Phase` (`kPhaseDay` .. `kPhaseNight`, `kPhaseCount`).
 - **`scene_geometry.hpp`.** `SurfaceGeometry` (`append`, `corners`), `buildSceneMaps`, `uploadScene`.
 - **`shelter.hpp`.** `ShelterMap`: roofing over the ground (`build`, `sheltered`, `coveredLines`).
 - **`skinned.hpp`.** `SkinnedModel`: skinned glTF characters with clips, poses, blending and skinning. Also `ActorMaterial`, `kActorSurface`, `kActorMaterials` and `kMaxJoints`.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pxe/scatter.hpp"
 #include "pxe/scene.hpp"
 
 #include <glm/vec2.hpp>
@@ -66,13 +67,14 @@ struct BuildOptions {
   // "ruins" (the Blender pond-and-pillars scene) or "hills".
   std::string scene = "ruins";
   // Horizontal Poisson-disk radius for blade clumps, in metres. A clump is
-  // about five pixels (0.3 m) wide, so this keeps band edges continuous.
-  float minDist = 0.34f;
+  // about five pixels wide, so the engine's default keeps band edges
+  // continuous.
+  float minDist = pxe::GrassScatter{}.clumpSpacing;
   // Spacing of the sparse detail tufts.
-  float tuftDist = 2.f;
+  float tuftDist = pxe::GrassScatter{}.tuftSpacing;
   bool tufts = true;
   // Leaf clusters per square metre of crown.
-  float leafDensity = 6.f;
+  float leafDensity = pxe::kDefaultLeafDensity;
   // Eight isolated sprites instead of the field, for the pixel-exact check
   // (hills only).
   bool stamps = false;

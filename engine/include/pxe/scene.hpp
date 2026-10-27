@@ -42,6 +42,10 @@ enum Phase : int {
 };
 
 struct Scene {
+  // Starts with the reference palettes, rim and ink (see `palette`), and an
+  // empty scene.
+  Scene();
+
   std::vector<Mesh> meshes;  // opaque; all cast shadows
   // Water sheets, drawn after the opaque meshes with reflections. They do
   // not cast shadows. waterLevel is the height of the (flat) water plane,
@@ -59,8 +63,12 @@ struct Scene {
   HeightMap waterTop;
   // Where each firefly wanders round, when they are out.
   std::vector<glm::vec3> fireflyHomes;
+  // Each surface's colours per phase. They default to the reference style,
+  // sampled from t3ssel8r's videos, for every phase and surface; a game
+  // overrides only the ramps it wants different.
   Palette palette[kPhaseCount][kSurfCount];
   // Edge-pass colours per phase: light rim on stone tops, dark outline.
+  // Default to the reference style's, like `palette`.
   glm::vec3 rim[kPhaseCount]{};
   glm::vec3 ink[kPhaseCount]{};
 

@@ -55,12 +55,17 @@ struct ActorDraw {
 };
 
 struct FrameParams {
-  int framebufferW = 1920;
-  int framebufferH = 1080;
+  // The window's framebuffer in pixels (Window::framebufferSize()), which
+  // the view is presented into. Required when `present` is true: render
+  // throws std::invalid_argument if either is not positive. Unused, and may
+  // stay 0, when `present` is false.
+  int framebufferW = 0;
+  int framebufferH = 0;
   bool showGrass = true;
   bool magentaGrass = false;
   bool showNdl = false;
   bool testColours = false;
+  // Scale the view into the window's framebuffer at the end of the frame.
   bool present = true;
   // When false, grass still draws but ignores the depth buffer. Used to
   // stamp isolated sprites for the pixel-exact check.
@@ -141,7 +146,9 @@ class Renderer {
   // Draw a frame. `scene` must be the scene last passed to upload(): the
   // renderer keeps shadow maps drawn from it between frames and redraws them
   // only when the light changes or upload() is called again, never by
-  // checking which scene it is given.
+  // checking which scene it is given. Throws std::invalid_argument, before
+  // drawing anything, if params.present is set without a positive
+  // framebuffer size.
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
 
   // Centre RenderConfig::kViewW x kViewH of the low-res target (the view

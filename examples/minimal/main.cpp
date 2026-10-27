@@ -9,7 +9,6 @@
 // docs/engine-guide.md walks through this file.
 
 #include "pxe/camera.hpp"
-#include "pxe/config.hpp"
 #include "pxe/image.hpp"
 #include "pxe/input.hpp"
 #include "pxe/lighting.hpp"
@@ -45,42 +44,6 @@ constexpr int kCaptureFrames = 4;
 
 // Rolling ground, about a metre from crest to trough.
 float groundHeight(float x, float z) { return 0.5f * std::sin(0.21f * x + 0.4f) * std::cos(0.17f * z - 0.3f); }
-
-glm::vec3 hex(std::uint32_t rgb) {
-  return glm::vec3{static_cast<float>((rgb >> 16) & 0xff), static_cast<float>((rgb >> 8) & 0xff),
-                   static_cast<float>(rgb & 0xff)} /
-         255.f;
-}
-
-// Each surface's colours, shadow to lit, for each phase of the day. A surface
-// left unset is black. The day colours are set by hand; golden hour, twilight
-// and night are the day's under a tint, which keeps the example short. A
-// game would choose every phase's colours by hand.
-void setPalettes(pxe::Scene& scene) {
-  struct Ramps {
-    std::uint32_t band[3], detail[3], tip[3];
-  };
-  const auto plain = [](std::uint32_t shadow, std::uint32_t mid, std::uint32_t lit) {
-    return Ramps{{shadow, mid, lit}, {shadow, mid, lit}, {shadow, mid, lit}};
-  };
-  Ramps day[pxe::kSurfCount] = {};
-  day[pxe::kSurfGrass] = {{0x648474, 0x94b064, 0xacbc6c}, {0x74947c, 0x7c9c54, 0x8ca454}, {0x648474, 0xacbc6c, 0xc8d690}};
-  day[pxe::kSurfStone] = plain(0x747480, 0xa49c8c, 0xbcac94);
-  day[pxe::kSurfBark] = plain(0x6a6a7a, 0x8a8684, 0xbcac90);
-  day[pxe::kSurfLeaf] = {{0x4c6e5c, 0x68905a, 0x88a850}, {0x58806a, 0x7ca25a, 0xaac65c}, {0x4c6e5c, 0x68905a, 0x88a850}};
-  const glm::vec3 tint[pxe::kPhaseCount] = {
-      {1.f, 1.f, 1.f}, {1.1f, 0.9f, 0.72f}, {0.5f, 0.52f, 0.72f}, {0.26f, 0.3f, 0.56f}};
-  for (int ph = 0; ph < pxe::kPhaseCount; ++ph) {
-    for (int s = 0; s < pxe::kSurfCount; ++s)
-      for (int b = 0; b < 3; ++b) {
-        scene.palette[ph][s].band[b] = hex(day[s].band[b]) * tint[ph];
-        scene.palette[ph][s].detail[b] = hex(day[s].detail[b]) * tint[ph];
-        scene.palette[ph][s].tip[b] = hex(day[s].tip[b]) * tint[ph];
-      }
-    scene.rim[ph] = hex(0xf5f0dc) * tint[ph];
-    scene.ink[ph] = hex(0x4c4c66) * tint[ph];
-  }
-}
 
 // A flat quad a-b-c-d with normal n, wound to face along n: meshes are drawn
 // with back faces culled.
@@ -145,8 +108,9 @@ struct World {
 // Builds and uploads the scene's geometry. Needs the window's GL context.
 World buildWorld() {
   World world;
+  // A new scene starts with the engine's default palettes for every surface
+  // and phase of the day, so the example sets none.
   pxe::Scene& scene = world.scene;
-  setPalettes(scene);
   // The sun rises on the view's right and peaks ahead of it.
   scene.sunEast = {-std::cos(kYaw), 0.f, std::sin(kYaw)};
   scene.sunSouth = {std::sin(kYaw), 0.f, std::cos(kYaw)};
@@ -188,17 +152,13 @@ World buildWorld() {
   pxe::uploadScene(scene, geometry);
 
   // Grass and leaves from one seeded generator, in a fixed order, so the
-  // scene comes out the same on every run. The scatter defaults are tuned
-  // at 16 pixels per metre; scale them to the engine's pixel density.
+  // scene comes out the same on every run. The scatter defaults are already
+  // at the engine's pixel density.
   std::mt19937 rng(7);
-  const float density = pxe::RenderConfig::kPixelsPerUnit / 16.f;
-  pxe::GrassScatter grass;
-  grass.clumpSpacing /= density;
-  grass.tuftSpacing /= density;
   const pxe::TriangleGrid ground(pxe::trianglesOf(groundVerts, groundIdx), 1.f);
-  pxe::scatterGrass(scene, ground, grass, rng);
+  pxe::scatterGrass(scene, ground, pxe::GrassScatter{}, rng);
   pxe::dropGrassUnder(scene, geometry, {pxe::kSurfStone, pxe::kSurfBark});
-  pxe::scatterLeaves(scene, crown, 6.f * density * density, rng);
+  pxe::scatterLeaves(scene, crown, pxe::kDefaultLeafDensity, rng);
   return world;
 }
 

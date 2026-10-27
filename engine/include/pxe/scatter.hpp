@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pxe/config.hpp"
 #include "pxe/mesh.hpp"
 #include "pxe/scene.hpp"
 #include "pxe/scene_geometry.hpp"
@@ -31,11 +32,15 @@ std::vector<glm::vec2> poissonDisk(glm::vec2 lo, glm::vec2 hi, float minDist, st
 // height makes every band edge the same fine comb.
 float grassPatchiness(float x, float z);
 
+// Grass and leaf sprites are sized in pixels, so the default spacings and
+// densities below, tuned at 16 pixels per metre, are scaled to
+// RenderConfig::kPixelsPerUnit to keep the same density on screen.
 struct GrassScatter {
-  // Horizontal Poisson-disk radius for blade clumps, in metres.
-  float clumpSpacing = 0.34f;
-  // Spacing of the sparse detail tufts.
-  float tuftSpacing = 2.f;
+  // Horizontal Poisson-disk radius for blade clumps, in metres: 0.34 m at
+  // 16 px/m.
+  float clumpSpacing = 0.34f / (RenderConfig::kPixelsPerUnit / 16.f);
+  // Spacing of the sparse detail tufts: 2 m at 16 px/m.
+  float tuftSpacing = 2.f / (RenderConfig::kPixelsPerUnit / 16.f);
   bool tufts = true;
   // A 0..1 field over xz that sets each clump's height.
   std::function<float(float, float)> height = grassPatchiness;
@@ -53,8 +58,14 @@ void scatterGrass(Scene& scene, const TriangleGrid& ground, const GrassScatter& 
 // faces. Returns how many were removed.
 std::size_t dropGrassUnder(Scene& scene, const SurfaceGeometry& geometry, std::initializer_list<Surface> surfaces);
 
+// The default leaf density for scatterLeaves, in clusters per square metre
+// of crown: 6 at 16 px/m, scaled by the square of the pixel density.
+inline constexpr float kDefaultLeafDensity =
+    6.f * ((RenderConfig::kPixelsPerUnit / 16.f) * (RenderConfig::kPixelsPerUnit / 16.f));
+
 // Adds leaf clusters (surface kSurfLeaf) over the crown triangles, about
-// `density` per square metre, grown in clumps: clump centres are scattered
+// `density` per square metre (kDefaultLeafDensity unless a game wants its
+// crowns sparser or fuller), grown in clumps: clump centres are scattered
 // over the crowns, and leaves gather around them with gaps between where the
 // darker crown body shows. A clump shares a tilt, so its leaves tend to
 // light together and a crown breaks into patches; each leaf adds its own

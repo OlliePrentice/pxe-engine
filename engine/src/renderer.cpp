@@ -881,6 +881,10 @@ int Renderer::uploadPointLights(const CameraFrame& camera) {
 }
 
 void Renderer::render(const Scene& scene, const CameraFrame& camera, const FrameParams& params) {
+  if (params.present && (params.framebufferW <= 0 || params.framebufferH <= 0))
+    throw std::invalid_argument("Renderer::render: present is set but FrameParams::framebufferW/H is " +
+                                std::to_string(params.framebufferW) + "x" + std::to_string(params.framebufferH) +
+                                "; set it to Window::framebufferSize(), or clear present");
   const Lighting& lighting = params.lighting;
   const LightFit light = fitLight(scene, lighting.lightDir);
   const LightFit flash = fitLight(scene, lighting.flashDir);

@@ -13,6 +13,7 @@
 #include "pxe/lighting.hpp"
 #include "pxe/overlay.hpp"
 #include "pxe/renderer.hpp"
+#include "pxe/scatter.hpp"
 #include "pxe/window.hpp"
 
 #include <glm/geometric.hpp>
@@ -89,7 +90,7 @@ struct Options {
   bool haveYaw = false;
   float yawDeg = 45.f;
   float slide = 0.f;
-  float minDist = 0.34f;
+  float minDist = pxe::GrassScatter{}.clumpSpacing;  // metres, as scattered
   bool haveTarget = false;
   glm::vec3 target{0.f};
   // The hooded hero: on when playing, off for captures unless asked for.
@@ -130,7 +131,7 @@ void printUsage() {
   std::fprintf(stderr,
                "pxe — contoured terrain and grass\n"
                "  --width N --height N\n"
-               "  --capture path.png       640x360 low-res framebuffer, then exit\n"
+               "  --capture path.png       the %dx%d low-res view, then exit\n"
                "  --window-png path.png    integer-upscaled window, then exit\n"
                "  --scene ruins|hills      default ruins\n"
                "  --hour H                 time of day, 0-24 (captures default to 15)\n"
@@ -184,12 +185,14 @@ void printUsage() {
                "  --add-fox X,Z,SECS       ruins: add a fox as a click with the fox tool (4) at world X,Z would:\n"
                "                           in play SECS s in; in captures before the shot, or with --fox-wake\n"
                "                           SECS s into the foxes' run (repeatable)\n"
-               "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
+               "  --min-dist metres        clump Poisson spacing (default %.4g, the engine's)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
                "  --stamps --no-depth\n"
                "  --self-test              snap stability of the low-res image\n"
-               "  --no-vsync\n");
+               "  --no-vsync\n",
+               pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH,
+               static_cast<double>(pxe::GrassScatter{}.clumpSpacing));
 }
 
 bool parseTarget(const char* text, glm::vec3& out) {
@@ -773,12 +776,7 @@ int main(int argc, char** argv) {
     }
     if (exitCode == 0) {
       game::BuildOptions build;
-      // Grass and leaf sprites are sized in pixels and their spacing was tuned
-      // at 16 px/m, so scale it to keep the same density per pixel.
-      const float density = pxe::RenderConfig::kPixelsPerUnit / 16.f;
-      build.minDist = opt.minDist / density;
-      build.tuftDist /= density;
-      build.leafDensity *= density * density;
+      build.minDist = opt.minDist;
       build.tufts = opt.tufts && !opt.stamps;
       build.stamps = opt.stamps;
       build.shelterTest = opt.shelterTest;
