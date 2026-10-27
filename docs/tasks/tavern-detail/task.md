@@ -1,6 +1,6 @@
 # Tavern detail pass
 Type: feature
-Status: open
+Status: complete
 Cycle: 4
 
 ## Goal
@@ -65,8 +65,8 @@ Make the Sleeping Fox easier to read. Inside, the bar, tables and other furnitur
 - [x] (cycle 3) The fill light takes the sky light's time-of-day tint, with its strength curve unchanged. — `common.glsl` `indoorColour` tints fill and sky by `uSkyTint`; fill curve unchanged
 - [x] (cycle 3) Seen from inside, the window openings show the sky's current colour. — `sky.vert`/`sky.frag` panes at the far plane behind each opening, `renderer.cpp`
 - [x] (cycle 3) Outdoor rendering is unchanged except the Roof (palette unchanged, crease ink and tile geometry new). — developer captures: default ruins and hills views 0 px changed; only slate pixels changed near the tavern
-- [ ] (cycle 4) The four sconce fires are night-only, like the brazier: lit while the sun's elevation is below 0°, fading in and out over about 2 s, and settled at once when placed. The hearth and candles are always lit.
-- [x] Project builds cleanly from a fresh build directory with CMake. — orchestrator fresh Debug build, cycle 2: pass, only existing stb/glfw warnings — orchestrator fresh Debug build, cycle 3: pass, only existing stb/glfw warnings
+- [x] (cycle 4) The four sconce fires are night-only, like the brazier: lit while the sun's elevation is below 0°, fading in and out over about 2 s, and settled at once when placed. The hearth and candles are always lit. — `scene.cpp` `buildTavern` kRoomSconces `nightOnly = true`; captures: out at 10:00, lit at 22:00
+- [x] Project builds cleanly from a fresh build directory with CMake. — orchestrator fresh Debug build, cycle 2: pass, only existing stb/glfw warnings — orchestrator fresh Debug build, cycle 4: pass, only existing stb/glfw warnings
 
 ## Assets
 The standing style is `docs/art-style.md` (Buildings and props). Rebuild from the scripts, watched live through the Blender MCP, then rebuild headless and export. Never hand-edit a glb. Previews go beside each glb.
@@ -107,3 +107,4 @@ The standing style is `docs/art-style.md` (Buildings and props). Rebuild from th
 - Cycle 3: 2026-10-27 reopened by the user after a playtest: tiles don't read, oak looks grey, the room goes dark too early. Base 4b479b7. Decisions under "Cycle 3 revisions".
 - Cycle 3: designer 66834f2 (exterior revision 4), developer 68e5dd5. Fresh build passes. Review: every cycle-3 criterion met; ISSUE-002 (settings menu counts the brazier as burning by day) wont-fix. Task complete.
 - Cycle 4: 2026-10-27 reopened by the user: the wall sconces should be out by day. Base 4c32ee4.
+- Cycle 4: developer 6d0b47d, 5a62658. Fresh build passes, no new issues; ISSUE-002 (menu fire count) now covers the sconces too. Task complete.

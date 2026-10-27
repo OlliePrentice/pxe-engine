@@ -21,7 +21,7 @@ Found in cycle: 3
 Reopened: 0
 
 ### Problem
-Developer's cycle-3 known limitations: the night-only brazier is scaled out by `WorldClock::Fire::drawnLevel()` when drawn, but its `level` stays up, so the settings menu's fire count still includes it by day.
+Developer's cycle-3 known limitations: the night-only brazier is scaled out by `WorldClock::Fire::drawnLevel()` when drawn, but its `level` stays up, so the settings menu's fire count still includes it by day. From cycle 4 the same applies to the four night-only wall sconces.
 
 ### Fix notes
 Wont-fix (orchestrator): it is a debug readout only. What the player sees and the light it gives are both correct, and indoors the brushes are inert (out of scope in the tavern task). Revisit if the menu's count is ever shown to players.
