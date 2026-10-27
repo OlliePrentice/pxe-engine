@@ -19,6 +19,9 @@ Give the Sleeping Fox more surface detail, inside and out. The door gets bold, s
   - **Spalled patches:** 3–4 panels on the exterior and 2 on the interior's visible walls have a patch where the render has fallen away. Each patch is an irregular outline showing stones in light mortar beneath, built as Q3 describes. Patches are on panels the default camera sees (exterior) or on the visible walls (interior), clear of windows, the doorway, the sign and the sconces.
   - No pargetting and no limewash variation.
 - **Existing content stays put.** No wall, timber, window, door frame, roof, chimney position, sign, furniture, fire, sconce or candle moves or resizes. The exterior's plan extents, footprint, doorway, vestibule and placement figures are unchanged. The interior's walkway, path and view-fit checks still pass, and its bounds and every recorded figure are unchanged. Proud stones and facets must not intrude into the doorway, vestibule or any walkway. The door's leaf size, hinge, joint and swing are unchanged, and the grain stays within its 0.12 m thickness plus at most 0.02 m, clear of the frame through the 100° swing.
+- **Door grooves deepened (cycle 1, orchestrator).** The door's existing plank V-grooves go from 0.025 to 0.03 m deep, so their faces turn 45° and pass the 40° crease test. At 0.025 m they turned 39.8° and the plank joints could never ink. The groove width, leaf size and every recorded figure are unchanged.
+- **Grain height (cycle 1, orchestrator).** "Thickness plus at most 0.02 m" is read per face: grain stands up to 0.02 m off each face, so it spans z −0.02 to 0.14. The iron already stands 0.015 m off each face and the ring to 0.15, and the build checks swing clearance.
+- **Door crease ink strength.** On the dark door wood the 0.35 ink mix is faint (`tavern_door_grain.png`), so the door's creases use the Roof treatment: about a 0.65 mix, kept at least a step darker than the wood under it.
 - **Branch.** Work on `add-tavern`, as the previous tavern tasks did.
 
 ## Acceptance criteria
@@ -67,4 +70,5 @@ The standing style is `docs/art-style.md` (Buildings and props). Rebuild from th
 - Outdoor view culling (planned as the next task after the tavern merges)
 
 ## Cycle log
-- Cycle 1: 2026-10-27 started
+- Cycle 1: 2026-10-27 started, base 799b846
+- Cycle 1: designer ad21370 (door r2 506 tris, exterior r5 9,117, interior r4 11,927); all figures unchanged.
