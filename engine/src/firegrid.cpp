@@ -68,12 +68,12 @@ FireGrid::~FireGrid() {
   if (flameVbo_) glDeleteBuffers(1, &flameVbo_);
 }
 
-void FireGrid::init(const std::string& dir) {
-  progStep_ = linkProgram(dir + "/edge.vert", dir + "/gridstep.frag");
-  progBurn_ = linkProgram(dir + "/edge.vert", dir + "/gridburn.frag");
-  progSum_ = linkProgram(dir + "/edge.vert", dir + "/gridsum.frag");
-  progGlow_ = linkProgram(dir + "/edge.vert", dir + "/gridglow.frag");
-  progFlame_ = linkProgram(dir + "/gridflame.vert", dir + "/fire.frag");
+void FireGrid::init() {
+  progStep_ = linkProgram("edge.vert", "gridstep.frag");
+  progBurn_ = linkProgram("edge.vert", "gridburn.frag");
+  progSum_ = linkProgram("edge.vert", "gridsum.frag");
+  progGlow_ = linkProgram("edge.vert", "gridglow.frag");
+  progFlame_ = linkProgram("gridflame.vert", "fire.frag");
   glGenVertexArrays(1, &vao_);
   glGenVertexArrays(1, &flameVao_);
   glGenBuffers(1, &flameVbo_);

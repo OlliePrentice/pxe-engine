@@ -6,7 +6,6 @@
 #include <glm/vec2.hpp>
 #include <glm/vec4.hpp>
 
-#include <string>
 #include <vector>
 
 namespace pxe {
@@ -58,7 +57,7 @@ class FireGrid {
   FireGrid(const FireGrid&) = delete;
   FireGrid& operator=(const FireGrid&) = delete;
 
-  void init(const std::string& shaderDir);
+  void init();
   // Drop the grid; the next advance builds it afresh for the scene it is
   // given. Call whenever the scene changes.
   void reset() { built_ = false; }

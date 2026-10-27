@@ -75,14 +75,6 @@ void requireFbo(const char* what) {
   }
 }
 
-std::string shaderDir() {
-#ifdef PXE_SHADER_DIR
-  return PXE_SHADER_DIR;
-#else
-  return "engine/shaders";
-#endif
-}
-
 struct LightFit {
   glm::mat4 viewProj{1.f};
   float texel = 0.05f;
@@ -461,23 +453,22 @@ void Renderer::createQuads() {
 }
 
 void Renderer::init() {
-  const std::string dir = shaderDir();
   for (int grid = 0; grid < 2; ++grid)
     for (int many = 0; many < 2; ++many) {
       const std::string defines = std::string(many ? "" : "#define ONE_FIRE_LIGHT\n") + (grid ? "#define FIRE_GRID\n" : "");
       ToonPrograms& t = toon_[grid][many];
-      t.mesh = linkProgram(dir + "/mesh.vert", dir + "/mesh.frag", dir + "/common.glsl", defines);
-      t.grass = linkProgram(dir + "/grass.vert", dir + "/grass.frag", dir + "/common.glsl", defines);
-      t.water = linkProgram(dir + "/water.vert", dir + "/water.frag", dir + "/common.glsl", defines);
+      t.mesh = linkProgram("mesh.vert", "mesh.frag", "common.glsl", defines);
+      t.grass = linkProgram("grass.vert", "grass.frag", "common.glsl", defines);
+      t.water = linkProgram("water.vert", "water.frag", "common.glsl", defines);
     }
-  grid_.init(dir);
-  progShadow_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag");
-  progShadowGrid_ = linkProgram(dir + "/shadow.vert", dir + "/shadow.frag", {}, "#define FIRE_GRID\n");
-  progPresent_ = linkProgram(dir + "/present.vert", dir + "/present.frag");
-  edge_[0] = linkProgram(dir + "/edge.vert", dir + "/edge.frag");
-  edge_[1] = linkProgram(dir + "/edge.vert", dir + "/edge.frag", {}, "#define FIRE_GRID\n");
-  progFire_ = linkProgram(dir + "/fire.vert", dir + "/fire.frag");
-  progFireShadow_ = linkProgram(dir + "/fireshadow.vert", dir + "/fireshadow.frag");
+  grid_.init();
+  progShadow_ = linkProgram("shadow.vert", "shadow.frag");
+  progShadowGrid_ = linkProgram("shadow.vert", "shadow.frag", {}, "#define FIRE_GRID\n");
+  progPresent_ = linkProgram("present.vert", "present.frag");
+  edge_[0] = linkProgram("edge.vert", "edge.frag");
+  edge_[1] = linkProgram("edge.vert", "edge.frag", {}, "#define FIRE_GRID\n");
+  progFire_ = linkProgram("fire.vert", "fire.frag");
+  progFireShadow_ = linkProgram("fireshadow.vert", "fireshadow.frag");
   createTargets();
   createQuads();
 
