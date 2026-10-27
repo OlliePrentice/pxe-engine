@@ -1,7 +1,7 @@
 # Tavern detail pass
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 Make the Sleeping Fox easier to read. Inside, the bar, tables and other furniture blend into the floor because everything wooden is one `Wood` material seen only in its dark shadow tone, and nothing lines the creases. Outside, the roof is a plain grey shape. This task gives the exterior a slate tile roof with decorative gables, gives the interior furniture a lighter oak colour (the floor stays dark), adds an indoor fill light, crease lines and more lights so edges read, and silences the wind indoors.
@@ -24,7 +24,8 @@ Make the Sleeping Fox easier to read. Inside, the bar, tables and other furnitur
   - Strength follows the clock: full by day and in golden hour, fading through twilight, **off at night**. At night the room stays lit only by its fires, as the tavern task decided.
   - Window daylight patches stay clearly brighter than anything the fill alone lights.
   - Outdoor rendering is unchanged.
-- **Crease lines indoors.** Indoors only, Oak and Wood surfaces draw an ink line where the surface turns sharply between neighbouring pixels (normals more than about 40° apart, no silhouette depth step), such as the bar top meeting its front. Outdoors the edge pass is unchanged.
+- **Crease lines indoors (revised in cycle 1).** Indoors only, Oak surfaces draw an ink line where the surface turns sharply between neighbouring pixels (normals more than about 40° apart, no silhouette depth step), such as the bar top meeting its front, including where Oak meets the Wood floor. Wood pixels draw no crease ink: inking Wood put a line on every floor plank groove, restyling the floor the user excluded (orchestrator decision, ISSUE-001). Outdoors the edge pass is unchanged.
+- **Slate at golden hour (cycle 1).** The Roof's golden lit tone comes out a warm grey (`938d73`) when scaled the way Stone's is. Accepted: every surface's golden lit tone is warm in this game, and the shadow and mid tones stay blue-grey.
 - **More lights.** The interior gains four wall sconces. Each is an iron bracket (`Stone`) with an open flame dish, and its flame is drawn by the engine as a fire of size 0.35, sheltered, like the candles. They hang at about 2.6 m (hero scale) on the wall posts of the two visible (far) walls, clear of windows, shelves and the hearth. The candles go from size 0.2 to 0.3. The hearth and brazier are unchanged.
 - **Wind indoors.** Wind audio is 0% indoors and back to 100% outside. Rain stays at 40% indoors, and thunder is unchanged.
 - **Existing content.** No furniture, wall, window, fire, candle, blocker, spawn point or the door moves. The interior's walkway and path rules still hold, and the build script still checks them. The room's bounds, design yaw and camera clamp are unchanged. The exterior keeps its footprint, plinth, chimney, sign, windows, doorway and vestibule.
@@ -38,7 +39,7 @@ Make the Sleeping Fox easier to read. Inside, the bar, tables and other furnitur
 - [ ] The interior has four wall sconces on the visible walls at about 2.6 m. Their flame bases are recorded in assets.md, and `buildTavern` adds a sheltered fire of size 0.35 at each. The candle size is 0.3. The hearth and brazier are unchanged.
 - [ ] The interior build still passes its walkway, path and view-fit checks, and every existing piece's position is unchanged from revision 2 (assets.md figures for hearth, brazier, candles, door, spawn, bounds, chairs, stools, benches and stage match the revision-2 values).
 - [ ] An indoors-only fill light in the toon shading gives faces of different orientation different tones. Its strength is full in day and golden, fades through twilight and is zero at night. Outdoor shading takes the old code path unchanged.
-- [ ] The edge pass draws indoors-only crease ink on Oak and Wood where neighbouring normals differ by more than about 40° without a silhouette step. Outdoors, `edges()` produces the same result as before.
+- [ ] The edge pass draws indoors-only crease ink on Oak (not on Wood) where neighbouring normals differ by more than about 40° without a silhouette step. Outdoors, `edges()` produces the same result as before.
 - [ ] `tavern_exterior.glb` has a stepped slate-course roof in `Roof`, a front cross-gable over the door, a gabled dormer on each long slope, and decorative bargeboards and finials. The build script checks that everything stays inside the revision-2 plan extents, rises at most 0.5 m above the old ridge, and leaves the doorway and vestibule clear below 3.3 m.
 - [ ] `kTavernSpot`, `kTavernYaw`, the exterior's door hinge, doorway, vestibule and footprint figures are unchanged. The tavern's `solids`, ground and overhead exclusion still work with the new roof (`scene.ground` still excludes the roof).
 - [ ] Indoors, wind volume is 0 and rain volume is 40%. Outdoors both are 100%.
@@ -77,4 +78,6 @@ The standing style is `docs/art-style.md` (Buildings and props). Rebuild from th
 - Chimney smoke, glowing windows, NPCs
 
 ## Cycle log
-- Cycle 1: 2026-10-27 started, base edf89bc
+- Cycle 1: 2026-10-27 started, base 7749a4f (spec commit; edf89bc before it)
+- Cycle 1: designer c41bd80, developer 388cee3. Fresh build passes. Review found ISSUE-001 (crease ink on the Wood floor's plank grooves).
+- Cycle 2: 2026-10-27 started, base HEAD after the cycle-1 review. Outstanding: ISSUE-001.
