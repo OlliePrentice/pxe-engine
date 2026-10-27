@@ -1,7 +1,7 @@
 # Tavern detail pass
 Type: feature
-Status: complete
-Cycle: 3
+Status: open
+Cycle: 4
 
 ## Goal
 Make the Sleeping Fox easier to read. Inside, the bar, tables and other furniture blend into the floor because everything wooden is one `Wood` material seen only in its dark shadow tone, and nothing lines the creases. Outside, the roof is a plain grey shape. This task gives the exterior a slate tile roof with decorative gables, gives the interior furniture a lighter oak colour (the floor stays dark), adds an indoor fill light, crease lines and more lights so edges read, and silences the wind indoors.
@@ -39,6 +39,7 @@ Make the Sleeping Fox easier to read. Inside, the bar, tables and other furnitur
   - **Sky light through the windows.** The existing sun patches stay. Each of the four windows also lets in a soft sky light: a lit area on the floor and walls in front of it, whose colour and strength follow the sky outside. It is warm white by day, amber at golden hour, a fading violet-blue through twilight, and a faint cool moonlight at night. The room is lit from its windows until the sky is fully dark (sun 14° below the horizon), then only faintly by the moon.
   - **Fill light tinted.** The cycle-1 fill light's strength curve is unchanged, but it takes the same time-of-day tint as the sky light.
   - **Window openings show the sky.** Seen from inside, each window opening shows the sky's current colour instead of black or the background. The exterior's panes are unchanged.
+- **Sconces lit only at night (cycle 4, user).** The four wall sconces follow the brazier's rule: lit while the sun's elevation is below 0°, out above it, with flame and light fading over about 2 s. This revises cycle 1's "sconces always lit". The hearth and candles stay lit at all hours.
 
 ## Acceptance criteria
 - [x] `pxe::Surface` has `kSurfOak`. `loadGltf`/`surfaceFor` maps `Oak` to it. Every array, shader constant and helper sized by or ranged over surfaces (`kSurfCount`, `kSurfaces` in `common.glsl` and `edge.frag`, `flatFaced`, `built`, `timbered`, bands, normal-alpha encoding) includes it, and no existing surface's index changes meaning. — `mesh.hpp` kSurfOak 10, kSurfCount 11; `gltf.cpp` `surfaceFor`; `common.glsl`/`edge.frag` kSurfaces 11, `flatFaced`/`built`/`timbered` include Oak
@@ -64,6 +65,7 @@ Make the Sleeping Fox easier to read. Inside, the bar, tables and other furnitur
 - [x] (cycle 3) The fill light takes the sky light's time-of-day tint, with its strength curve unchanged. — `common.glsl` `indoorColour` tints fill and sky by `uSkyTint`; fill curve unchanged
 - [x] (cycle 3) Seen from inside, the window openings show the sky's current colour. — `sky.vert`/`sky.frag` panes at the far plane behind each opening, `renderer.cpp`
 - [x] (cycle 3) Outdoor rendering is unchanged except the Roof (palette unchanged, crease ink and tile geometry new). — developer captures: default ruins and hills views 0 px changed; only slate pixels changed near the tavern
+- [ ] (cycle 4) The four sconce fires are night-only, like the brazier: lit while the sun's elevation is below 0°, fading in and out over about 2 s, and settled at once when placed. The hearth and candles are always lit.
 - [x] Project builds cleanly from a fresh build directory with CMake. — orchestrator fresh Debug build, cycle 2: pass, only existing stb/glfw warnings — orchestrator fresh Debug build, cycle 3: pass, only existing stb/glfw warnings
 
 ## Assets
@@ -104,3 +106,4 @@ The standing style is `docs/art-style.md` (Buildings and props). Rebuild from th
 - Cycle 2: developer 847d22b fixed ISSUE-001. Fresh build passes; ISSUE-001 resolved, no new issues. Task complete.
 - Cycle 3: 2026-10-27 reopened by the user after a playtest: tiles don't read, oak looks grey, the room goes dark too early. Base 4b479b7. Decisions under "Cycle 3 revisions".
 - Cycle 3: designer 66834f2 (exterior revision 4), developer 68e5dd5. Fresh build passes. Review: every cycle-3 criterion met; ISSUE-002 (settings menu counts the brazier as burning by day) wont-fix. Task complete.
+- Cycle 4: 2026-10-27 reopened by the user: the wall sconces should be out by day. Base 4c32ee4.
