@@ -1,6 +1,6 @@
 # Writing WAV files moves to the engine
 Type: fix
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -16,12 +16,12 @@ Alignment task, from the alignment review of `main..engine-game-layering` (CLAUD
 - Game: `writeAudioWav` in main.cpp uses it.
 
 ## Acceptance criteria
-- [ ] `pxe::writeWav` exists in the engine with a header comment stating format, sample layout, range and return value.
-- [ ] game/src/main.cpp writes no RIFF/WAV bytes itself and does no float-to-int16 conversion.
-- [ ] `--audio-wav out.wav` output is byte-identical to the cycle base, and its log (apart from the "wrote" line) is identical, for the default settings and for `--rain 1 --wind-strength 4` (or the flags the game actually offers for rain and wind).
-- [ ] docs/engine-guide.md lists `writeWav` (Capture section and header reference); docs/architecture.md gets the row update from the orchestrator.
-- [ ] The game's four standard captures are byte-identical to the cycle base, and `--self-test` passes.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `pxe::writeWav` exists in the engine with a header comment stating format, sample layout, range and return value. (engine/include/pxe/audio_file.hpp: format, layout, range, conversion and failure cases stated)
+- [x] game/src/main.cpp writes no RIFF/WAV bytes itself and does no float-to-int16 conversion. (main.cpp writeAudioWav collects floats and calls pxe::writeWav; no RIFF bytes or int16 conversion left)
+- [x] `--audio-wav out.wav` output is byte-identical to the cycle base, and its log (apart from the "wrote" line) is identical, for the default settings and for `--rain 1 --wind-strength 4` (or the flags the game actually offers for rain and wind). (my cmp against the 51bebc4 build: default and --rain 1 --wind-strength 4 WAVs identical, 3840044 bytes; logs identical apart from 'wrote')
+- [x] docs/engine-guide.md lists `writeWav` (Capture section and header reference); docs/architecture.md gets the row update from the orchestrator. (guide: Capture section and audio_file.hpp reference entry; architecture.md row added in the review commit)
+- [x] The game's four standard captures are byte-identical to the cycle base, and `--self-test` passes. (my cmp: default and candles/shelter/extra-fires captures identical; developer: all four; --self-test PASS)
+- [x] Project builds cleanly from a fresh build directory with CMake (fresh build-check exit 0; only the stb sprintf warning)
 
 ## Assets
 None
@@ -32,3 +32,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-27 started, base 9ac02fc
+- Cycle 1: review passed, no issues; complete. Noted: writeWav doesn't create directories (kept --audio-wav's old behaviour); write errors now fail the run instead of being ignored.
