@@ -88,6 +88,8 @@ Headless capture of the low-res target (not the upscaled window):
 xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
 ```
 
+To build a new game on the engine, start with [docs/engine-guide.md](docs/engine-guide.md). [`examples/minimal`](examples/minimal/main.cpp) is the small procedural scene it walks through, built with everything else: `./build/examples/minimal/pxe_minimal` (or `--capture out.png`).
+
 ## Controls
 
 | Input | Action |
