@@ -1,6 +1,6 @@
 # Tavern masonry, render and door grain
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -25,16 +25,16 @@ Give the Sleeping Fox more surface detail, inside and out. The door gets bold, s
 - **Branch.** Work on `add-tavern`, as the previous tavern tasks did.
 
 ## Acceptance criteria
-- [ ] `tavern_door.glb` has three materials in the order `Door_Wood`, `Door_Iron`, `Door_Grain`, with 2–3 raised grain streaks per plank and 2 knots on both faces. Leaf size, hinge joint and rest pose are unchanged. ≤ 800 triangles.
-- [ ] The door code loads the model into slots 12–14, and nothing else uses slot 14.
-- [ ] The edge pass draws crease ink (normals > ~40° apart, no silhouette step, one pixel wide) on the door's `Door_Wood` and `Door_Grain` pixels, indoors and outdoors. Hero, fox and other actors draw exactly as before.
-- [ ] `tavern_exterior.glb` revision 5: plinth and chimney built of individual `Stone` stones proud of a recessed `Plaster` mortar bed; every plaster panel faceted (≤ 0.03 m relief); 3–4 spalled patches on camera-facing panels showing stone and mortar. All revision-4 checks pass (plan extents, height, doorway and vestibule, roof tiles), plus new checks for joint width, stone proudness and patch placement. ≤ 14,000 triangles.
-- [ ] `tavern_interior.glb` revision 4: the hearth built of individual stones in light mortar; visible plaster walls faceted; 2 spalled patches on the visible walls. All revision-3 checks pass (walkways, paths, view fit, Oak, sconces). Every recorded figure is unchanged. ≤ 20,000 triangles.
-- [ ] Placement constants (`kTavernSpot`, `kTavernYaw`), doorway, vestibule, hinge, footprint, room bounds, fire, candle and sconce positions and blockers are unchanged in code. If an asset's recorded figures change, it is a defect.
-- [ ] `tools/blender/build_ruins.py` and `assets/scenes/ruins.glb` are unchanged. The ruins' Stone palette and edges are unchanged.
-- [ ] `docs/art-style.md` records the light-mortar masonry, the faceted render with spalled patches, and the door's grain material and slot range 12–14.
-- [ ] Every asset loaded matches its `assets.md` entry.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `tavern_door.glb` has three materials in the order `Door_Wood`, `Door_Iron`, `Door_Grain`, with 2–3 raised grain streaks per plank and 2 knots on both faces. Leaf size, hinge joint and rest pose are unchanged. ≤ 800 triangles. — assets.md door r2: Door_Wood/Door_Iron/Door_Grain, 506 tris; `build_tavern_door.py` swing and leaf checks (ad21370)
+- [x] The door code loads the model into slots 12–14, and nothing else uses slot 14. — `tavern.hpp` kWood/kIron/kGrain, kMaterials 3; `TavernDoor::loadModel` checks 3 materials; hero 0–5,7, fox 8–11
+- [x] The edge pass draws crease ink (normals > ~40° apart, no silhouette step, one pixel wide) on the door's `Door_Wood` and `Door_Grain` pixels, indoors and outdoors. Hero, fox and other actors draw exactly as before. — `mesh.frag` crease flag → kSurfActorCrease 11; `edge.frag` `edges()` actorCrease, 0.65 mix; captures: only door pixels differ
+- [x] `tavern_exterior.glb` revision 5: plinth and chimney built of individual `Stone` stones proud of a recessed `Plaster` mortar bed; every plaster panel faceted (≤ 0.03 m relief); 3–4 spalled patches on camera-facing panels showing stone and mortar. All revision-4 checks pass (plan extents, height, doorway and vestibule, roof tiles), plus new checks for joint width, stone proudness and patch placement. ≤ 14,000 triangles. — assets.md r5: 233 stones, 70 faceted panels, 3 patches, 9,117 tris; all checks pass
+- [x] `tavern_interior.glb` revision 4: the hearth built of individual stones in light mortar; visible plaster walls faceted; 2 spalled patches on the visible walls. All revision-3 checks pass (walkways, paths, view fit, Oak, sconces). Every recorded figure is unchanged. ≤ 20,000 triangles. — assets.md r4: 120 hearth stones, 57 panels, 2 patches, 11,927 tris; walkway/path/view-fit pass
+- [x] Placement constants (`kTavernSpot`, `kTavernYaw`), doorway, vestibule, hinge, footprint, room bounds, fire, candle and sconce positions and blockers are unchanged in code. If an asset's recorded figures change, it is a defect. — no constant changed (diff); developer walk test and ground re-implementation show doorway/vestibule unchanged; build logs identical fire/candle/sconce positions
+- [x] `tools/blender/build_ruins.py` and `assets/scenes/ruins.glb` are unchanged. The ruins' Stone palette and edges are unchanged. — untouched in `git diff 799b846..HEAD`; hills captures 0 px changed
+- [x] `docs/art-style.md` records the light-mortar masonry, the faceted render with spalled patches, and the door's grain material and slot range 12–14. — art-style.md masonry, render, door grain and slots 12–14 (ad21370)
+- [x] Every asset loaded matches its `assets.md` entry. — door slot 12 base, 3 materials; scene glbs match assets.md
+- [x] Project builds cleanly from a fresh build directory with CMake. — orchestrator fresh Debug build, cycle 1: pass, only existing stb/glfw warnings
 
 ## Assets
 The standing style is `docs/art-style.md` (Buildings and props). Rebuild from the scripts, watched live through the Blender MCP in a fresh empty file (never modify a file the user has open), then rebuild headless and export. Never hand-edit a glb. Previews go beside each glb, including a close view at game scale (24 px/m) of each new detail.
@@ -72,3 +72,4 @@ The standing style is `docs/art-style.md` (Buildings and props). Rebuild from th
 ## Cycle log
 - Cycle 1: 2026-10-27 started, base 799b846
 - Cycle 1: designer ad21370 (door r2 506 tris, exterior r5 9,117, interior r4 11,927); all figures unchanged.
+- Cycle 1: developer 1655b15. Fresh build passes. Review found no issues. Task complete.
