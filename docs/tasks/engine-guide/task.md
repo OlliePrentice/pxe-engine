@@ -35,3 +35,4 @@ None
 - The root CLAUDE.md (orchestrator writes it after this task).
 
 ## Cycle log
+- Cycle 1: 2026-10-27 started, base 61c7d08
