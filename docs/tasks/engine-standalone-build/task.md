@@ -1,6 +1,6 @@
 # Engine builds and runs on its own
 Type: fix
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -20,16 +20,16 @@ Another project can't use pxe today. The engine's dependencies (glfw, glm, imgui
 - Game: none, except the FireGrid::init call site if the game makes it (it doesn't today: Renderer does).
 
 ## Acceptance criteria
-- [ ] engine/CMakeLists.txt contains no `CMAKE_SOURCE_DIR`, and no file under engine/ refers to a path outside engine/.
-- [ ] glfw, glm, imgui and miniaudio are declared and made available in engine/CMakeLists.txt; the root CMakeLists.txt no longer declares them.
-- [ ] third_party/ no longer exists at the repo root; its files are in engine/third_party/, history kept via git mv.
-- [ ] No runtime shader file I/O: no `PXE_SHADER_DIR`, no `shaderDir()`, no std::ifstream of shader paths in engine/src.
-- [ ] Shaders are generated into the build directory from engine/shaders at build time, and touching a shader file causes the generated source to rebuild.
-- [ ] The GLSL source handed to glShaderSource for every program is unchanged (same splice, same defines).
-- [ ] A consumer project outside the repo (in a scratch directory, not committed) with its own CMakeLists.txt that does `add_subdirectory(<repo>/engine pxe_engine)` and links `pxe_engine` configures, builds, and runs a program that creates a pxe::Window and calls pxe::Renderer::init without error. Record the CMakeLists and main.cpp used in handoff.md.
-- [ ] The built `pxe` runs `--capture` from a working directory outside the repo, and its captures are byte-identical to the cycle base build for: default scene, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`. `--self-test` passes.
-- [ ] README.md build instructions still correct (update if a step changed).
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] engine/CMakeLists.txt contains no `CMAKE_SOURCE_DIR`, and no file under engine/ refers to a path outside engine/. (engine/CMakeLists.txt uses CMAKE_CURRENT_SOURCE_DIR/BINARY_DIR only; grep for CMAKE_SOURCE_DIR and ../ in engine/CMakeLists.txt, engine/cmake finds nothing)
+- [x] glfw, glm, imgui and miniaudio are declared and made available in engine/CMakeLists.txt; the root CMakeLists.txt no longer declares them. (engine/CMakeLists.txt FetchContent_Declare x4 + MakeAvailable + imgui target; root CMakeLists.txt is settings + add_subdirectory)
+- [x] third_party/ no longer exists at the repo root; its files are in engine/third_party/, history kept via git mv. (1292c97 renames third_party/* -> engine/third_party/*; root third_party/ gone)
+- [x] No runtime shader file I/O: no `PXE_SHADER_DIR`, no `shaderDir()`, no std::ifstream of shader paths in engine/src. (grep PXE_SHADER_DIR|shaderDir|ifstream in engine/src, engine/include: none; shader.cpp shaderSource reads embeddedShader)
+- [x] Shaders are generated into the build directory from engine/shaders at build time, and touching a shader file causes the generated source to rebuild. (engine/cmake/embed_shaders.cmake via add_custom_command, DEPENDS every shader + the script; developer verified touch -> regenerate)
+- [x] The GLSL source handed to glShaderSource for every program is unchanged (same splice, same defines). (shader.cpp compose/withDefines unchanged; developer dumped all 48 sources, byte-identical; my captures identical)
+- [x] A consumer project outside the repo (in a scratch directory, not committed) with its own CMakeLists.txt that does `add_subdirectory(<repo>/engine pxe_engine)` and links `pxe_engine` configures, builds, and runs a program that creates a pxe::Window and calls pxe::Renderer::init without error. Record the CMakeLists and main.cpp used in handoff.md. (scratchpad/consumer: I rebuilt it fresh and ran it: "consumer: window and renderer ready", exit 0; files in handoff.md)
+- [x] The built `pxe` runs `--capture` from a working directory outside the repo, and its captures are byte-identical to the cycle base build for: default scene, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`. `--self-test` passes. (my run from scratchpad cwd vs base c9eaadf build: 4 PNGs cmp-identical, logs identical apart from the 'wrote' line; --self-test PASS)
+- [x] README.md build instructions still correct (update if a step changed). (build steps unchanged; README not edited)
+- [x] Project builds cleanly from a fresh build directory with CMake (fresh build-check exit 0; only warning is pre-existing stb sprintf deprecation)
 
 ## Assets
 None
@@ -42,3 +42,4 @@ None
 
 ## Cycle log
 - Cycle 1: 2026-10-27 started, base c9eaadf
+- Cycle 1: review passed, no issues; complete. Noted, out of scope: GLFW cache options are forced; a consumer with its own imgui target would clash; new shaders must be added to PXE_SHADERS. Not built on MSVC or Linux.
