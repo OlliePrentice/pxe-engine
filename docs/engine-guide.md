@@ -336,7 +336,7 @@ sound.device.open(48000, [&sound](float* out, int frames) {
 
 `open(sampleRate, render)` opens the default output and starts calling `render` on the audio thread. It returns false, and nothing plays, if there is no output. Run the game silently in that case. The callback must not block, and anything it shares with the game thread needs atomics or a lock. The device stops calling it when destroyed, so destroy the device before anything the callback reads. Making it the last member of the struct that owns the sound state does this.
 
-## Capture and writePng
+## Capture, writePng and writeWav
 To write the view to an image, render with a fixed `time`, then read back:
 
 ```cpp
@@ -351,6 +351,7 @@ const bool ok = pxe::writePng(capture, renderer.viewW(), renderer.viewH(), rende
 - `Renderer::readView()` returns the low-res view (`viewW()` x `viewH()`, 960x540) without its padding, bottom row first, RGBA8. This is the art at one pixel per texel, before the window's upscale and sub-texel shift.
 - `Renderer::readPresented(width, height)` reads the window's framebuffer, including any overlay drawn into it. Call it before `Window::swap`.
 - `pxe::writePng(path, width, height, bottomUpRgba)` writes either to a PNG, flipped to top row first, creating parent directories. It returns false on failure.
+- `pxe::writeWav(path, sampleRate, interleavedStereo)` writes interleaved stereo float samples (the layout `AudioDevice` renders, -1..1) to a 16-bit PCM stereo WAV with a 44-byte header. Samples are clamped to -1..1 and scaled by 32767. It does not create directories. It returns false if the sample rate is not positive, the sample count is odd, or the file can't be written. Use it to render sound offline, calling the same render function the device would, and compare runs.
 
 Use a hidden window (`WindowOptions::visible = false`, `vsync = false`) for captures and tests. A capture is repeatable when the scene is built from fixed seeds and every frame uses a fixed `time`, hour and weather.
 
@@ -367,6 +368,7 @@ Use a hidden window (`WindowOptions::visible = false`, `vsync = false`) for capt
 Every public header, in `engine/include/pxe/`, namespace `pxe`.
 
 - **`audio_device.hpp`.** `AudioDevice`: the default audio output, interleaved stereo float, filled by a `Render` callback on the audio thread. `open(sampleRate, render)`.
+- **`audio_file.hpp`.** `writeWav(path, sampleRate, interleavedStereo)`: 16-bit stereo WAV.
 - **`camera.hpp`.** `Camera`: the orthographic camera, pitched 30°, yaw in 45° steps, smoothed and snapped to the texel grid (`setTarget`, `follow`, `setYawRadians`, `rotateSteps`, `setPanVelocity`, `nudgeImmediate`, `update`, `frame`). `CameraFrame`: one frame's matrices, eye, basis and snap error.
 - **`config.hpp`.** `RenderConfig`: the fixed low-res target (`kViewW` 960, `kViewH` 540), `kPixelsPerUnit` (24), `kPad`, and the shadow map size `kShadow`.
 - **`fire.hpp`.** `Fire`: one campfire's particle system (core, flames, embers, smoke). `FireParticle`: a particle as drawn. The renderer runs these for each `FireDraw`.

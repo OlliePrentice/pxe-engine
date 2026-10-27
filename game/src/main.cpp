@@ -6,6 +6,7 @@
 #include "scene.hpp"
 #include "settings.hpp"
 
+#include "pxe/audio_file.hpp"
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
 #include "pxe/image.hpp"
@@ -711,7 +712,8 @@ int writeAudioWav(const Options& opt) {
   constexpr int kSeconds = 20;
   const int rate = game::Audio::kRate;
   std::vector<float> buf(static_cast<std::size_t>(rate) * 2);
-  std::vector<std::int16_t> pcm;
+  std::vector<float> samples;
+  samples.reserve(buf.size() * kSeconds);
   for (int sec = 0; sec < kSeconds; ++sec) {
     if (sec == 2) audio.thunderAt(-0.7f, 0.05f);
     if (sec == 10) audio.thunderAt(0.7f, 0.8f);
@@ -721,29 +723,11 @@ int writeAudioWav(const Options& opt) {
     for (float v : buf) {
       sum += static_cast<double>(v) * v;
       peak = std::max(peak, std::fabs(v));
-      pcm.push_back(static_cast<std::int16_t>(std::clamp(v, -1.f, 1.f) * 32767.f));
     }
+    samples.insert(samples.end(), buf.begin(), buf.end());
     std::fprintf(stderr, "audio: %2d s  rms %.3f  peak %.3f\n", sec, std::sqrt(sum / buf.size()), peak);
   }
-  std::FILE* f = std::fopen(opt.audioWav.c_str(), "wb");
-  if (!f) return 1;
-  auto u32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
-  auto u16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
-  const std::uint32_t bytes = static_cast<std::uint32_t>(pcm.size() * 2);
-  std::fwrite("RIFF", 1, 4, f);
-  u32(36 + bytes);
-  std::fwrite("WAVEfmt ", 1, 8, f);
-  u32(16);
-  u16(1);
-  u16(2);
-  u32(static_cast<std::uint32_t>(rate));
-  u32(static_cast<std::uint32_t>(rate) * 4);
-  u16(4);
-  u16(16);
-  std::fwrite("data", 1, 4, f);
-  u32(bytes);
-  std::fwrite(pcm.data(), 2, pcm.size(), f);
-  std::fclose(f);
+  if (!pxe::writeWav(opt.audioWav, rate, samples)) return 1;
   std::fprintf(stderr, "pxe: wrote %s\n", opt.audioWav.c_str());
   return 0;
 }

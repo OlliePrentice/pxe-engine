@@ -117,6 +117,7 @@ add_library(pxe_engine
   src/triangle_grid.cpp
   src/scatter.cpp
   src/image.cpp
+  src/audio_file.cpp
   src/window.cpp
   src/input.cpp
   src/overlay.cpp
