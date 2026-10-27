@@ -3,12 +3,13 @@
 // Post pass over the low-res target.
 //
 // Edges, after David Holland's write-up of t3ssel8r's look: only stone and
-// bark take them, and a building's wood, plaster and roof. A pixel on an
+// bark take them, and a building's wood, plaster, roof and oak. A pixel on an
 // upward face whose neighbour turns away (a crease) or drops behind (a
 // silhouette) catches a light rim; any other silhouette pixel darkens into
-// an outline. Wood, plaster and roof take no rims, only the outline, on
+// an outline. Wood, plaster, roof and oak take no rims, only the outline, on
 // every silhouette: indoors they are seen in shade, where a light line on
-// every plank groove would be noise.
+// every plank groove would be noise. Indoors, oak and wood are inked along
+// their sharp creases too, so a bar top reads against its front.
 //
 // Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
 // grade, all drawn here from hashes. Splashes are hashed on cells of the
@@ -23,22 +24,30 @@ uniform sampler2D uDepth;
 uniform float uDepthMetres;  // far - near: the ortho depth buffer is linear
 uniform int uEnabled;
 
-const int kSurfaces = 10;  // pxe::kSurfCount
+const int kSurfaces = 11;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
 const int kSurfWater = 5;
 const int kSurfWood = 7;
 const int kSurfRoof = 9;
-// A building's wood, plaster and roof: outlined, never rimmed (edges()).
-bool timbered(int surface) { return surface >= kSurfWood && surface <= kSurfRoof; }
+const int kSurfOak = 10;
+// A building's wood, plaster, roof and oak: outlined, never rimmed (edges()).
+bool timbered(int surface) { return (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak; }
 const float kSurfaceScale = 16.0;  // as common.glsl
 const int kLeafSprite = 15;        // a leaf sprite's alpha of 1, read as a surface
 
-// Cut stone and a building's wood, plaster and roof: hard, flat-faced
+// Cut stone and a building's wood, plaster, roof and oak: hard, flat-faced
 // structure, rimmed and outlined alike and splashed hard by the rain.
-bool built(int surface) { return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof); }
+bool built(int surface) {
+    return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak;
+}
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
+// Indoors, oak and wood take an ink line where the surface turns sharply
+// with no depth step: neighbouring normals more than 40 degrees apart.
+uniform int uIndoors;  // 1 in a room (pxe::Scene::indoors)
+bool creased(int surface) { return surface == kSurfOak || surface == kSurfWood; }
+const float kCreaseCos = 0.766;  // cos 40 degrees
 uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
 uniform vec3 uInk;
@@ -99,6 +108,7 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
     bool rim = false;
     bool ink = false;
     bool stroke = false;
+    bool creases = uIndoors != 0 && creased(surface);
     // Diagonal neighbours count for rims, so a seam that rasterises as a
     // 2:1 staircase joins into one line instead of a row of dots.
     const ivec2 kOffsets[8] = ivec2[8](ivec2(0, 1), ivec2(0, -1), ivec2(1, 0), ivec2(-1, 0),
@@ -119,6 +129,16 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
         // drawn on the side that faces the light more.
         if (surface == kSurfBark && !behind && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour &&
             dot(n, nq) < 0.97 && dot(n, uLight) > dot(nq, uLight)) stroke = true;
+        // A crease inked once, one pixel wide: where both sides crease, on
+        // the side turned further from the camera (the narrower face on
+        // screen), or, where they turn from it alike - the two near sides of
+        // a table at the room's 45 degree yaw - on the side facing more
+        // toward +x. Against anything else (plaster, stone) on this side.
+        if (creases && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < kCreaseCos) {
+            int sq = int(nq4.a * kSurfaceScale + 0.5) - 1;
+            float toCam = dot(nq, uFwd) - dot(n, uFwd);  // < 0: this side faces the camera less
+            if (!creased(sq) || toCam < -1e-3 || (abs(toCam) <= 1e-3 && n.x > nq.x)) ink = true;
+        }
     }
     // Bark is painted, not carved: no rims, a faint outline, and its few
     // seam strokes are soft.

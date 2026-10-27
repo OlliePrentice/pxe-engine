@@ -133,8 +133,8 @@ struct FireUniforms {
 };
 
 // The firelights' shadow cubes are on unit 7.
-void bindToon(unsigned prog, const Lighting& lighting, bool indoors, const glm::mat4& lightVP, const glm::mat4& flashVP,
-              const FireUniforms& fire, float normalBias, bool testColours) {
+void bindToon(unsigned prog, const Lighting& lighting, bool indoors, const glm::vec3& fillDir, const glm::mat4& lightVP,
+              const glm::mat4& flashVP, const FireUniforms& fire, float normalBias, bool testColours) {
   u1f(prog, "uTLit", lighting.tLit);
   u1f(prog, "uTMid", lighting.tMid);
   const glm::vec3 light = glm::normalize(lighting.lightDir);
@@ -151,6 +151,10 @@ void bindToon(unsigned prog, const Lighting& lighting, bool indoors, const glm::
   u1f(prog, "uOvercast", lighting.overcast);
   u1f(prog, "uRain", lighting.rain);
   u1i(prog, "uIndoors", indoors ? 1 : 0);
+  // The room's fill light, indoors only.
+  u1f(prog, "uFill", indoors ? lighting.fill : 0.f);
+  const glm::vec3 fill = glm::length(fillDir) > 1e-4f ? glm::normalize(fillDir) : glm::vec3{0.f, 1.f, 0.f};
+  u3f(prog, "uFillDir", fill.x, fill.y, fill.z);
   u1f(prog, "uFlash", lighting.flash);
   const glm::vec3 flash = glm::normalize(lighting.flashDir);
   u3f(prog, "uFlashDir", flash.x, flash.y, flash.z);
@@ -1035,7 +1039,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
   u1f(progMesh_, "uTime", params.time);
-  bindToon(progMesh_, lighting, scene.indoors, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+  bindToon(progMesh_, lighting, scene.indoors, scene.fillDir, light.viewProj, flash.viewProj, fireLight, normalBias,
+           params.testColours);
   bindBurn(progMesh_);
   if (!params.actors.empty() || !params.actorEffects.empty()) {
     // The stone's ramp now, over its mid colour by day: the light a character stands in.
@@ -1067,7 +1072,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
       // screen and sits h sin(pitch) nearer: tan(pitch) metres per metre.
       u1f(progGrass_, "uUprightNdcPerPx", std::tan(camera.pitchRadians) * camera.texelWorld * metresToNdc);
     }
-    bindToon(progGrass_, lighting, scene.indoors, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+    bindToon(progGrass_, lighting, scene.indoors, scene.fillDir, light.viewProj, flash.viewProj, fireLight, normalBias,
+             params.testColours);
     bindBurn(progGrass_);
     u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
@@ -1151,7 +1157,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glBindTexture(GL_TEXTURE_2D, refl_);
     glUseProgram(progWater_);
     umat(progWater_, "uViewProj", viewProj);
-    bindToon(progWater_, lighting, scene.indoors, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+    bindToon(progWater_, lighting, scene.indoors, scene.fillDir, light.viewProj, flash.viewProj, fireLight, normalBias,
+             params.testColours);
     u1i(progWater_, "uBed", 3);
     u1i(progWater_, "uBedDepth", 4);
     u1i(progWater_, "uReflection", 5);
@@ -1331,6 +1338,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u3f(progEdge_, "uLight", edgeLight.x, edgeLight.y, edgeLight.z);
   u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
   u1f(progEdge_, "uRain", scene.indoors ? 0.f : lighting.rain);
+  u1i(progEdge_, "uIndoors", scene.indoors ? 1 : 0);
   u1f(progEdge_, "uSunRain", lighting.rain);
   u1f(progEdge_, "uFlash", lighting.flash);
   u1f(progEdge_, "uTime", params.time);

@@ -110,6 +110,10 @@ struct Scene {
   // the colours, and sun, moon and lightning still light it through its
   // windows by the shadow map.
   bool indoors = false;
+  // Indoors only: toward the room's fill light, a fixed light from above
+  // that lifts each face out of shadow by how far it turns toward it, so
+  // the sides of furniture read apart (Lighting::fill says how strong).
+  glm::vec3 fillDir{0.f, 1.f, 0.f};
 
   // Where the camera starts.
   glm::vec3 focus{0.f};

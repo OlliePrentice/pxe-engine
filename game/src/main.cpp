@@ -841,7 +841,7 @@ void heroStart(const pxe::Scene& scene, const pxe::Camera& camera, const pxe::Ca
 // this long, then fades into the scene over kLoadingFade.
 constexpr double kLoadingShown = 2.0;
 constexpr double kLoadingFade = 0.3;
-// Rain and wind heard indoors, against outside.
+// Rain heard indoors, against outside. The wind is not heard indoors at all.
 constexpr float kIndoorWeather = 0.4f;
 
 // The --fireball roll for captures and the bench: launched on the first
@@ -1778,12 +1778,12 @@ int main(int argc, char** argv) {
             lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
             renderer.render(here, lastFrame, params);
           }
-          // Weather sound follows the settings, the rain and wind quieter
-          // indoors; each new flash queues its thunder, panned toward the side
-          // of the screen it lit from.
+          // Weather sound follows the settings: indoors the rain is quieter
+          // and the wind silent; each new flash queues its thunder, panned
+          // toward the side of the screen it lit from.
           game::SoundSettings heard = sound;
           if (inside) {
-            heard.wind *= kIndoorWeather;
+            heard.wind = 0.f;
             heard.rain *= kIndoorWeather;
           }
           audio.setVolumes(heard);

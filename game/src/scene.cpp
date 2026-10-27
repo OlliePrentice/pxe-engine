@@ -68,14 +68,16 @@ void setRamp(glm::vec3 (&out)[3], std::uint32_t shadow, std::uint32_t mid, std::
 // Material colours for each time of day. Day is sampled from the finished
 // frame of t3ssel8r's scene video; golden hour, twilight and night follow
 // his day/night video: warm lit faces against violet shadow, then a
-// low-contrast dusk, then everything in moonlit navy. A building's thatch
-// (dark, dry straw) follows the stone and bark through the day: shadows the
-// same cool violet-grey, lit faces in their own colour warmed by the low
-// sun, all in navy by night. Its wood (warm brown) and plaster (cream) do
-// too in their mid and lit tones, but indoors only their shadow tone is
-// ever seen, so that stays warm in every phase: a dark warm brown for the
-// wood and a muted warm beige for the plaster, each dimmed with the phase
-// so it stays in key with the rest of it.
+// low-contrast dusk, then everything in moonlit navy. A building's slate
+// roof (blue-grey) is the stone's ramps carried over, each phase's colour
+// scaled from the slate's day colour as the stone's is from its own. Its
+// wood (warm brown) and plaster (cream) follow the stone and bark through
+// the day in their mid and lit tones, but indoors their shadow tone is the
+// one most seen, so that stays warm in every phase: a dark warm brown for
+// the wood and a muted warm beige for the plaster, each dimmed with the
+// phase so it stays in key with the rest of it. A room's oak furniture (a
+// light oak) is the wood's ramps carried over the same way, from its own
+// day colour, so it sits lighter than the floor in every phase.
 void setPhasePalettes(pxe::Scene& scene) {
   using namespace pxe;
   struct Ramps {
@@ -99,7 +101,8 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseDay, kSurfFoam, plain(0xc4d4d8, 0xdce8ec, 0xe8f2f2));
   set(kPhaseDay, kSurfWood, plain(0x4c3626, 0x86664e, 0xa88058));
   set(kPhaseDay, kSurfPlaster, plain(0x9c8a70, 0xc8bca2, 0xe2d6b6));
-  set(kPhaseDay, kSurfRoof, plain(0x4c4858, 0x6c6250, 0x8e7e5a));
+  set(kPhaseDay, kSurfRoof, plain(0x3c4454, 0x5a6676, 0x7e8a98));
+  set(kPhaseDay, kSurfOak, plain(0x8a6640, 0xb48c5a, 0xd4b07a));
   scene.rim[kPhaseDay] = hex(0xf5f0dc);
   scene.ink[kPhaseDay] = hex(0x4c4c66);
 
@@ -112,7 +115,8 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseGolden, kSurfFoam, plain(0xa8b4c4, 0xd8d4cc, 0xf0e0c0));
   set(kPhaseGolden, kSurfWood, plain(0x463022, 0x7a5a4a, 0xb27a48));
   set(kPhaseGolden, kSurfPlaster, plain(0x947c66, 0xb49c88, 0xf2c88a));
-  set(kPhaseGolden, kSurfRoof, plain(0x3c3a52, 0x5e5048, 0x96744c));
+  set(kPhaseGolden, kSurfRoof, plain(0x30344c, 0x565662, 0x938d73));
+  set(kPhaseGolden, kSurfOak, plain(0x7f5b39, 0xa47c55, 0xe1a864));
   scene.rim[kPhaseGolden] = hex(0xffe0a0);
   scene.ink[kPhaseGolden] = hex(0x403860);
 
@@ -125,7 +129,8 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseTwilight, kSurfFoam, plain(0x6c7898, 0x848cac, 0x9ca4bc));
   set(kPhaseTwilight, kSurfWood, plain(0x34261f, 0x443e58, 0x504862));
   set(kPhaseTwilight, kSurfPlaster, plain(0x5c4e46, 0x645e7a, 0x787090));
-  set(kPhaseTwilight, kSurfRoof, plain(0x2e2c46, 0x36344e, 0x403c58));
+  set(kPhaseTwilight, kSurfRoof, plain(0x272a44, 0x303762, 0x485088));
+  set(kPhaseTwilight, kSurfOak, plain(0x5e4834, 0x5b5566, 0x656388));
   scene.rim[kPhaseTwilight] = hex(0x9c94bc);
   scene.ink[kPhaseTwilight] = hex(0x24203c);
 
@@ -138,7 +143,8 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseNight, kSurfFoam, plain(0x44548a, 0x54649a, 0x6474aa));
   set(kPhaseNight, kSurfWood, plain(0x221a1a, 0x262c50, 0x30385e));
   set(kPhaseNight, kSurfPlaster, plain(0x3e3432, 0x3e4876, 0x4e5a8a));
-  set(kPhaseNight, kSurfRoof, plain(0x181c3c, 0x1e2446, 0x262c52));
+  set(kPhaseNight, kSurfRoof, plain(0x161d3f, 0x1d2a5d, 0x2e4388));
+  set(kPhaseNight, kSurfOak, plain(0x3e312c, 0x333c5c, 0x3d4d82));
   scene.rim[kPhaseNight] = hex(0x7084c0);
   scene.ink[kPhaseNight] = hex(0x12163a);
 }
@@ -856,11 +862,11 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
       geo.solids.push_back({v.px, v.py, v.pz});
     }
   // Only built structure keeps the rain off: the stone, and the Sleeping
-  // Fox's thatch. A tree crown lets it through.
+  // Fox's slates. A tree crown lets it through.
   {
     std::vector<glm::vec3> roofs = cornersOf(verts[pxe::kSurfStone], indices[pxe::kSurfStone]);
-    const std::vector<glm::vec3> thatch = cornersOf(verts[pxe::kSurfRoof], indices[pxe::kSurfRoof]);
-    roofs.insert(roofs.end(), thatch.begin(), thatch.end());
+    const std::vector<glm::vec3> slates = cornersOf(verts[pxe::kSurfRoof], indices[pxe::kSurfRoof]);
+    roofs.insert(roofs.end(), slates.begin(), slates.end());
     scene.shelter.build(roofs);
   }
   {
@@ -872,7 +878,7 @@ void layOutRuins(const BuildOptions& options, pxe::Scene& scene, RuinsGeometry& 
     // left out too, so the hero can walk in.
     std::vector<glm::vec3> solid;
     for (int s : {pxe::kSurfGrass, pxe::kSurfDirt, pxe::kSurfStone, pxe::kSurfBark, pxe::kSurfFoam, pxe::kSurfWood,
-                  pxe::kSurfPlaster}) {
+                  pxe::kSurfPlaster, pxe::kSurfOak}) {
       const std::vector<glm::vec3> c = cornersOf(verts[s], indices[s]);
       solid.insert(solid.end(), c.begin(), c.end());
     }
@@ -1117,8 +1123,8 @@ pxe::Scene buildRuins(const BuildOptions& options) {
 // The tavern: the Sleeping Fox's one room, inside (tools/blender/
 // build_tavern_interior.py), 22.6 x 17 m, a cutaway seen from yaw 45 with
 // its roof and its two walls nearest that camera drawn only into the shadow
-// map. Its hearth and a brazier burn, and a candle on every table and on
-// the bar. Everything here is as assets.md gives it, in the room's own
+// map. Its hearth and a brazier burn, a candle on every table and on the
+// bar, and a sconce on four wall posts. Everything here is as assets.md gives it, in the room's own
 // coordinates: the origin is the middle of its floor.
 
 // The hearth's fire, where the flames rise from: 0.08 m over its ash bed, as
@@ -1132,6 +1138,16 @@ constexpr float kBrazierSize = 0.5f;
 constexpr glm::vec3 kRoomCandles[] = {{-7.3f, 1.45f, 1.9f},  {-2.2f, 1.45f, 1.9f},  {2.55f, 1.45f, 1.9f},
                                       {-7.3f, 1.45f, -4.1f}, {-1.6f, 1.45f, -4.1f}, {4.2f, 1.45f, -4.1f},
                                       {8.f, 1.95f, 5.55f}};
+// Their size: a little bigger than the ruins' test candles (kCandleSize),
+// so each lights its table.
+constexpr float kRoomCandleSize = 0.3f;
+// The wall sconces' flames, each from its dish: on the +z (hearth) wall over
+// the stage and over the bar's far end, then on the +x (door) wall between
+// the door and its window and in the corner by the -z cutaway. The sconces
+// themselves are in the glb.
+constexpr glm::vec3 kRoomSconces[] = {
+    {-11.175f, 2.6f, 8.f}, {7.408f, 2.6f, 8.f}, {10.8f, 2.6f, -4.15f}, {10.8f, 2.6f, -8.375f}};
+constexpr float kSconceSize = 0.35f;
 // What the hero is kept off by a Blocker (tavernBlockers) rather than by the
 // ground: the seats and the brazier; and the stubs drawn at the foot of the
 // two cutaway walls, which are lower than a step, so in the ground they
@@ -1151,6 +1167,12 @@ pxe::Scene buildTavern(const BuildOptions&) {
   // The room is designed for this yaw, its cutaway walls toward the camera.
   scene.yawDegrees = 45.f;
   scene.focus = glm::vec3{0.f, 1.f, 0.f};
+  // The fill light falls from a little above and from the camera's right at
+  // the design yaw (the -x side), so the tops, the -x sides and the -z sides
+  // the camera sees each take their own tone: the -x sides most, then the
+  // -z sides, then the tops. Kept low so the floor, all top, stays dark and
+  // the daylight falling on it through the windows still stands out.
+  scene.fillDir = glm::normalize(glm::vec3{-0.8f, 0.35f, -0.45f});
   // The sun crosses the sky as it does over the ruins, so daylight falls in
   // through the windows from the side it would outside: the room's +x is the
   // way the inside door faces, which is the way the exterior's door faces,
@@ -1213,14 +1235,18 @@ pxe::Scene buildTavern(const BuildOptions&) {
       scene.shadowOnly.back().upload(shadowVerts[s], shadowIndices[s]);
     }
   }
-  // The hearth, a campfire's size, the brazier and the candles, each roofed
-  // over.
+  // The hearth, a campfire's size, the brazier, the candles and the
+  // sconces, each roofed over.
   scene.fires.push_back({kHearthFire, false, 1.f});
   scene.fires.push_back({kBrazierFire, false, kBrazierSize});
-  for (const glm::vec3& c : kRoomCandles) scene.fires.push_back({c, false, kCandleSize});
+  for (const glm::vec3& c : kRoomCandles) scene.fires.push_back({c, false, kRoomCandleSize});
+  for (const glm::vec3& c : kRoomSconces) scene.fires.push_back({c, false, kSconceSize});
   for (pxe::FireSite& f : scene.fires) {
     f.sheltered = scene.shelter.sheltered(f.base);
-    const char* what = f.size >= 1.f ? "hearth" : f.size >= kBrazierSize ? "brazier" : "candle";
+    const char* what = f.size >= 1.f            ? "hearth"
+                       : f.size >= kBrazierSize ? "brazier"
+                       : f.size >= kSconceSize  ? "sconce"
+                                                : "candle";
     std::fprintf(stderr, "pxe: %s at %.1f, %.1f %s\n", what, f.base.x, f.base.z,
                  f.sheltered ? "sheltered" : "open to the rain");
   }

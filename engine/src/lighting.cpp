@@ -97,6 +97,8 @@ Lighting lightingAt(const Scene& scene, float hour) {
   out.horizonRelief = scene.horizonRelief;
   out.tLit = scene.tLit * flat;
   out.tMid = scene.tMid * flat;
+  // Full from golden hour up, gone once night is fully in.
+  out.fill = fade(elev, kNightAt, kGoldenAt);
   return out;
 }
 

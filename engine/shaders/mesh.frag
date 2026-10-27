@@ -82,6 +82,9 @@ void main() {
                : (vSurface == kSurfBark)  ? barkTone(vWorld, n)
                : (vSurface == kSurfLeaf)  ? max(floor(toonTone(vWorld, n) + 0.5) - 1.0, 0.0)
                                           : toonTone(vWorld, n);
+    // The direct light alone, which drowns out firelight by day (fireLit).
+    float sunTone = tone;
+    if (uIndoors != 0) tone = indoorTone(tone, n, flatFaced(vSurface));
     vec3 col = toneColour(vSurface, tone);
 #ifdef FIRE_GRID
     // The lawn under burnt grass is scorched, then charred. A burning crown
@@ -99,10 +102,10 @@ void main() {
     }
     float shade = cloudShade(vWorld);
     col = clouded(col, vSurface, shade);
-    oColor = vec4(charLit(col, fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), charred), 1.0);
+    oColor = vec4(charLit(col, fireLit(col, vSurface, vWorld, n, 0.5 * sunTone * (1.0 - shade)), charred), 1.0);
 #else
     float shade = cloudShade(vWorld);
     col = clouded(col, vSurface, shade);
-    oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), 1.0);
+    oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * sunTone * (1.0 - shade)), 1.0);
 #endif
 }

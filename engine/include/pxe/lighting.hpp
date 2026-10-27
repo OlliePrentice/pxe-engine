@@ -34,6 +34,10 @@ struct Lighting {
   // sun or moon by its strength.
   float flash = 0.f;
   glm::vec3 flashDir{0.f, 1.f, 0.f};
+  // A room's fill light (Scene::fillDir), used only indoors: 1 by day and in
+  // golden hour, fading through twilight to 0 at night, when a room is lit
+  // only by its fires.
+  float fill = 0.f;
   // Firelight from the scene's campfires: how strong a fully burning one is
   // (0 none; the renderer scales it by each fire's level and flicker) and
   // each surface's colour in full firelight.

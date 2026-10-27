@@ -1,6 +1,6 @@
 // Shared toon ramp. Spliced into the mesh fragment shader and the grass
 // vertex shader so both run the same function on the same kind of inputs.
-const int kSurfaces = 10;  // pxe::kSurfCount
+const int kSurfaces = 11;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
@@ -9,14 +9,17 @@ const int kSurfFoam = 6;
 const int kSurfWood = 7;
 const int kSurfPlaster = 8;
 const int kSurfRoof = 9;
+const int kSurfOak = 10;
 // Each pixel's surface goes to the edge pass in the normal target's alpha,
 // as (surface + 1) / kSurfaceScale; 0 marks a grass sprite and 1 a leaf
 // sprite (edge.frag).
 const float kSurfaceScale = 16.0;
 
-// Built structure - cut stone, and a building's wood, plaster and roof -
-// is flat-faced: one colour per side.
-bool flatFaced(int surface) { return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof); }
+// Built structure - cut stone, and a building's wood, plaster, roof and
+// oak - is flat-faced: one colour per side.
+bool flatFaced(int surface) {
+    return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak;
+}
 
 uniform vec3 uSunDir;
 uniform float uTLit;
@@ -35,6 +38,8 @@ uniform float uCloudStrength;  // 0..1, how dark a thick cloud's shadow gets
 uniform float uOvercast;       // 0..1, rain: everything pulled toward shadow
 uniform float uRain;           // 0 dry .. 1 downpour
 uniform int uIndoors;          // 1 in a room (pxe::Scene::indoors): rain never lifts its shade
+uniform float uFill;           // indoors: the room's fill light, 0 (night) .. 1 (day, golden hour)
+uniform vec3 uFillDir;         // toward it (pxe::Scene::fillDir)
 uniform float uFlash;          // lightning, 0 none .. 1 peak
 uniform vec3 uFlashDir;        // toward the flash
 uniform mat4 uFlashViewProj;
@@ -259,6 +264,20 @@ float litTone(vec3 wpos, vec3 n, float biasScale) {
 }
 
 float quantiseTone(float t) { return floor(t * kToneSteps + 0.5) / kToneSteps; }
+
+// Indoors, a fill light from a fixed direction lifts every face by how far
+// it turns toward it, up to the mid tone, so the top, front and side of a
+// table each take their own tone instead of one flat shadow tone. Direct
+// light (sun or moon through a window, a flash) goes on over it: the tone
+// is `lit` laid over the fill as a screen, never past the lit tone, so a
+// patch of daylight is always brighter than the fill alone round it. Flat
+// faces keep the tone unquantised (toonToneFlat); the rest step through
+// the ramp as toonTone does.
+float indoorTone(float lit, vec3 n, bool flatFace) {
+    float fill = uFill * clamp(dot(normalize(n), uFillDir), 0.0, 1.0);
+    float t = fill + lit * (1.0 - 0.5 * fill);
+    return flatFace ? t : quantiseTone(t);
+}
 
 float barkHash(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
