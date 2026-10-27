@@ -285,6 +285,14 @@ class Renderer {
   unsigned presentVao_ = 0;
   unsigned presentVbo_ = 0;
 
+  // The sky seen through a room's windows: a pane just outside each one
+  // (Scene::windows), built on upload, drawn after the meshes and nowhere
+  // else - not into any shadow map.
+  unsigned progSky_ = 0;
+  unsigned skyVao_ = 0;
+  unsigned skyVbo_ = 0;
+  int skyVertices_ = 0;
+
 
   bool ready_ = false;
   bool profiling_ = false;

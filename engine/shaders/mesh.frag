@@ -84,8 +84,7 @@ void main() {
                                           : toonTone(vWorld, n);
     // The direct light alone, which drowns out firelight by day (fireLit).
     float sunTone = tone;
-    if (uIndoors != 0) tone = indoorTone(tone, n, flatFaced(vSurface));
-    vec3 col = toneColour(vSurface, tone);
+    vec3 col = uIndoors != 0 ? indoorColour(vSurface, tone, vWorld, n, flatFaced(vSurface)) : toneColour(vSurface, tone);
 #ifdef FIRE_GRID
     // The lawn under burnt grass is scorched, then charred. A burning crown
     // chars and burns away in holes, and the trunk under it blackens.

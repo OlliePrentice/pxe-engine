@@ -622,7 +622,7 @@ pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock
 // The fires burning this frame, for the renderer.
 std::vector<pxe::FireDraw> fireDraws(const game::WorldClock& clock) {
   std::vector<pxe::FireDraw> draws;
-  for (const game::WorldClock::Fire& f : clock.fires) draws.push_back({f.id, f.base, f.level, f.smoke, f.size});
+  for (const game::WorldClock::Fire& f : clock.fires) draws.push_back({f.id, f.base, f.drawnLevel(), f.smoke, f.size});
   return draws;
 }
 
@@ -1199,8 +1199,9 @@ int main(int argc, char** argv) {
           scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
           scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
           brushFires(clock, params.gridStrokes);
-          params.fires = fireDraws(clock);
           params.lighting = lightingFor(scene, clock);
+          clock.followSun(params.lighting.sunElevationDegrees, 1.f / 60.f);
+          params.fires = fireDraws(clock);
           for (game::Fox& fox : foxes) fox.update(scene, 1.f / 60.f, foxes);
           doorOf(scene).update(1.f / 60.f, heroAt(hero));
           hero.update(scene, 1.f / 60.f, game::HeroInput{}, blockersIn(scene));
@@ -1254,8 +1255,9 @@ int main(int argc, char** argv) {
             scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
             scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
             brushFires(clock, params.gridStrokes);
-            params.fires = fireDraws(clock);
             params.lighting = lightingFor(scene, clock);
+            clock.followSun(params.lighting.sunElevationDegrees, 1.f / 60.f);
+            params.fires = fireDraws(clock);
             draw(params);
           }
           clock.paused = false;
@@ -1344,8 +1346,11 @@ int main(int argc, char** argv) {
           brushFires(clock, params.gridStrokes);
         }
         for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
-        params.fires = fireDraws(clock);
         params.lighting = lightingFor(scene, clock);
+        // After a settle the night-only fires are where it left them;
+        // otherwise as the hour has them.
+        clock.followSun(params.lighting.sunElevationDegrees, opt.settle > 0.f ? 1.f / 60.f : -1.f);
+        params.fires = fireDraws(clock);
         const pxe::CameraFrame frame = draw(params);
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
         bool ok = true;
@@ -1755,6 +1760,8 @@ int main(int argc, char** argv) {
           params.fire = view.fire;
           params.rays = view.rays;
           params.fireflies = view.fireflies;
+          params.lighting = lightingFor(here, clock);
+          clock.followSun(params.lighting.sunElevationDegrees, dt);
           params.fires = fireDraws(clock);
           // The lawn's grass fire runs only while the hero is out on it; it
           // keeps its burnt grass while the hero is inside.
@@ -1767,7 +1774,6 @@ int main(int argc, char** argv) {
           params.magentaGrass = magenta;
           params.showNdl = ndl;
           params.time = static_cast<float>(now);
-          params.lighting = lightingFor(here, clock);
           hero.pose(params.actors, params.actorEffects, params.actorMaterials);
           if (!inside)
             for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);

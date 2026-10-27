@@ -40,6 +40,15 @@ uniform float uRain;           // 0 dry .. 1 downpour
 uniform int uIndoors;          // 1 in a room (pxe::Scene::indoors): rain never lifts its shade
 uniform float uFill;           // indoors: the room's fill light, 0 (night) .. 1 (day, golden hour)
 uniform vec3 uFillDir;         // toward it (pxe::Scene::fillDir)
+// Indoors: the sky's light through the room's windows (pxe::Scene::windows),
+// how strong it is now, and the tint it and the fill light take.
+const int kSkyWindows = 8;     // Renderer: windows past this are left out
+uniform int uWindowCount;
+uniform vec3 uWindowCentre[kSkyWindows];  // the middle of each opening, in the wall's inner face
+uniform vec3 uWindowInward[kSkyWindows];  // level, into the room
+uniform vec2 uWindowHalf[kSkyWindows];    // half its width and height
+uniform float uSkyLight;       // 1 by day .. a faint moonlight at night
+uniform vec3 uSkyTint;         // warm white, amber, violet-blue, cool moonlight
 uniform float uFlash;          // lightning, 0 none .. 1 peak
 uniform vec3 uFlashDir;        // toward the flash
 uniform mat4 uFlashViewProj;
@@ -265,18 +274,55 @@ float litTone(vec3 wpos, vec3 n, float biasScale) {
 
 float quantiseTone(float t) { return floor(t * kToneSteps + 0.5) / kToneSteps; }
 
+// Indoors, the sky lights the room through each window: a soft light that
+// falls from the nearest point of the opening onto what is in front of it,
+// by how squarely it is in front (none along the window's own wall), how
+// far the face turns toward the opening, and fading with distance to
+// nothing at kSkyReach. No shadows: it is the open sky's light, not a beam.
+// Returns its share of the tone, 0 .. about 1 right in front of a window.
+const float kSkyReach = 7.0;  // metres
+const float kSkyGain = 2.6;
+float skyLit(vec3 wpos, vec3 n) {
+    if (uSkyLight <= 0.0) return 0.0;
+    float k = 0.0;
+    for (int i = 0; i < uWindowCount; ++i) {
+        vec3 inward = uWindowInward[i];
+        vec3 across = vec3(-inward.z, 0.0, inward.x);
+        vec3 d = wpos - uWindowCentre[i];
+        vec2 h = uWindowHalf[i];
+        vec3 q = uWindowCentre[i] + across * clamp(dot(d, across), -h.x, h.x) + vec3(0.0, clamp(d.y, -h.y, h.y), 0.0);
+        vec3 v = wpos - q;
+        float dist = length(v);
+        if (dist >= kSkyReach || dist < 1e-3) continue;
+        vec3 l = v / dist;
+        float ahead = dot(l, inward);
+        if (ahead <= 0.0) continue;
+        float fall = 1.0 - dist / kSkyReach;
+        k += ahead * clamp(dot(n, -l), 0.0, 1.0) * fall * fall;
+    }
+    return uSkyLight * kSkyGain * k;
+}
+
 // Indoors, a fill light from a fixed direction lifts every face by how far
 // it turns toward it, up to the mid tone, so the top, front and side of a
-// table each take their own tone instead of one flat shadow tone. Direct
-// light (sun or moon through a window, a flash) goes on over it: the tone
-// is `lit` laid over the fill as a screen, never past the lit tone, so a
-// patch of daylight is always brighter than the fill alone round it. Flat
-// faces keep the tone unquantised (toonToneFlat); the rest step through
-// the ramp as toonTone does.
-float indoorTone(float lit, vec3 n, bool flatFace) {
-    float fill = uFill * clamp(dot(normalize(n), uFillDir), 0.0, 1.0);
-    float t = fill + lit * (1.0 - 0.5 * fill);
-    return flatFace ? t : quantiseTone(t);
+// table each take their own tone instead of one flat shadow tone; and the
+// sky's light through the windows lifts what is in front of them. Direct
+// light (sun or moon through a window, a flash) goes on over both: the
+// tone is `lit` laid over that light as a screen, never past the lit tone,
+// so a patch of daylight is always brighter than the room round it. What
+// the fill and sky light add takes the sky's tint for the time of day
+// (uSkyTint); the direct light keeps the palette's own colours. Flat faces
+// keep the tone unquantised (toonToneFlat); the rest step through the
+// ramp as toonTone does.
+const float kMaxAmbient = 1.5;  // the fill and sky light together, in tone
+vec3 indoorColour(int surface, float lit, vec3 wpos, vec3 n, bool flatFace) {
+    vec3 nn = normalize(n);
+    float fill = uFill * clamp(dot(nn, uFillDir), 0.0, 1.0);
+    float ambient = min(fill + skyLit(wpos, nn), kMaxAmbient);
+    float t = ambient + lit * (1.0 - 0.5 * ambient);
+    if (!flatFace) t = quantiseTone(t);
+    vec3 direct = toneColour(surface, lit);
+    return direct + (toneColour(surface, t) - direct) * uSkyTint;
 }
 
 float barkHash(vec3 p) {

@@ -101,3 +101,58 @@ Build: pass (fresh Debug build directory; no CMakePresets.json. The only warning
 ### Known limitations
 - None.
 
+
+## Cycle 3
+Build: pass (fresh Debug build directory; no CMakePresets.json. The only warnings are the existing `stb_image_write.h` sprintf warning and the linker's duplicate-glfw note.)
+
+### Changes
+- `engine/shaders/edge.frag`: `creased()` is now Oak indoors and Roof outdoors (same test: 4-neighbour, depth within `kSilhouette`, normals > 40° apart, one pixel wide by the existing tie-break). Crease ink is tracked apart from silhouette ink. Indoors Oak keeps its 0.35 mix exactly. Outdoors, slate creases use a 0.65 mix (orchestrator note) and are clamped to at most 0.8 × the slate colour, because the slate's shadow tone (`3c4454`) is darker than the ink (`4c4c66`) and would otherwise draw light lines. Silhouette outlines are unchanged.
+- `game/src/scene.cpp`:
+  - Oak ramps replaced. Day `8c5a30/b47a42/d49c5c`, golden `8a5028/b4703a/e49c52`, twilight `5c3c24/70482c/825838`, night `3c2818/4a3220/583c28`. Every tone has R > G > B.
+  - `buildTavern` only: Stone twilight `524a46/625850/74685c` and night `342e2c/3e3734/4a423c` (warm greys, R ≥ G ≥ B). `setPhasePalettes`' Stone is untouched, so the ruins' Stone is byte-identical.
+  - `buildTavern`: `kRoomWindows` (the four openings from assets.md: inner-face centres (-9.9, 2.35, 8.5), (1.65, 2.35, 8.5), (4.7, 2.35, 8.5) and (11.3, 2.35, -6.6), 1.4 × 1.7 m, walls 0.4 m) go into `scene.windows`. It also sets the per-phase `skyTint` (day 1.02/0.98/0.90, golden 1.12/0.82/0.52, twilight 0.80/0.70/1.12, night 0.60/0.74/1.10) and `skyColour` (`c4dcec`, `ecb874`, `5c4c84`, `1a2050`).
+  - The brazier's `FireSite` is `nightOnly`.
+- `engine/include/pxe/scene.hpp`: `FireSite::nightOnly`; new `SkyWindow`; `Scene::windows`, `skyTint[]`, `skyColour[]`.
+- `engine/include/pxe/lighting.hpp`, `engine/src/lighting.cpp`: `Lighting::skyLight`, `skyTint` and `skyColour`. The tint and colour blend by the phase weights. `skyLight = 0.15 + 0.85 × fade(elev, -14°, 0°)`: full until sunset, fading through twilight to the moonlight floor (0.15) at -14°. It never reaches 0. `fill` is unchanged.
+- `engine/shaders/common.glsl`, `engine/shaders/mesh.frag`:
+  - `indoorTone` is replaced by `indoorColour`. Ambient = fill (same as before) + `skyLit` (per window: from the nearest point of the opening, × how squarely the point is in front of it, × N·L toward the opening, × (1 − d/7 m)², gain 2.6, × `uSkyLight`), capped at 1.5 tone. It is screened under the direct light as before, so sun patches still reach the lit tone.
+  - The colour is `direct + (lifted − direct) × uSkyTint`, so the fill and the sky light carry the time-of-day tint and the direct light keeps the palette.
+  - With tint 1 and no sky light this is exactly the old result. The outdoor path (`uIndoors == 0`) is untouched.
+- `engine/src/renderer.cpp`, `engine/include/pxe/renderer.hpp`, new `engine/shaders/sky.vert` and `sky.frag`:
+  - `bindToon` now takes the Scene and uploads the window uniforms, `uSkyLight` and `uSkyTint`. Outdoors these are 0 windows, sky 0 and tint 1.
+  - Window openings: `upload()` builds one quad per window, 2 cm outside the wall's outer face and 5 cm bigger than the opening. Indoors it is drawn after the meshes with `gl_FragDepth = 1`, `GL_LEQUAL`, no depth write, and normal-target writes masked off. So it fills only background pixels seen through an opening, in the sky colour (greyed by the rain's overcast). The edge pass sees those pixels exactly as background (same depth and normal), so the outlines, lights and ink round the windows are unchanged. It is not in any shadow map.
+- `game/src/settings.hpp`, `game/src/settings.cpp`:
+  - `WorldClock::Fire` has `nightOnly`, `night` (0..1) and `drawnLevel()`.
+  - `followSun(elev, dt)` eases `night` toward 1 while elev < 0 and toward 0 otherwise, over `kNightFireFade` = 2 s. With dt < 0, or for freshly placed fires, it settles at once, so entering the tavern by day doesn't show the brazier dying.
+  - `placeFires` copies `nightOnly`.
+- `game/src/main.cpp`:
+  - `fireDraws` uses `drawnLevel()`. At level 0 no core or flames are made and the light strength is 0, so the flame itself goes, not just its light.
+  - At all four draw sites the lighting is computed first, then `followSun`, then `fireDraws`. Single-frame captures settle; `--settle` and play fade.
+- `README.md`: tavern paragraph covers the night brazier, honey oak, warm hearth stone, sky light, window sky, tinted fill and roof crease ink.
+
+### Issues addressed
+- None open. Cycle-3 revisions implemented, plus the orchestrator's note: Roof crease mix 0.65.
+
+### How to playtest
+- `--scene tavern --hour 10`:
+  - The window openings are pale blue.
+  - The floor and barrels in front of each window are softly lifted.
+  - The brazier (by the door) is unlit and shows no flame.
+  - The furniture is honey oak.
+- `--hour 17`: the openings are gold, and the sky light and fill are amber. The sun patches on the floor still stand out.
+- `--hour 18.5`: violet openings, and a blue-violet glow on the floor and barrels in front of the hearth-wall windows. The brazier is lit.
+- `--hour 19` to `20`: the window light fades to dark. At `--hour 23` the openings are navy, the room is lit by the hearth, brazier, candles and sconces with a faint cool moonlight at the windows, and the hearth stone is warm grey, not blue.
+- In play, run the clock through 18:00 and 06:00 (speed it up in the menu): the brazier catches over about 2 s as the sun sets and dies over about 2 s as it rises. The hearth, candles and sconces burn at every hour.
+- `--rain 0.6` indoors by day: the sky in the openings goes greyer.
+- Outdoors, `--target -11.4,3,-28` (also `--yaw 300`), any hour: every slate course lip and tile joint draws a dark one-pixel line. Nothing else outdoors changes.
+- Captures I checked:
+  - Tavern at 10, 17, 18, 18.5, 19, 20.5, 23 against a HEAD build.
+  - Exterior at 10, 17.5 and 22 at yaw 0 and 300, against a HEAD build loading the same revision-4 glb. Every changed pixel is darker and was blue-grey (slate); none are lighter.
+  - Default ruins and hills views: 0 px changed.
+
+### Known limitations
+- The sky light has no occlusion. It is a soft area term, so it reaches faces behind furniture that face a window.
+- The hero takes neither the fill nor the sky light (as before, characters use `actorTone`). Indoors at twilight and night the hero's tint follows the tavern's warm Stone ramp, since actors are tinted by Stone.
+- The Stone rim colour at night is still the scene's blue-violet rim (`7084c0`). The hearth's top edges show a faint bluish rim line, though the Stone palette itself has no blue-dominant tone.
+- The settings menu's fire count still counts the brazier as burning by day (its `lit` flag), and a fire brush on it by day does nothing visible until dusk.
+- The window panes assume nothing else is drawn just outside a window's outer face. True for `tavern_interior.glb` today.

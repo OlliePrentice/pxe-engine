@@ -38,6 +38,14 @@ struct Lighting {
   // golden hour, fading through twilight to 0 at night, when a room is lit
   // only by its fires.
   float fill = 0.f;
+  // Indoors, the sky's light through the room's windows (Scene::windows):
+  // how strong (1 until sunset, fading through twilight until the sky is
+  // dark at -14 degrees, then a faint moonlight), the tint it
+  // and the fill light take (warm white, amber, violet-blue, cool
+  // moonlight), and the colour of the sky seen through the openings.
+  float skyLight = 0.f;
+  glm::vec3 skyTint{1.f};
+  glm::vec3 skyColour{0.f};
   // Firelight from the scene's campfires: how strong a fully burning one is
   // (0 none; the renderer scales it by each fire's level and flicker) and
   // each surface's colour in full firelight.

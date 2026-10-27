@@ -75,9 +75,11 @@ void setRamp(glm::vec3 (&out)[3], std::uint32_t shadow, std::uint32_t mid, std::
 // the day in their mid and lit tones, but indoors their shadow tone is the
 // one most seen, so that stays warm in every phase: a dark warm brown for
 // the wood and a muted warm beige for the plaster, each dimmed with the
-// phase so it stays in key with the rest of it. A room's oak furniture (a
-// light oak) is the wood's ramps carried over the same way, from its own
-// day colour, so it sits lighter than the floor in every phase.
+// phase so it stays in key with the rest of it. A room's oak furniture is a
+// honey oak, warm at every hour: amber-gold in golden hour, darker warm
+// browns at twilight and night, never blue or grey (each tone's red above
+// its green, its green above its blue), and lighter than the floor in
+// every phase.
 void setPhasePalettes(pxe::Scene& scene) {
   using namespace pxe;
   struct Ramps {
@@ -102,7 +104,7 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseDay, kSurfWood, plain(0x4c3626, 0x86664e, 0xa88058));
   set(kPhaseDay, kSurfPlaster, plain(0x9c8a70, 0xc8bca2, 0xe2d6b6));
   set(kPhaseDay, kSurfRoof, plain(0x3c4454, 0x5a6676, 0x7e8a98));
-  set(kPhaseDay, kSurfOak, plain(0x8a6640, 0xb48c5a, 0xd4b07a));
+  set(kPhaseDay, kSurfOak, plain(0x8c5a30, 0xb47a42, 0xd49c5c));
   scene.rim[kPhaseDay] = hex(0xf5f0dc);
   scene.ink[kPhaseDay] = hex(0x4c4c66);
 
@@ -116,7 +118,7 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseGolden, kSurfWood, plain(0x463022, 0x7a5a4a, 0xb27a48));
   set(kPhaseGolden, kSurfPlaster, plain(0x947c66, 0xb49c88, 0xf2c88a));
   set(kPhaseGolden, kSurfRoof, plain(0x30344c, 0x565662, 0x938d73));
-  set(kPhaseGolden, kSurfOak, plain(0x7f5b39, 0xa47c55, 0xe1a864));
+  set(kPhaseGolden, kSurfOak, plain(0x8a5028, 0xb4703a, 0xe49c52));
   scene.rim[kPhaseGolden] = hex(0xffe0a0);
   scene.ink[kPhaseGolden] = hex(0x403860);
 
@@ -130,7 +132,7 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseTwilight, kSurfWood, plain(0x34261f, 0x443e58, 0x504862));
   set(kPhaseTwilight, kSurfPlaster, plain(0x5c4e46, 0x645e7a, 0x787090));
   set(kPhaseTwilight, kSurfRoof, plain(0x272a44, 0x303762, 0x485088));
-  set(kPhaseTwilight, kSurfOak, plain(0x5e4834, 0x5b5566, 0x656388));
+  set(kPhaseTwilight, kSurfOak, plain(0x5c3c24, 0x70482c, 0x825838));
   scene.rim[kPhaseTwilight] = hex(0x9c94bc);
   scene.ink[kPhaseTwilight] = hex(0x24203c);
 
@@ -144,7 +146,7 @@ void setPhasePalettes(pxe::Scene& scene) {
   set(kPhaseNight, kSurfWood, plain(0x221a1a, 0x262c50, 0x30385e));
   set(kPhaseNight, kSurfPlaster, plain(0x3e3432, 0x3e4876, 0x4e5a8a));
   set(kPhaseNight, kSurfRoof, plain(0x161d3f, 0x1d2a5d, 0x2e4388));
-  set(kPhaseNight, kSurfOak, plain(0x3e312c, 0x333c5c, 0x3d4d82));
+  set(kPhaseNight, kSurfOak, plain(0x3c2818, 0x4a3220, 0x583c28));
   scene.rim[kPhaseNight] = hex(0x7084c0);
   scene.ink[kPhaseNight] = hex(0x12163a);
 }
@@ -1145,6 +1147,15 @@ constexpr float kRoomCandleSize = 0.3f;
 // the stage and over the bar's far end, then on the +x (door) wall between
 // the door and its window and in the corner by the -z cutaway. The sconces
 // themselves are in the glb.
+// The four windows, open holes in the drawn walls (assets.md): three in the
+// +z (hearth) wall, one in the +x (door) wall, each 1.4 m wide from a sill
+// at 1.5 m to a head at 3.2 m, through walls 0.4 m thick whose inner faces
+// are at z 8.5 and x 11.3.
+constexpr pxe::SkyWindow kRoomWindows[] = {
+    {{-9.9f, 2.35f, 8.5f}, {0.f, 0.f, -1.f}, 1.4f, 1.7f, 0.4f},
+    {{1.65f, 2.35f, 8.5f}, {0.f, 0.f, -1.f}, 1.4f, 1.7f, 0.4f},
+    {{4.7f, 2.35f, 8.5f}, {0.f, 0.f, -1.f}, 1.4f, 1.7f, 0.4f},
+    {{11.3f, 2.35f, -6.6f}, {-1.f, 0.f, 0.f}, 1.4f, 1.7f, 0.4f}};
 constexpr glm::vec3 kRoomSconces[] = {
     {-11.175f, 2.6f, 8.f}, {7.408f, 2.6f, 8.f}, {10.8f, 2.6f, -4.15f}, {10.8f, 2.6f, -8.375f}};
 constexpr float kSconceSize = 0.35f;
@@ -1160,6 +1171,34 @@ bool blockedNotGround(const std::string& node) {
 pxe::Scene buildTavern(const BuildOptions&) {
   pxe::Scene scene;
   setPhasePalettes(scene);
+  // The room's stone - the hearth, the sconces' irons - is seen by its own
+  // fires once the sun is down, so at twilight and night it is a warm grey
+  // rather than the moonlit blue outside (no tone bluer than it is red).
+  // Only here: the ruins' stone keeps its palette.
+  {
+    using namespace pxe;
+    auto warm = [&](Phase ph, std::uint32_t shadow, std::uint32_t mid, std::uint32_t lit) {
+      setRamp(scene.palette[ph][kSurfStone].band, shadow, mid, lit);
+      setRamp(scene.palette[ph][kSurfStone].detail, shadow, mid, lit);
+      setRamp(scene.palette[ph][kSurfStone].tip, shadow, mid, lit);
+    };
+    warm(kPhaseTwilight, 0x524a46, 0x625850, 0x74685c);
+    warm(kPhaseNight, 0x342e2c, 0x3e3734, 0x4a423c);
+  }
+  // The sky through the windows: it lights the room in front of each one,
+  // and the fill light takes its tint - a warm white by day, amber in
+  // golden hour, a violet-blue through twilight and a cool moonlight at
+  // night (pxe::Lighting::skyTint) - and the openings show it: a pale
+  // blue, a gold, a violet dusk and a night navy.
+  scene.windows.assign(std::begin(kRoomWindows), std::end(kRoomWindows));
+  scene.skyTint[pxe::kPhaseDay] = {1.02f, 0.98f, 0.9f};
+  scene.skyTint[pxe::kPhaseGolden] = {1.12f, 0.82f, 0.52f};
+  scene.skyTint[pxe::kPhaseTwilight] = {0.8f, 0.7f, 1.12f};
+  scene.skyTint[pxe::kPhaseNight] = {0.6f, 0.74f, 1.1f};
+  scene.skyColour[pxe::kPhaseDay] = hex(0xc4dcec);
+  scene.skyColour[pxe::kPhaseGolden] = hex(0xecb874);
+  scene.skyColour[pxe::kPhaseTwilight] = hex(0x5c4c84);
+  scene.skyColour[pxe::kPhaseNight] = hex(0x1a2050);
   // Lit as the ruins outside are, by the same sun and moon.
   scene.tLit = 0.6f;
   scene.tMid = 0.18f;
@@ -1236,9 +1275,10 @@ pxe::Scene buildTavern(const BuildOptions&) {
     }
   }
   // The hearth, a campfire's size, the brazier, the candles and the
-  // sconces, each roofed over.
+  // sconces, each roofed over. All but the brazier burn at every hour.
   scene.fires.push_back({kHearthFire, false, 1.f});
-  scene.fires.push_back({kBrazierFire, false, kBrazierSize});
+  // The brazier burns only at night (the game lights it at dusk).
+  scene.fires.push_back({kBrazierFire, false, kBrazierSize, true});
   for (const glm::vec3& c : kRoomCandles) scene.fires.push_back({c, false, kRoomCandleSize});
   for (const glm::vec3& c : kRoomSconces) scene.fires.push_back({c, false, kSconceSize});
   for (pxe::FireSite& f : scene.fires) {

@@ -113,6 +113,16 @@ void WorldClock::advance(float dt) {
   cloudOffset -= windDir() * kCloudDrift * dt * cloudSpeed;
 }
 
+void WorldClock::followSun(float sunElevationDegrees, float dt) {
+  const float target = sunElevationDegrees < 0.f ? 1.f : 0.f;
+  for (Fire& f : fires) {
+    if (!f.nightOnly) continue;
+    if (dt < 0.f || f.night < 0.f) f.night = target;
+    else if (f.night < target) f.night = std::min(target, f.night + dt / kNightFireFade);
+    else f.night = std::max(target, f.night - dt / kNightFireFade);
+  }
+}
+
 void WorldClock::placeFires(const std::vector<pxe::FireSite>& sites) {
   fires.clear();
   nextFireId = 0;
@@ -122,6 +132,7 @@ void WorldClock::placeFires(const std::vector<pxe::FireSite>& sites) {
     f.base = site.base;
     f.sheltered = site.sheltered;
     f.size = site.size;
+    f.nightOnly = site.nightOnly;
     fires.push_back(f);
   }
 }

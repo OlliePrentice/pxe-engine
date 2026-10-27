@@ -48,6 +48,21 @@ struct FireSite {
   glm::vec3 base{0.f};
   bool sheltered = false;
   float size = 1.f;
+  // Lit only while the sun is below the horizon (a room's brazier): the
+  // game fades it in at dusk and out at dawn.
+  bool nightOnly = false;
+};
+
+// A window in a room's wall, open to the sky (indoors only). The sky lights
+// the room through it - a soft light on the floor and walls in front of it,
+// besides the sun or moon falling in through the shadow map - and is seen
+// through it from inside.
+struct SkyWindow {
+  glm::vec3 centre{0.f};               // the middle of the opening, in the wall's inner face
+  glm::vec3 inward{0.f, 0.f, -1.f};    // level, unit, into the room
+  float width = 1.f;                   // the opening, metres
+  float height = 1.f;
+  float depth = 0.4f;                  // the wall's thickness
 };
 
 struct Scene {
@@ -114,6 +129,12 @@ struct Scene {
   // that lifts each face out of shadow by how far it turns toward it, so
   // the sides of furniture read apart (Lighting::fill says how strong).
   glm::vec3 fillDir{0.f, 1.f, 0.f};
+  // Indoors only: the room's windows, and per phase the colour of the
+  // sky's light through them (a tint about 1, which the fill light takes
+  // too; see Lighting::skyTint) and of the sky seen through them.
+  std::vector<SkyWindow> windows;
+  glm::vec3 skyTint[kPhaseCount]{};
+  glm::vec3 skyColour[kPhaseCount]{};
 
   // Where the camera starts.
   glm::vec3 focus{0.f};

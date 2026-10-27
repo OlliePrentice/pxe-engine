@@ -6,6 +6,7 @@
 #include "audio.hpp"
 #include "pxe/scene.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -43,6 +44,14 @@ struct WorldClock {
     float smoke = 0.f;
     float size = 1.f;
     bool doused = false;  // put out with water: it dies in moments, not seconds
+    // Lit only at night (pxe::FireSite::nightOnly): `night` eases between
+    // out by day (0) and burning (1), and scales `level` as drawn; < 0
+    // until followSun first places it.
+    bool nightOnly = false;
+    float night = -1.f;
+    // How well it burns as drawn: its level, and for a night-only fire by
+    // how far night has brought it in.
+    float drawnLevel() const { return nightOnly ? level * std::max(night, 0.f) : level; }
   };
   std::vector<Fire> fires;
   std::uint32_t nextFireId = 0;
@@ -70,6 +79,12 @@ struct WorldClock {
   void kindle(glm::vec2 from, glm::vec2 to, float radius);
   // Advance by `dt` real seconds.
   void advance(float dt);
+  // Bring the night-only fires toward lit while the sun is below the
+  // horizon and out while it is above, over kNightFireFade seconds; `dt`
+  // real seconds since the last call, or < 0 to settle them at once.
+  // Fires not yet placed (just added by placeFires) settle at once too.
+  void followSun(float sunElevationDegrees, float dt);
+  static constexpr float kNightFireFade = 2.f;
   // A lightning flash now, lighting the scene from a random direction.
   void strike();
   // Rain at or above this puts open campfires out (and stops them relighting).

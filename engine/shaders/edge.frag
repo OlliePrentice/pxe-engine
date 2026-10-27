@@ -10,7 +10,9 @@
 // every silhouette: indoors they are seen in shade, where a light line on
 // every plank groove would be noise. Indoors, oak is inked along its sharp
 // creases too, so a bar top reads against its front; wood is not, so the
-// floor's plank grooves stay unlined.
+// floor's plank grooves stay unlined. Outdoors the roof's slates are inked
+// the same way, so each course and tile joint reads; nothing else outdoors
+// is.
 //
 // Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
 // grade, all drawn here from hashes. Splashes are hashed on cells of the
@@ -44,12 +46,13 @@ bool built(int surface) {
     return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak;
 }
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
-// Indoors, oak takes an ink line where the surface turns sharply with no
-// depth step: neighbouring normals more than 40 degrees apart. Only oak
-// pixels are inked; where oak meets wood, plaster or stone the line falls on
-// the oak side.
+// Indoors oak, and outdoors a roof's slates, take an ink line where the
+// surface turns sharply with no depth step: neighbouring normals more than
+// 40 degrees apart. Only those pixels are inked; where oak meets wood,
+// plaster or stone, or slate meets the chimney or a gable, the line falls
+// on the oak or slate side.
 uniform int uIndoors;  // 1 in a room (pxe::Scene::indoors)
-bool creased(int surface) { return surface == kSurfOak; }
+bool creased(int surface) { return surface == (uIndoors != 0 ? kSurfOak : kSurfRoof); }
 const float kCreaseCos = 0.766;  // cos 40 degrees
 uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
@@ -111,7 +114,8 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
     bool rim = false;
     bool ink = false;
     bool stroke = false;
-    bool creases = uIndoors != 0 && creased(surface);
+    bool creaseInk = false;
+    bool creases = creased(surface);
     // Diagonal neighbours count for rims, so a seam that rasterises as a
     // 2:1 staircase joins into one line instead of a row of dots.
     const ivec2 kOffsets[8] = ivec2[8](ivec2(0, 1), ivec2(0, -1), ivec2(1, 0), ivec2(-1, 0),
@@ -132,15 +136,16 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
         // drawn on the side that faces the light more.
         if (surface == kSurfBark && !behind && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour &&
             dot(n, nq) < 0.97 && dot(n, uLight) > dot(nq, uLight)) stroke = true;
-        // A crease inked once, one pixel wide: where oak meets oak, on the
-        // side turned further from the camera (the narrower face on screen),
-        // or, where they turn from it alike - the two near sides of a table
-        // at the room's 45 degree yaw - on the side facing more toward +x.
-        // Against anything else (wood, plaster, stone), on this oak side.
+        // A crease inked once, one pixel wide: where oak meets oak (or
+        // slate slate), on the side turned further from the camera (the
+        // narrower face on screen), or, where they turn from it alike - the
+        // two near sides of a table at the room's 45 degree yaw - on the
+        // side facing more toward +x. Against anything else (wood, plaster,
+        // stone), on this oak or slate side.
         if (creases && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < kCreaseCos) {
             int sq = int(nq4.a * kSurfaceScale + 0.5) - 1;
             float toCam = dot(nq, uFwd) - dot(n, uFwd);  // < 0: this side faces the camera less
-            if (!creased(sq) || toCam < -1e-3 || (abs(toCam) <= 1e-3 && n.x > nq.x)) ink = true;
+            if (!creased(sq) || toCam < -1e-3 || (abs(toCam) <= 1e-3 && n.x > nq.x)) creaseInk = true;
         }
     }
     // Bark is painted, not carved: no rims, a faint outline, and its few
@@ -149,6 +154,15 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
     if (stroke) return mix(col, uRim, 0.15);
     if (rim) return mix(col, uRim, 0.4);
     if (ink) return mix(col, uInk, surface == kSurfBark ? 0.15 : 0.35);
+    // A crease on oak is inked as an outline is. Slate is close to the ink
+    // in colour, so its creases take a heavier mix to read as dark lines
+    // along every course and tile joint; and slate in its shadow tone is
+    // darker than the ink itself, so a slate crease is also kept at least a
+    // step darker than the slate it is drawn on.
+    if (creaseInk) {
+        if (uIndoors != 0) return mix(col, uInk, 0.35);
+        return min(mix(col, uInk, 0.65), col * 0.8);
+    }
     return col;
 }
 
