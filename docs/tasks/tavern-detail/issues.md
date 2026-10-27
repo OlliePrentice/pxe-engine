@@ -1,7 +1,7 @@
 # Issues
 
 ## ISSUE-001: Crease ink restyles the Wood floor's plank grooves
-Status: fixed
+Status: resolved
 Severity: major
 Source: review
 Found in cycle: 1

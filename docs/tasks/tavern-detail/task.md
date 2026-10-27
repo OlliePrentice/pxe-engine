@@ -1,6 +1,6 @@
 # Tavern detail pass
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -32,21 +32,21 @@ Make the Sleeping Fox easier to read. Inside, the bar, tables and other furnitur
 - **Branch.** Work on `add-tavern` (user's choice).
 
 ## Acceptance criteria
-- [ ] `pxe::Surface` has `kSurfOak`. `loadGltf`/`surfaceFor` maps `Oak` to it. Every array, shader constant and helper sized by or ranged over surfaces (`kSurfCount`, `kSurfaces` in `common.glsl` and `edge.frag`, `flatFaced`, `built`, `timbered`, bands, normal-alpha encoding) includes it, and no existing surface's index changes meaning.
-- [ ] `setPhasePalettes` sets Oak in all four phases, with the day ramp `8a6640 / b48c5a / d4b07a`. Wood's ramps are byte-identical to before.
-- [ ] `setPhasePalettes` sets Roof to the slate ramp, with the day ramp `3c4454 / 5a6676 / 7e8a98`, and blue-grey slate ramps in golden, twilight and night.
-- [ ] `tavern_interior.glb` uses `Oak` on exactly the pieces listed in Decisions, and `Wood` stays on the floor, wall timbers, frames, sill and skirting (checked in `build_tavern_interior.py` and in assets.md's material table).
-- [ ] The interior has four wall sconces on the visible walls at about 2.6 m. Their flame bases are recorded in assets.md, and `buildTavern` adds a sheltered fire of size 0.35 at each. The candle size is 0.3. The hearth and brazier are unchanged.
-- [ ] The interior build still passes its walkway, path and view-fit checks, and every existing piece's position is unchanged from revision 2 (assets.md figures for hearth, brazier, candles, door, spawn, bounds, chairs, stools, benches and stage match the revision-2 values).
-- [ ] An indoors-only fill light in the toon shading gives faces of different orientation different tones. Its strength is full in day and golden, fades through twilight and is zero at night. Outdoor shading takes the old code path unchanged.
-- [ ] The edge pass draws indoors-only crease ink on Oak (not on Wood) where neighbouring normals differ by more than about 40° without a silhouette step. Outdoors, `edges()` produces the same result as before.
-- [ ] `tavern_exterior.glb` has a stepped slate-course roof in `Roof`, a front cross-gable over the door, a gabled dormer on each long slope, and decorative bargeboards and finials. The build script checks that everything stays inside the revision-2 plan extents, rises at most 0.5 m above the old ridge, and leaves the doorway and vestibule clear below 3.3 m.
-- [ ] `kTavernSpot`, `kTavernYaw`, the exterior's door hinge, doorway, vestibule and footprint figures are unchanged. The tavern's `solids`, ground and overhead exclusion still work with the new roof (`scene.ground` still excludes the roof).
-- [ ] Indoors, wind volume is 0 and rain volume is 40%. Outdoors both are 100%.
-- [ ] `tools/blender/build_ruins.py`, `assets/scenes/ruins.glb` and `assets/scenes/tavern_door.glb` are unchanged.
-- [ ] `docs/art-style.md` names `Oak` as an allowed material (light oak: interior furniture) and describes the Roof as slate.
-- [ ] Every asset loaded matches its `assets.md` entry.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `pxe::Surface` has `kSurfOak`. `loadGltf`/`surfaceFor` maps `Oak` to it. Every array, shader constant and helper sized by or ranged over surfaces (`kSurfCount`, `kSurfaces` in `common.glsl` and `edge.frag`, `flatFaced`, `built`, `timbered`, bands, normal-alpha encoding) includes it, and no existing surface's index changes meaning. — `mesh.hpp` kSurfOak 10, kSurfCount 11; `gltf.cpp` `surfaceFor`; `common.glsl`/`edge.frag` kSurfaces 11, `flatFaced`/`built`/`timbered` include Oak
+- [x] `setPhasePalettes` sets Oak in all four phases, with the day ramp `8a6640 / b48c5a / d4b07a`. Wood's ramps are byte-identical to before. — `scene.cpp` `setPhasePalettes` Oak in four phases, day 8a6640/b48c5a/d4b07a; Wood lines unchanged in diff
+- [x] `setPhasePalettes` sets Roof to the slate ramp, with the day ramp `3c4454 / 5a6676 / 7e8a98`, and blue-grey slate ramps in golden, twilight and night. — `scene.cpp` Roof day 3c4454/5a6676/7e8a98; golden lit warm grey accepted (Decisions)
+- [x] `tavern_interior.glb` uses `Oak` on exactly the pieces listed in Decisions, and `Wood` stays on the floor, wall timbers, frames, sill and skirting (checked in `build_tavern_interior.py` and in assets.md's material table). — `build_tavern_interior.py` `oak_checks`; assets.md Oak/Wood table; glb materials list Oak
+- [x] The interior has four wall sconces on the visible walls at about 2.6 m. Their flame bases are recorded in assets.md, and `buildTavern` adds a sheltered fire of size 0.35 at each. The candle size is 0.3. The hearth and brazier are unchanged. — `scene.cpp` `kRoomSconces` (4, size 0.35, sheltered), `kRoomCandleSize` 0.3; ruins `kCandleSize` kept 0.2
+- [x] The interior build still passes its walkway, path and view-fit checks, and every existing piece's position is unchanged from revision 2 (assets.md figures for hearth, brazier, candles, door, spawn, bounds, chairs, stools, benches and stage match the revision-2 values). — designer: 66 rev-2 nodes identical geometry/transforms; walkway/path/view-fit pass (assets.md)
+- [x] An indoors-only fill light in the toon shading gives faces of different orientation different tones. Its strength is full in day and golden, fades through twilight and is zero at night. Outdoor shading takes the old code path unchanged. — `common.glsl` `indoorTone`, `mesh.frag` under `uIndoors`; `lighting.cpp` fill = fade(elev, night, golden); `renderer.cpp` uFill 0 outdoors
+- [x] The edge pass draws indoors-only crease ink on Oak (not on Wood) where neighbouring normals differ by more than about 40° without a silhouette step. Outdoors, `edges()` produces the same result as before. — `edge.frag` `edges()` `creased()` Oak only, gated on `uIndoors` (ISSUE-001)
+- [x] `tavern_exterior.glb` has a stepped slate-course roof in `Roof`, a front cross-gable over the door, a gabled dormer on each long slope, and decorative bargeboards and finials. The build script checks that everything stays inside the revision-2 plan extents, rises at most 0.5 m above the old ridge, and leaves the doorway and vestibule clear below 3.3 m. — `build_tavern_exterior.py` roof/gable/dormer steps and extent checks; top 8.66 (below old ridge 9.13); preview
+- [x] `kTavernSpot`, `kTavernYaw`, the exterior's door hinge, doorway, vestibule and footprint figures are unchanged. The tavern's `solids`, ground and overhead exclusion still work with the new roof (`scene.ground` still excludes the roof). — unchanged in diff; non-roof exterior nodes byte-identical (designer); `layOutRuins` ground list excludes Roof
+- [x] Indoors, wind volume is 0 and rain volume is 40%. Outdoors both are 100%. — `main.cpp` `heard.wind = 0` inside, rain × kIndoorWeather 0.4
+- [x] `tools/blender/build_ruins.py`, `assets/scenes/ruins.glb` and `assets/scenes/tavern_door.glb` are unchanged. — `git diff 7749a4f..HEAD` touches none of them
+- [x] `docs/art-style.md` names `Oak` as an allowed material (light oak: interior furniture) and describes the Roof as slate. — art-style.md materials list and Roof wording (c41bd80)
+- [x] Every asset loaded matches its `assets.md` entry. — interior Oak/sconce bases and exterior figures match assets.md
+- [x] Project builds cleanly from a fresh build directory with CMake. — orchestrator fresh Debug build, cycle 2: pass, only existing stb/glfw warnings
 
 ## Assets
 The standing style is `docs/art-style.md` (Buildings and props). Rebuild from the scripts, watched live through the Blender MCP, then rebuild headless and export. Never hand-edit a glb. Previews go beside each glb.
@@ -81,3 +81,4 @@ The standing style is `docs/art-style.md` (Buildings and props). Rebuild from th
 - Cycle 1: 2026-10-27 started, base 7749a4f (spec commit; edf89bc before it)
 - Cycle 1: designer c41bd80, developer 388cee3. Fresh build passes. Review found ISSUE-001 (crease ink on the Wood floor's plank grooves).
 - Cycle 2: 2026-10-27 started, base HEAD after the cycle-1 review. Outstanding: ISSUE-001.
+- Cycle 2: developer 847d22b fixed ISSUE-001. Fresh build passes; ISSUE-001 resolved, no new issues. Task complete.
