@@ -23,7 +23,7 @@ The standing style for every asset in the project. Tasks may override it, and sa
 
 ## Materials
 - One skinned mesh with its armature. glTF material order is the contract with the engine: material i is the character's actor material i. Name materials with the character's tag (`Fox_Fur`, `Fox_Cream`).
-- The engine has 64 shared actor-material slots per frame (`pxe::kActorMaterials`). Each character (or moving prop) owns its own range, so they never share a colour: the hero uses 0–7, the fox 8–11, the tavern door 12–13. A new character takes the next free range and loads with `SkinnedModel::load(path, firstMaterial)`.
+- The engine has 64 shared actor-material slots per frame (`pxe::kActorMaterials`). Each character (or moving prop) owns its own range, so they never share a colour: the hero uses 0–7, the fox 8–11, the tavern door 12–14 (`Door_Wood`, `Door_Iron`, `Door_Grain`). A new character takes the next free range and loads with `SkinnedModel::load(path, firstMaterial)`.
 
 ## Rigs
 - Rig the full skeleton the creature will need, even if the task only animates one clip, so later clips never mean re-rigging. A quadruped has root, hips, a spine chain, chest, neck, head, ears, four legs with upper/lower/paw, and a tail chain of at least four bones.
@@ -56,7 +56,21 @@ Static assets: buildings, rooms, furniture and scenery. The reference assets are
 - **Name what code uses.** Give each piece the code may look up its own object (`Chair_A1`, `Barrel_2`, `Wall_PosX`). Everything the code needs, such as hinge points, fire and candle bases, spawn points and blocker footprints, is printed by the build and recorded in the task's assets.md, in engine coordinates.
 - **Roofs.** Pitch the roof to the building's size: on a small house, lower the ridge rather than let the roof rise higher than the house is deep. The Sleeping Fox's 9 × 7 m exterior uses a 45° hipped slate roof, modelled as stepped, overlapping courses cut into staggered 0.5 m tiles: each course lip and each tile joint (a V notch) turns more than 40° from the tile, so the engine's crease ink lines every course and joint at 24 px/m. It has a cross-gable over the door and a small gabled dormer on each long slope, with carved low-poly bargeboards and finials.
 - **Room layouts are checked.** When a task sets walkway or path rules for a room, the build script measures them and fails if they break. It measures furniture in groups (a table with its seats, the bar with its stools) by the convex hulls of their plan outlines. A group either stands against a wall or leaves a full walkway to it. Paths are checked by sweeping a disc of the path's width from the hero's spawn. A room's script also checks that the room fits the game's 40 × 22.5 m view at its design yaw.
-- **Budgets.** A building exterior is about 8,000 triangles, a furnished room about 20,000, and a small moving prop such as a door under 100. The Sleeping Fox comes in under both: its exterior is 5,990 triangles and its 22.6 × 17 m room 9,251.
+- **Masonry: individual stones in light mortar.** Stonework on a building (a plinth, threshold, chimney or hearth) is laid as separate `Stone` blocks, each 0.03–0.05 m proud of a recessed `Plaster` mortar bed. The bed sits 0.05 m inside the structure's outline, and no stone passes that outline, so footprints and figures don't move.
+  - Joints are about 0.06 m (at least 0.05, so each takes a pixel at 24 px/m). Pale joints read against grey stones with no engine change and no new material.
+  - Courses are coursed and staggered: each course's vertical joints keep at least 0.12 m from the course below's, and the faces take turns at each corner, like quoins.
+  - Walkable tops (a threshold, a hearth slab) stay flush, with only their joints recessed.
+  - Build scripts check joint width, proudness, stagger and the outline. The ruins' Stone and its palette are separate and unchanged.
+- **Plaster render: faceted, with spalled patches.**
+  - Every plaster panel between the timbers is cut into a few low facets: slanted strips about 0.5 m wide, each fanned round a point recessed 0.012–0.03 m into the wall. The toon ramp then breaks it into a few tones.
+  - Facets go into the wall, never proud of the face, so bounds, doorways and walkways can't move.
+  - A few camera-facing panels have a spalled patch: an irregular hole, its broken edge recessed up to 0.02 m, down to a mortar bed 0.08 m back, with stones in light mortar beneath. Patches keep clear of windows, doorways, signs, sconces, shelves and hearths. The Sleeping Fox has 3 outside and 2 inside.
+  - No pargetting and no limewash variation.
+- **Door grain.**
+  - The tavern door's planks carry raised grain streaks and knots in a third, darker door material, `Door_Grain` (sRGB about (92, 58, 34), against `Door_Wood` (128, 82, 46)).
+  - Streaks are low ridges 0.02 m high and 0.05 m wide at mid-height, with 45° sides, on both faces. Plank V-grooves also turn 45°.
+  - The edge pass inks the door's wood with the Oak and Roof crease test (normals more than 40° apart), so joints and grain read. The door loads into actor slots 12–14.
+- **Budgets.** A building exterior is up to 14,000 triangles, a furnished room about 20,000, and a small moving prop such as a door up to 800. The Sleeping Fox's exterior is 9,117 triangles, its 22.6 × 17 m room 11,927, and its door 506.
 - **Moving props** (a door) are skinned like characters, with one skinned mesh, joints named for what they do (`hinge`), materials tagged with the prop's name (`Door_Wood`) and their own actor-material slot range, recorded in the task. Code turns the joints. They need no clips.
 
 ## Delivery

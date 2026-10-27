@@ -9,6 +9,11 @@ Run headless (builds, checks, exports, then renders the preview beside the glb):
     default camera - at the game's 24 px/m as the engine would ink it (ray
     cast, toon-shaded, crease ink on Roof), the same with the ink solid, and
     a smooth render at 72 px/m.
+    tavern_exterior_masonry.png beside it (revision 5): close views at the
+    game's 24 px/m, toon-shaded with the engine's day palette - the plinth,
+    threshold and a spalled patch from the default camera, the chimney from
+    the front-right, and one spalled patch close up - each beside a smooth
+    render of the same crop.
 
 Or step by step in an open Blender, to watch it go together:
     import runpy; tx = runpy.run_path(".../build_tavern_exterior.py", run_name="tavern")
@@ -58,6 +63,7 @@ OUT_DIR = os.environ.get("PXE_TAVERN_OUT") or os.path.normpath(os.path.join(HERE
 OUT = os.path.join(OUT_DIR, "tavern_exterior.glb")
 PREVIEW = os.path.join(OUT_DIR, "tavern_exterior.png")
 ROOF_PREVIEW = os.path.join(OUT_DIR, "tavern_exterior_roof.png")
+MASONRY_PREVIEW = os.path.join(OUT_DIR, "tavern_exterior_masonry.png")
 COLLECTION = "Tavern_Exterior"
 
 
@@ -168,7 +174,7 @@ SIGN_X = (SIGN_POST[0] + SIGN_POST[1]) / 2
 SIGN_Y = (-0.45, -1.65)             # the board's span out from the wall
 SIGN_Z = (2.75, 3.75)
 BRACKET_Z = 4.05
-TRI_BUDGET = 8000                   # revision 4 (revision 3: 4,000)
+TRI_BUDGET = 14000                  # revision 5 (revision 4: 8,000)
 PLINTH_SIZE = (9.0, 7.0)            # checked
 MIN_VESTIBULE = 2.5                 # checked: the trigger zone's depth
 MIN_SIGN_TO_JAMB = 0.3              # checked: the sign's nearest part to the jamb's outer edge
@@ -179,6 +185,48 @@ REV2_RIDGE_TOP = 9.13
 MAX_RISE = 0.5
 HEADROOM = 3.3
 REV2_PLAN = (-4.55, 5.59, -1.77, 7.1)   # the whole exterior's plan outline (Blender x0, x1, y0, y1)
+# Revision 5: masonry and render. The plinth (the threshold included) and
+# the chimney are laid as individual Stone stones, each STONE_PROUD (0.03 to
+# 0.05 m) proud of a Plaster mortar bed set BED behind the revision-4 outline,
+# in courses with JOINT-wide joints (a pixel at 24 px/m), each course's
+# vertical joints at least STAGGER from the course below's. No stone passes
+# the revision-4 outline, so the footprint, plan and chimney figures hold.
+JOINT = 0.06
+BED = 0.05
+STONE_PROUD = [0.05, 0.04, 0.045, 0.035]   # stone face over its bed, cycled
+TOP_DROP = [0.0, 0.01, 0.02, 0.005]        # an exposed top course's stones sit this far under the top, cycled
+STONE_T = 0.15                      # a facing stone's depth in from the outline
+PLINTH_T = 0.22                     # the plinth's run under the timber face
+STONE_LEN = [0.62, 0.78, 0.55, 0.70, 0.66, 0.85, 0.58, 0.74]  # stone lengths along a course, cycled
+STONE_MIN = 0.25                    # the shortest stone
+STAGGER = 0.12                      # checked
+PLINTH_COURSES = [FOOT, -0.25, 0.10, PLINTH_TOP + 0.02]
+# Plaster panels: each panel between the timbers is cut into a few facets,
+# recessed at most FACET_MAX into the wall (never proud of the revision-4
+# plaster face, so nothing grows), its edges at the face.
+FACET_MAX = 0.03
+FACET_MIN = 0.012
+FACET_STRIP = 0.5                   # about one strip of four facets per this much of a panel's long side
+# Spalled patches: where the render has fallen away, an irregular hole in a
+# panel down to a mortar bed PATCH_DEPTH behind the face, the stones beneath
+# standing STONE_PROUD off it (so still behind the render's face). Each on a
+# panel the game's default camera faces, clear of the windows, the doorway
+# and the sign. (wall, centre s, centre z, half-sizes s and z, seed)
+PATCH_DEPTH = 0.08
+PATCH_EDGE_MAX = 0.02               # the broken render's edge: recessed at most this
+PATCH_COURSE = 0.19                 # stone course height (stone 0.13 + joint)
+PATCH_LEN = [0.30, 0.25, 0.34, 0.27, 0.32, 0.24]
+PATCHES = [
+    ("front", -2.5, 1.0, 0.42, 0.21, 3),     # under the left front window
+    ("front", 3.25, 3.72, 0.38, 0.20, 7),    # over the right front window
+    ("front", 3.42, 0.99, 0.36, 0.20, 11),   # under the right front window, toward the corner
+]
+PATCH_COUNT = (3, 4)                # checked
+PATCH_PANEL_MARGIN = 0.06           # checked: a patch keeps this inside its panel
+PATCH_WINDOW_CLEAR = 0.15           # checked: from a window opening or its sill board
+PATCH_DOOR_CLEAR = 0.3              # checked: from the doorway (jambs included) and the sign
+PATCH_FACING = 0.5                  # checked: the wall's normal . the way to the default camera
+
 ROOF_PARTS = ["Roof", CROSS_GABLE["name"]] + [d["name"] for d in DORMERS]
 # Engine rectangles (assets.md / scene.cpp kTavernDoorway, kTavernVestibule) in Blender (x0, x1, y0, y1).
 DOORWAY_RECT = (-1.1, 1.1, -0.85, 0.25)
@@ -210,6 +258,40 @@ TIMBER_RUN = {
     "left": (Y0 + CORNER, Y1 - CORNER),
     "right": (Y0 + CORNER, Y1 - CORNER),
 }
+
+
+def post_layout(wall):
+    """A wall's posts: either side of each window (the doorway's jambs stand
+    in for posts there), then fill so no panel is wider than 2.4 m. Returns
+    every span (corners and jambs included) and the posts drawn on the wall."""
+    t0, t1 = TIMBER_RUN[wall]
+    fixed = [(t0 - CORNER, t0), (t1, t1 + CORNER)]
+    for a, b in WINDOWS[wall]:
+        fixed += [(a - POST_W, a), (b, b + POST_W)]
+    if wall == "front":
+        fixed += [(DOORWAY[0], DOORWAY[0] + JAMB), (DOORWAY[1] - JAMB, DOORWAY[1]), SIGN_POST]
+    fixed.sort()
+    fill = []
+    for (a0, a1), (b0, b1) in zip(fixed, fixed[1:]):
+        gap = b0 - a1
+        panels = max(1, math.ceil(gap / 2.4 - 1e-6))
+        width = (gap - (panels - 1) * POST_W) / panels
+        for k in range(1, panels):
+            s = a1 + k * width + (k - 1) * POST_W
+            fill.append((s, s + POST_W))
+    drawn = fill + [p for a, b in WINDOWS[wall] for p in ((a - POST_W, a), (b, b + POST_W))]
+    if wall == "front":
+        drawn.append(SIGN_POST)
+    return sorted(set(fixed + fill)), drawn
+
+
+def timber_posts(wall):
+    """The spans of a wall's face covered by an upright timber: its drawn
+    posts and the corner posts (not the jambs, which stop at the door head)."""
+    _, drawn = post_layout(wall)
+    lo, hi = (X0, X1) if wall in ("front", "back") else (Y0, Y1)
+    corners = [(lo - (POST_PROUD - PROUD), lo + CORNER), (hi - CORNER, hi + (POST_PROUD - PROUD))]
+    return sorted(drawn + corners)
 
 
 class Part:
@@ -382,6 +464,321 @@ def roll(part, a, b, r, mat="Roof", tiled=None):
         tiled.append({"length": length, "joints": joints, "angles": angles, "r": r})
 
 
+# --------------------------------------------------------------------------
+# Revision 5: masonry, faceted render and spalled patches
+
+
+def stable_rng(*key):
+    """A random stream fixed by `key` (numbers and strings), the same every build."""
+    import random
+    seed = 7
+    for k in key:
+        if isinstance(k, str):
+            v = sum(ord(c) * (i + 1) for i, c in enumerate(k))
+        else:
+            v = int(round(k * 1000))
+        seed = (seed * 1000003 + v) % (2 ** 31)
+    return random.Random(seed)
+
+
+def inner_key(face):
+    """The box side of a stone on `face` that faces into the bed."""
+    return ("+" if face["out"] < 0 else "-") + face["axis"]
+
+
+def face_box(face, u0, u1, z0, z1, d0, d1):
+    """A box on a vertical face: u along the face, z up, d in from the
+    face's outline (d0 < d1)."""
+    c, o = face["coord"], face["out"]
+    n0, n1 = c - o * d0, c - o * d1
+    lo_n, hi_n = min(n0, n1), max(n0, n1)
+    if face["axis"] == "y":
+        return (u0, lo_n, z0), (u1, hi_n, z1)
+    return (lo_n, u0, z0), (hi_n, u1, z1)
+
+
+def lay_courses(part, faces, zs, records, bottom_gap=0.0, top_gap=0.0, top_open=False, forbid=None):
+    """Lay coursed stones on vertical faces that share courses (one
+    structure). zs: the course lines, bottom to top. Each face is a dict:
+    name; axis ("x" or "y") and coord, the plane of its outline; out (+-1),
+    which way it faces; u, the run (along y for an x face, x for a y face);
+    ends, "corner" or "flat" at each end of u; phase (0 or 1); T, the
+    stones' depth in from the outline. At a corner, faces take turns course
+    by course: a face owns the corner on courses where (course + phase) is
+    even, its end stone running to the corner; otherwise its stones stop a
+    joint short of the other face's stone. Each stone stands STONE_PROUD off
+    the bed (BED in from the outline), a JOINT between stones and courses,
+    every course's vertical joints at least STAGGER from the course below's
+    (and from the corner joints of the course above). With top_open the top
+    course's stones sit TOP_DROP under the top line, so the bed shows in
+    their joints from above too. `forbid` (face name -> joint positions)
+    seeds the stagger of the first course. Records each course."""
+    n = len(zs) - 1
+    prev = {f["name"]: list((forbid or {}).get(f["name"], [])) for f in faces}
+
+    def ends_for(f, k):
+        if k >= n:
+            return None, None, []
+        own = (k + f["phase"]) % 2 == 0
+        ua, ub = f["u"]
+        a = ua + (f["T"] + JOINT if f["ends"][0] == "corner" and not own else 0.0)
+        b = ub - (f["T"] + JOINT if f["ends"][1] == "corner" and not own else 0.0)
+        js = ([a - JOINT / 2] if a > ua + 1e-9 else []) + ([b + JOINT / 2] if b < ub - 1e-9 else [])
+        return a, b, js
+    for k in range(n):
+        z0 = zs[k] + (JOINT / 2 if k > 0 else bottom_gap)
+        z1 = zs[k + 1] - (JOINT / 2 if k < n - 1 else top_gap)
+        for fi, f in enumerate(faces):
+            a, b, corner_js = ends_for(f, k)
+            next_js = ends_for(f, k + 1)[2]
+            forbidden = prev[f["name"]] + next_js
+            cuts = []
+            pos, i = a, k * 3 + fi * 5
+            while True:
+                c = pos + STONE_LEN[i % len(STONE_LEN)]
+                i += 1
+                tries = 0
+                while any(abs(c - q) < STAGGER for q in forbidden) and tries < 40:
+                    c += 0.03
+                    tries += 1
+                if b - c < STONE_MIN + JOINT / 2:
+                    break
+                cuts.append(c)
+                pos = c
+            edges = [a] + [x for c in cuts for x in (c - JOINT / 2, c + JOINT / 2)] + [b]
+            stones = []
+            for j in range(0, len(edges), 2):
+                u0, u1 = edges[j], edges[j + 1]
+                idx = k + j // 2 + fi
+                proud = STONE_PROUD[idx % len(STONE_PROUD)]
+                top = z1 - (TOP_DROP[idx % len(TOP_DROP)] if top_open and k == n - 1 else 0.0)
+                lo, hi = face_box(f, u0, u1, z0, top, BED - proud, f["T"])
+                part.box(lo, hi, "Stone", skip=(inner_key(f), "-z"))
+                stones.append({"u": (u0, u1), "z": (z0, top), "proud": proud})
+            records.append({"face": f["name"], "course": k, "z": (z0, z1), "stones": stones,
+                            "joints": sorted(cuts + corner_js), "top": top_open and k == n - 1})
+            prev[f["name"]] = cuts + corner_js
+    return prev
+
+
+def lay_slabs(part, x0, x1, ys, z0, z1, records, name, out_edges, forbid=()):
+    """Flat-topped slabs (a threshold, a hearth) over x0..x1, in rows between
+    the lines ys (along y), their tops flush at z1 and their bottoms at z0.
+    A JOINT between rows and between slabs, each row's joints at least
+    STAGGER from the row before's (the first row's from `forbid`). Slab
+    edges on out_edges ("-y", "+y", "-x", "+x": the outline sides) stand
+    STONE_PROUD off a bed BED in; other edges run to the line."""
+    prev = list(forbid)
+    for r in range(len(ys) - 1):
+        ya = ys[r] + (JOINT / 2 if r > 0 else 0.0)
+        yb = ys[r + 1] - (JOINT / 2 if r < len(ys) - 2 else 0.0)
+        cuts = []
+        pos, i = x0, r * 3 + 2
+        while True:
+            c = pos + STONE_LEN[i % len(STONE_LEN)] * 1.15
+            i += 1
+            tries = 0
+            while any(abs(c - q) < STAGGER for q in prev) and tries < 40:
+                c += 0.03
+                tries += 1
+            if x1 - c < STONE_MIN + JOINT / 2:
+                break
+            cuts.append(c)
+            pos = c
+        edges = [x0] + [x for c in cuts for x in (c - JOINT / 2, c + JOINT / 2)] + [x1]
+        stones = []
+        for j in range(0, len(edges), 2):
+            u0, u1 = edges[j], edges[j + 1]
+            proud = STONE_PROUD[(r + j // 2) % len(STONE_PROUD)]
+            nud = BED - proud
+            lo = [u0 + (nud if "-x" in out_edges and j == 0 else 0.0),
+                  ya + (nud if "-y" in out_edges and r == 0 else 0.0), z0]
+            hi = [u1 - (nud if "+x" in out_edges and j == len(edges) - 2 else 0.0),
+                  yb - (nud if "+y" in out_edges and r == len(ys) - 2 else 0.0), z1]
+            part.box(tuple(lo), tuple(hi), "Stone", skip=("-z",))
+            stones.append({"u": (lo[0], hi[0]), "y": (lo[1], hi[1]), "z": (z0, z1), "proud": proud})
+        records.append({"face": name, "course": r, "z": (z0, z1), "stones": stones, "joints": sorted(cuts),
+                        "row": (ya, yb), "slab": True})
+        prev = cuts
+    return prev
+
+
+def lay_plane(part, quad, n, courses, records, name, T=STONE_T):
+    """Stones on a sloped, planar face (the chimney's shoulder): quad is its
+    corners (bottom-left, bottom-right, top-right, top-left), n its outward
+    normal. Courses up the slant, a JOINT between them and along each; the
+    stones keep JOINT / 2 in from the face's edges, so a mortar line runs
+    along each hip. Each stone stands STONE_PROUD off the bed (the face
+    moved BED in)."""
+    BL, BR, TR, TL = [Vector(p) for p in quad]
+    n = Vector(n).normalized()
+
+    def P(su, t):
+        return (BL.lerp(BR, su)).lerp(TL.lerp(TR, su), t)
+    slant = ((TL + TR) / 2 - (BL + BR) / 2).length
+    dt = JOINT / 2 / slant
+    for c in range(courses):
+        t0 = c / courses + dt
+        t1 = (c + 1) / courses - dt
+        w0 = (P(1, t0) - P(0, t0)).length
+        w1 = (P(1, t1) - P(0, t1)).length
+        wm = (w0 + w1) / 2
+        k = max(1, round(wm / 0.6))
+        fr = [(i + (0.5 if c % 2 else 0.0)) / k for i in range(1, k + (1 if c % 2 else 0))]
+        fr = [f for f in fr if 0.0 < f < 1.0]
+        edges0 = [JOINT / 2 / w0] + [x for f in fr for x in (f - JOINT / 2 / w0, f + JOINT / 2 / w0)] + [1 - JOINT / 2 / w0]
+        edges1 = [JOINT / 2 / w1] + [x for f in fr for x in (f - JOINT / 2 / w1, f + JOINT / 2 / w1)] + [1 - JOINT / 2 / w1]
+        stones = []
+        for j in range(0, len(edges0), 2):
+            proud = STONE_PROUD[(c + j // 2) % len(STONE_PROUD)]
+            face_pts = [P(edges0[j], t0), P(edges0[j + 1], t0), P(edges1[j + 1], t1), P(edges1[j], t1)]
+            outer = [p - n * (BED - proud) for p in face_pts]
+            inner = [p - n * T for p in face_pts]
+            part.hexa(inner + outer, "Stone")
+            stones.append({"u": (edges0[j] * wm, edges0[j + 1] * wm), "z": (t0 * slant, t1 * slant), "proud": proud})
+        records.append({"face": name, "course": c, "z": (t0 * slant, t1 * slant), "stones": stones,
+                        "joints": [f * wm for f in fr], "plane": True})
+
+
+def facet_rect(part, P, out, s0, s1, z0, z1, rng, mat="Plaster"):
+    """A plaster panel s0..s1 x z0..z1 cut into gentle facets: strips across
+    its long side, slanted a little, each fanned into four facets round a
+    point recessed FACET_MIN to FACET_MAX. P(s, z, d) maps the panel (d
+    into the wall) to Blender. The panel's edges stay on its face. Returns
+    the deepest recess and the facet normals."""
+    w, h = s1 - s0, z1 - z0
+    along_s = w >= h
+    m = max(1, round((w if along_s else h) / FACET_STRIP))
+    lines = [(0.0, 0.0)]
+    for i in range(1, m):
+        lines.append((i / m + rng.uniform(-0.2, 0.2) / m, i / m + rng.uniform(-0.2, 0.2) / m))
+    lines.append((1.0, 1.0))
+
+    def pt(fu, fv, d):
+        if along_s:
+            return Vector(P(s0 + fu * w, z0 + fv * h, d))
+        return Vector(P(s0 + fv * w, z0 + fu * h, d))
+    deepest, normals = 0.0, []
+    for i in range(m):
+        (a0, a1), (b0, b1) = lines[i], lines[i + 1]
+        quad = [(a0, 0.0), (b0, 0.0), (b1, 1.0), (a1, 1.0)]
+        cu = (a0 + b0 + a1 + b1) / 4 + rng.uniform(-0.15, 0.15) * ((b0 + b1) - (a0 + a1)) / 2
+        cv = 0.5 + rng.uniform(-0.2, 0.2)
+        depth = rng.uniform(FACET_MIN, FACET_MAX)
+        deepest = max(deepest, depth)
+        corners = [pt(fu, fv, 0.0) for fu, fv in quad]
+        c = pt(cu, cv, depth)
+        for k in range(4):
+            tri = [corners[k], corners[(k + 1) % 4], c]
+            part.face(tri, mat, out)
+            normals.append(face_normal(tri + [c], out))
+    return deepest, normals
+
+
+def facet_tri(part, P, out, a, b, c, rng, mat="Plaster"):
+    """A triangular plaster panel (corners (s, z)) fanned into three facets
+    round a recessed point."""
+    w = rng.uniform(0.25, 0.42)
+    v = rng.uniform(0.25, 0.42)
+    centre = (a[0] + (b[0] - a[0]) * w + (c[0] - a[0]) * v, a[1] + (b[1] - a[1]) * w + (c[1] - a[1]) * v)
+    depth = rng.uniform(FACET_MIN, FACET_MAX)
+    pc = Vector(P(centre[0], centre[1], depth))
+    corners = [Vector(P(x, z, 0.0)) for x, z in (a, b, c)]
+    normals = []
+    for k in range(3):
+        tri = [corners[k], corners[(k + 1) % 3], pc]
+        part.face(tri, mat, out)
+        normals.append(face_normal(tri + [pc], out))
+    return depth, normals
+
+
+def point_in_poly(p, poly):
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % n]
+        if (y0 > p[1]) != (y1 > p[1]):
+            if p[0] < x0 + (p[1] - y0) * (x1 - x0) / (y1 - y0):
+                inside = not inside
+    return inside
+
+
+def patch_outline(cs, cz, rs, rz, rng):
+    """An irregular outline round (cs, cz), about rs by rz: eleven points
+    at uneven angles and radii, a few bitten in."""
+    pts = []
+    n = 11
+    for k in range(n):
+        a = math.tau * k / n + rng.uniform(-0.12, 0.12)
+        r = rng.uniform(0.78, 1.08) * (0.8 if k % 4 == 1 else 1.0)
+        pts.append((cs + rs * r * math.cos(a), cz + rz * r * math.sin(a)))
+    return pts
+
+
+def spalled_panel(part, P, out, cell, outline, rng, mat_render="Plaster"):
+    """A panel (cell s0, s1, z0, z1) where the render has fallen away inside
+    `outline` (s, z): the render round it, faceted by the triangulation
+    between the panel's edge and the hole, its broken edge recessed up to
+    PATCH_EDGE_MAX; the hole's sides down to a mortar bed (Plaster)
+    PATCH_DEPTH behind the face; and the stones beneath in courses, each
+    STONE_PROUD off the bed, JOINT apart. Returns the patch's record."""
+    from mathutils.geometry import tessellate_polygon
+    s0, s1, z0, z1 = cell
+    rect = [(s0, z0), ((s0 + s1) / 2, z0), (s1, z0), (s1, (z0 + z1) / 2), (s1, z1), ((s0 + s1) / 2, z1),
+            (s0, z1), (s0, (z0 + z1) / 2)]
+    edge_d = [rng.uniform(0.0, PATCH_EDGE_MAX) for _ in outline]
+    tris = tessellate_polygon([[(x, z, 0.0) for x, z in rect], [(x, z, 0.0) for x, z in outline]])
+    pts = rect + outline
+    depth = [0.0] * len(rect) + edge_d
+    normals = []
+    for i, j, k in tris:
+        tri = [Vector(P(pts[q][0], pts[q][1], depth[q])) for q in (i, j, k)]
+        part.face(tri, mat_render, out)
+        normals.append(face_normal(tri + [tri[0]], out))
+    cs = sum(x for x, _ in outline) / len(outline)
+    cz = sum(z for _, z in outline) / len(outline)
+    n = len(outline)
+    for k in range(n):
+        j = (k + 1) % n
+        (xa, za), (xb, zb) = outline[k], outline[j]
+        quad = [Vector(P(xa, za, edge_d[k])), Vector(P(xb, zb, edge_d[j])), Vector(P(xb, zb, PATCH_DEPTH)),
+                Vector(P(xa, za, PATCH_DEPTH))]
+        inward = Vector(P(cs, cz, 0.0)) - Vector(P((xa + xb) / 2, (za + zb) / 2, 0.0))
+        part.face(quad, mat_render, inward)
+    part.face([Vector(P(x, z, PATCH_DEPTH)) for x, z in outline], "Plaster", out)
+    lo_s, hi_s = min(x for x, _ in outline), max(x for x, _ in outline)
+    lo_z, hi_z = min(z for _, z in outline), max(z for _, z in outline)
+    stones = []
+    row = 0
+    # Courses centred on the patch, a bed joint at its middle; the stones'
+    # joints staggered row to row.
+    zc = cz - PATCH_COURSE * math.ceil((cz - lo_z) / PATCH_COURSE)
+    while zc < hi_z:
+        za, zb = zc + JOINT / 2, zc + PATCH_COURSE - JOINT / 2
+        u = cs - PATCH_LEN[0] * (1.0 if row % 2 else 0.5)
+        while u > lo_s:
+            u -= PATCH_LEN[0]
+        i = row * 2
+        while u < hi_s:
+            L = PATCH_LEN[i % len(PATCH_LEN)]
+            i += 1
+            ua, ub = u + JOINT / 2, u + L - JOINT / 2
+            u += L
+            samples = [(ua + (ub - ua) * fx, za + (zb - za) * fz) for fx in (0.15, 0.5, 0.85) for fz in (0.2, 0.8)]
+            if sum(point_in_poly(q, outline) for q in samples) < 2:
+                continue
+            proud = STONE_PROUD[(row + i) % len(STONE_PROUD)]
+            a = Vector(P(ua, za, PATCH_DEPTH - proud))
+            b = Vector(P(ub, zb, PATCH_DEPTH + 0.1))
+            part.box(tuple(min(a[q], b[q]) for q in range(3)), tuple(max(a[q], b[q]) for q in range(3)), "Stone")
+            stones.append({"u": (ua, ub), "z": (za, zb), "proud": proud,
+                           "centre_in": point_in_poly(((ua + ub) / 2, (za + zb) / 2), outline),
+                           "centre": Vector(P((ua + ub) / 2, (za + zb) / 2, PATCH_DEPTH - proud))})
+        zc += PATCH_COURSE
+        row += 1
+    return {"cell": cell, "outline": outline, "edge_max": max(edge_d), "stones": stones, "normals": normals}
+
+
 def prism_uz(part, outline, v0, v1, mat, P, out):
     """A prism over an outline (u, z) in a gable's face plane, from v0 to v1
     (v into the roof). P maps (u, v, z) to Blender; `out` is the face's
@@ -426,7 +823,7 @@ def gable_frame(g):
     return P, Vector((0, out, 0)), seat, eave, ridge, we, zb, depth
 
 
-def build_gable(part, g, tiling=None, roll_tiling=None):
+def build_gable(part, g, tiling=None, roll_tiling=None, panels=None):
     """A gable on the roof: a Plaster body under a slated gable roof in
     stepped courses with a ridge roll; Wood framing on its face (or a dark
     window for a dormer); carved bargeboards with stepped notches under the
@@ -436,10 +833,37 @@ def build_gable(part, g, tiling=None, roll_tiling=None):
     foot = seat - 0.15
     t, e = COURSE_T, COURSE_E
     v0 = -g["ov_front"]
-    # Body: the face and cheeks, just under the roof's underside.
+    # Body: the face and cheeks, just under the roof's underside. Revision 5:
+    # the face and both cheeks are faceted plaster panels (recessed at most
+    # FACET_MAX into the body); the back, bottom and rakes, under the roof,
+    # stay flat. The outline is revision 4's.
     b = 0.03
-    prism_uz(part, [(-hw, foot), (hw, foot), (hw, eave - b), (0.0, ridge - b), (-hw, eave - b)],
-             0.0, depth, "Plaster", P, OUT)
+    outline = [(-hw, foot), (hw, foot), (hw, eave - b), (0.0, ridge - b), (-hw, eave - b)]
+    back = [P(u, depth, z) for u, z in outline]
+    part.face(back, "Plaster", -OUT)
+    for i in (0, 2, 3):  # the bottom and the two rakes
+        j = (i + 1) % 5
+        du, dz = outline[j][0] - outline[i][0], outline[j][1] - outline[i][1]
+        part.face([P(outline[i][0], 0.0, outline[i][1]), P(outline[j][0], 0.0, outline[j][1]),
+                   P(outline[j][0], depth, outline[j][1]),
+                   P(outline[i][0], depth, outline[i][1])], "Plaster", (dz, 0.0, -du))
+    rng = stable_rng(g["name"], "body")
+    recs = []
+
+    def PF(u, z, d):  # the face: d into the body
+        return P(u, d, z)
+    recs.append(facet_rect(part, PF, OUT, -hw, hw, foot, eave - b, rng))
+    recs.append(facet_tri(part, PF, OUT, (-hw, eave - b), (0.0, eave - b), (0.0, ridge - b), rng))
+    recs.append(facet_tri(part, PF, OUT, (0.0, eave - b), (hw, eave - b), (0.0, ridge - b), rng))
+    for sg in (-1, 1):
+        def PC(v, z, d, sg=sg):  # a cheek: d in toward the middle
+            return P(sg * (hw - d), v, z)
+        recs.append(facet_rect(part, PC, Vector(P(sg, 0, 0)) - Vector(P(0, 0, 0)), 0.0, depth, foot, eave - b, rng))
+    if panels is not None:
+        for k, (deep, normals) in enumerate(recs):
+            panels.append({"part": g["name"], "wall": ["face", "face apex left", "face apex right", "cheek left",
+                                                       "cheek right"][k], "depth": deep, "normals": normals,
+                           "patched": False})
     # Slates: courses up each side, a lip at each course's lower edge, the
     # front end of each course, an underside, and a ridge roll. Revision 4:
     # each course cut into tiles along v by V notches, half a tile along from
@@ -577,6 +1001,11 @@ class Builder:
         self.gable_figs = {}  # gable or dormer name -> its heights (build_gable)
         self.tiling = []  # one record per slate course per slope (revision 4's tiles)
         self.roll_tiling = {}  # roll name -> [its tiling record]
+        self.masonry = []  # revision 5: one record per course of stones (or row of slabs)
+        self.beds = []     # each structure's mortar bed top, for the proudness check
+        self.panels = []   # every faceted plaster panel
+        self.patches = []  # the spalled patches
+        self.envelopes = {}  # part -> revision 4's boxes, which no stone passes
 
     def start(self):
         """Fresh Tavern_Exterior collection; the rest of the scene is left alone."""
@@ -596,45 +1025,63 @@ class Builder:
     # ---- stone ----------------------------------------------------------
 
     def foundation(self):
-        """A plinth of stone blocks round the walls, top at PLINTH_TOP, bottom
-        at FOOT, with a threshold stone through the doorway flush with the
-        floor. Each block's face and top are nudged a little, so the course
-        reads as laid stone; neighbours never share a face plane."""
+        """The plinth round the walls, top about PLINTH_TOP, bottom at FOOT,
+        and the threshold stone through the doorway flush with the floor.
+        Revision 5: laid as individual stones in three courses, proud of a
+        Plaster mortar bed BED inside the revision-4 outline (which no stone
+        passes), joints staggered course to course and the courses taking
+        turns at each corner. The threshold is three slabs, flush with the
+        floor, over a course of stones."""
         part = Part("Foundation")
         ox0, ox1 = X0 - PLINTH_OUT, X1 + PLINTH_OUT
         oy0, oy1 = Y0 - PLINTH_OUT, Y1 + PLINTH_OUT
         depth = (PY0 + WALL_T) - oy0  # flush with the walls' inside faces
-        nudges = [0.0, -0.025, -0.01, -0.035, -0.015, -0.02, -0.03, -0.005]  # inward only: the outline is exact
-        heights = [0.0, 0.03, -0.02, 0.04, 0.01, -0.03, 0.02, -0.01]
-        k = 0
-
-        def run(s0, s1, place, target=1.35):
-            nonlocal k
-            n = max(1, round((s1 - s0) / target))
-            for i in range(n):
-                a = s0 + (s1 - s0) * i / n
-                b = s0 + (s1 - s0) * (i + 1) / n
-                place(a, b, nudges[k % len(nudges)], PLINTH_TOP + heights[k % len(heights)])
-                k += 1
-
-        # Front, either side of the threshold; back; then the ends between them.
         dl, dr = DOORWAY
-        run(ox0, dl, lambda a, b, d, top: part.box((a, oy0 - d, FOOT), (b, oy0 + depth, top), "Stone"))
-        run(dr, ox1, lambda a, b, d, top: part.box((a, oy0 - d, FOOT), (b, oy0 + depth, top), "Stone"))
-        run(ox0, ox1, lambda a, b, d, top: part.box((a, oy1 - depth, FOOT), (b, oy1 + d, top), "Stone"))
-        run(oy0 + depth, oy1 - depth,
-            lambda a, b, d, top: part.box((ox0 - d, a, FOOT), (ox0 + depth, b, top), "Stone"), target=1.5)
-        run(oy0 + depth, oy1 - depth,
-            lambda a, b, d, top: part.box((ox1 - depth, a, FOOT), (ox1 + d, b, top), "Stone"), target=1.5)
-        # Threshold: a step stone through the wall, a little proud of the plinth.
-        part.box((dl, oy0 - 0.12, FOOT), (dr, PY0 + WALL_T, 0.0), "Stone")
+        bed_top = PLINTH_TOP + 0.02 - BED  # under the stones' tops by 0.03 to 0.05
+        # The mortar bed: revision 4's runs, BED in from the outline.
+        part.box((ox0 + BED, oy0 + BED, FOOT), (dl, oy0 + depth, bed_top), "Plaster")
+        part.box((dr, oy0 + BED, FOOT), (ox1 - BED, oy0 + depth, bed_top), "Plaster")
+        part.box((ox0 + BED, oy1 - depth, FOOT), (ox1 - BED, oy1 - BED, bed_top), "Plaster")
+        part.box((ox0 + BED, oy0 + depth, FOOT), (ox0 + depth, oy1 - depth, bed_top), "Plaster")
+        part.box((ox1 - depth, oy0 + depth, FOOT), (ox1 - BED, oy1 - depth, bed_top), "Plaster")
+        T = PLINTH_T
+        faces = [
+            dict(name="plinth front-left", axis="y", coord=oy0, out=-1, u=(ox0, dl), ends=("corner", "flat"), phase=0, T=T),
+            dict(name="plinth front-right", axis="y", coord=oy0, out=-1, u=(dr, ox1), ends=("flat", "corner"), phase=0, T=T),
+            dict(name="plinth back", axis="y", coord=oy1, out=1, u=(ox0, ox1), ends=("corner", "corner"), phase=0, T=T),
+            dict(name="plinth left", axis="x", coord=ox0, out=-1, u=(oy0, oy1), ends=("corner", "corner"), phase=1, T=T),
+            # The right end, either side of the chimney's base (which stands over it).
+            dict(name="plinth right-front", axis="x", coord=ox1, out=1, u=(oy0, CHIMNEY_Y[0]), ends=("corner", "flat"),
+                 phase=1, T=T),
+            dict(name="plinth right-back", axis="x", coord=ox1, out=1, u=(CHIMNEY_Y[1], oy1), ends=("flat", "corner"),
+                 phase=1, T=T),
+        ]
+        lay_courses(part, faces, PLINTH_COURSES, self.masonry, top_open=True)
+        self.beds.append({"part": "Foundation", "top": bed_top, "faces": [f["name"] for f in faces]})
+        # Threshold: a course of stones on its face, then three slabs over
+        # it, their tops flush with the floor (y = 0).
+        ty0 = oy0 - 0.12
+        slab_lo = -0.25
+        part.box((dl + BED, ty0 + BED, FOOT), (dr - BED, PY0 + WALL_T, -BED), "Plaster")
+        tface = dict(name="threshold face", axis="y", coord=ty0, out=-1, u=(dl, dr), ends=("flat", "flat"), phase=0,
+                     T=STONE_T)
+        below = lay_courses(part, [tface], [FOOT, slab_lo], self.masonry, top_gap=JOINT / 2)
+        lay_slabs(part, dl, dr, [ty0, PY0 + WALL_T], slab_lo + JOINT / 2, 0.0, self.masonry, "threshold slabs",
+                  ("-y",), forbid=below["threshold face"])
+        self.beds.append({"part": "Foundation", "top": -BED, "faces": ["threshold slabs"]})
+        self.envelopes["Foundation"] = [((ox0, oy0, FOOT), (ox1, oy1, PLINTH_TOP + 0.02)),
+                                        ((dl, ty0, FOOT), (dr, PY0 + WALL_T, 0.0))]
         part.finish(self.coll)
 
     # ---- plaster ----------------------------------------------------------
 
     def walls(self):
         """Plaster walls from the plinth to the wall plate, with real holes
-        for the windows and the doorway (the panes sit back in them)."""
+        for the windows and the doorway (the panes sit back in them).
+        Revision 5: each wall slab's outer face is built panel by panel -
+        flat where a timber covers it, every plaster panel between the
+        timbers cut into gentle facets recessed at most FACET_MAX - and on
+        PATCHES panels a spalled patch shows the stones beneath."""
         part = Part("Walls")
         for wall, (s0, s1) in PLASTER_RUN.items():
             holes = [(a, b, WIN_Z[0], WIN_Z[1]) for a, b in WINDOWS[wall]]
@@ -659,8 +1106,54 @@ class Builder:
                                 new.append((z1, hi))
                         spans = new
                 for lo, hi in spans:
-                    part.wall_box(wall, a, b, -WALL_T, 0.0, lo, hi, "Plaster")
+                    self.wall_slab(part, wall, a, b, lo, hi)
         part.finish(self.coll)
+
+    def wall_slab(self, part, wall, a, b, lo, hi):
+        """One revision-4 wall box (s a..b, z lo..hi, through the wall's
+        thickness), its outer face cut at the timbers' edges into cells:
+        flat behind a timber, faceted on a plaster panel, spalled where a
+        patch is."""
+        def P(s_, z_, d):
+            return wall_point(wall, s_, -d, z_)
+        out = Vector(wall_point(wall, 0, 1, 0)) - Vector(wall_point(wall, 0, 0, 0))
+        along = Vector(wall_point(wall, 1, 0, 0)) - Vector(wall_point(wall, 0, 0, 0))
+        V = lambda s_, z_, d: Vector(P(s_, z_, d))
+        part.face([V(a, lo, WALL_T), V(b, lo, WALL_T), V(b, hi, WALL_T), V(a, hi, WALL_T)], "Plaster", -out)
+        part.face([V(a, lo, 0), V(a, hi, 0), V(a, hi, WALL_T), V(a, lo, WALL_T)], "Plaster", -along)
+        part.face([V(b, lo, 0), V(b, hi, 0), V(b, hi, WALL_T), V(b, lo, WALL_T)], "Plaster", along)
+        part.face([V(a, lo, 0), V(b, lo, 0), V(b, lo, WALL_T), V(a, lo, WALL_T)], "Plaster", (0, 0, -1))
+        part.face([V(a, hi, 0), V(b, hi, 0), V(b, hi, WALL_T), V(a, hi, WALL_T)], "Plaster", (0, 0, 1))
+        posts = timber_posts(wall)
+        t0, t1 = TIMBER_RUN[wall]
+        S = sorted({a, b} | {e for p in posts for e in p if a < e < b})
+        Z = sorted({lo, hi} | {e for r in RAILS for e in r if lo < e < hi})
+        for sa, sb in zip(S, S[1:]):
+            sm = (sa + sb) / 2
+            for za, zb in zip(Z, Z[1:]):
+                zm = (za + zb) / 2
+                covered = any(p0 <= sm <= p1 for p0, p1 in posts) or not (t0 <= sm <= t1)
+                for r0, r1 in RAILS:
+                    if r0 <= zm <= r1 and not (wall == "front" and r1 <= DOOR_H + HEAD and DOORWAY[0] <= sm <= DOORWAY[1]):
+                        covered = True
+                if covered:
+                    part.face([V(sa, za, 0), V(sb, za, 0), V(sb, zb, 0), V(sa, zb, 0)], "Plaster", out)
+                    continue
+                cell = (sa, sb, za, zb)
+                rng = stable_rng(wall, sa, za)
+                patch = next((pt for pt in PATCHES if pt[0] == wall and sa < pt[1] < sb and za < pt[2] < zb), None)
+                if patch:
+                    _, cs, cz, rs, rz, seed = patch
+                    outline = patch_outline(cs, cz, rs, rz, stable_rng("patch", seed))
+                    rec = spalled_panel(part, P, out, cell, outline, rng)
+                    rec.update({"part": "Walls", "wall": wall, "out": out.copy()})
+                    self.patches.append(rec)
+                    self.panels.append({"part": "Walls", "wall": wall, "cell": cell, "depth": rec["edge_max"],
+                                        "normals": rec["normals"], "patched": True})
+                else:
+                    deepest, normals = facet_rect(part, P, out, sa, sb, za, zb, rng)
+                    self.panels.append({"part": "Walls", "wall": wall, "cell": cell, "depth": deepest,
+                                        "normals": normals, "patched": False})
 
     # ---- timber frame -----------------------------------------------------
 
@@ -681,28 +1174,9 @@ class Builder:
                     pieces = [(t0, DOORWAY[0]), (DOORWAY[1], t1)]
                 for a, b in pieces:
                     part.wall_box(wall, a, b, 0.0, PROUD, z0, z1, "Wood")
-            # Posts: either side of each window (the doorway's jambs stand in
-            # for posts there), then fill so no panel is wider than 2.4 m.
-            fixed = [(t0 - CORNER, t0), (t1, t1 + CORNER)]
-            for a, b in WINDOWS[wall]:
-                fixed += [(a - POST_W, a), (b, b + POST_W)]
-            if wall == "front":
-                fixed += [(DOORWAY[0], DOORWAY[0] + JAMB), (DOORWAY[1] - JAMB, DOORWAY[1]), SIGN_POST]
-            fixed.sort()
-            fill = []
-            for (a0, a1), (b0, b1) in zip(fixed, fixed[1:]):
-                gap = b0 - a1
-                panels = max(1, math.ceil(gap / 2.4 - 1e-6))
-                width = (gap - (panels - 1) * POST_W) / panels
-                for k in range(1, panels):
-                    s = a1 + k * width + (k - 1) * POST_W
-                    fill.append((s, s + POST_W))
-            drawn = fill + [p for a, b in WINDOWS[wall] for p in ((a - POST_W, a), (b, b + POST_W))]
-            if wall == "front":
-                drawn.append(SIGN_POST)
+            every, drawn = post_layout(wall)
             for a, b in drawn:
                 part.wall_box(wall, a, b, 0.0, POST_PROUD, PLINTH_TOP, PLATE_TOP, "Wood")
-            every = sorted(set(fixed + fill))
             self.posts[wall] = every
             # Braces between the low and high rails in the two end panels,
             # rising toward the corner, when the panel holds no window.
@@ -864,35 +1338,101 @@ class Builder:
         carved bargeboards and finials, slated as the roof."""
         for g in [CROSS_GABLE] + DORMERS:
             part = Part(g["name"])
-            self.gable_figs[g["name"]] = build_gable(part, g, self.tiling, self.roll_tiling)
+            self.gable_figs[g["name"]] = build_gable(part, g, self.tiling, self.roll_tiling, self.panels)
             part.finish(self.coll)
 
     def chimney(self):
         """A stone stack up the right-hand end wall: a broad base to above the
         eave, a sloped shoulder, a slimmer flue stack in courses, a cap and a
-        pot."""
+        pot. Revision 5: every stage of it - base, the two stages of the
+        stack, the shoulder's four slopes and the four jogged flue courses -
+        laid as individual stones proud of a Plaster mortar bed BED inside
+        revision 4's faces (no stone passes them). The cap stays one stone
+        and the pot Dirt."""
         part = Part("Chimney")
         x0, x1 = CHIMNEY_X
         y0, y1 = CHIMNEY_Y
-        part.box((x0, y0, FOOT), (x1, y1, PLINTH_TOP + 0.05), "Stone")
-        part.box((x0 + 0.04, y0 + 0.04, PLINTH_TOP + 0.05), (x1 - 0.04, y1 - 0.04, 2.6), "Stone")
-        part.box((x0 + 0.02, y0 + 0.06, 2.6), (x1 - 0.06, y1 - 0.02, 4.9), "Stone")
-        # Shoulder: the base narrows to the flue over 0.6 m.
+        T = STONE_T
+        wall_x = X1  # the stack's faces run back to the timber face; behind that it is in the wall
+        boxes = [((x0, y0, FOOT), (x1, y1, PLINTH_TOP + 0.05)),
+                 ((x0 + 0.04, y0 + 0.04, PLINTH_TOP + 0.05), (x1 - 0.04, y1 - 0.04, 2.6)),
+                 ((x0 + 0.02, y0 + 0.06, 2.6), (x1 - 0.06, y1 - 0.02, 4.9))]
+        stage_courses = [[FOOT, -0.25, 0.10, PLINTH_TOP + 0.05], 6, 6]
+        prev = {}
+        for k, ((bx0, by0, bz0), (bx1, by1, bz1)) in enumerate(boxes):
+            part.box((bx0, by0 + BED, bz0), (bx1 - BED, by1 - BED, bz1), "Plaster")
+            zs = stage_courses[k] if isinstance(stage_courses[k], list) else \
+                [bz0 + (bz1 - bz0) * i / stage_courses[k] for i in range(stage_courses[k] + 1)]
+            u0 = X1 + PLINTH_OUT if k == 0 else wall_x  # the base meets the plinth's face (x 4.9), the stack the wall's
+            faces = [
+                dict(name="chimney stage %d front" % k, axis="y", coord=by0, out=-1, u=(u0, bx1), ends=("flat", "corner"),
+                     phase=0, T=T),
+                dict(name="chimney stage %d back" % k, axis="y", coord=by1, out=1, u=(u0, bx1), ends=("flat", "corner"),
+                     phase=0, T=T),
+                dict(name="chimney stage %d end" % k, axis="x", coord=bx1, out=1, u=(by0, by1), ends=("corner", "corner"),
+                     phase=1, T=T),
+            ]
+            lay_courses(part, faces, zs, self.masonry, bottom_gap=JOINT / 2 if k else 0.0, top_gap=JOINT / 2)
+            self.beds.append({"part": "Chimney", "top": None, "faces": [f["name"] for f in faces]})
+        # Shoulder: the stack narrows to the flue over 0.6 m. Its bed is the
+        # revision-4 shoulder with each slope moved BED in; two courses of
+        # stones up each slope.
         fx0, fx1, fy0, fy1 = x0 + 0.15, x1 - 0.08, y0 + 0.28, y1 - 0.28
         b0, b1 = (x0 + 0.02, y0 + 0.06), (x1 - 0.06, y1 - 0.02)
-        part.hexa([(b0[0], b0[1], 4.9), (b1[0], b0[1], 4.9), (b1[0], b1[1], 4.9), (b0[0], b1[1], 4.9),
-                   (fx0, fy0, 5.5), (fx1, fy0, 5.5), (fx1, fy1, 5.5), (fx0, fy1, 5.5)], "Stone", skip=("-z",))
-        z = 5.5
+        zb, zt = 4.9, 5.5
+        lo_r = {"x0": b0[0], "x1": b1[0], "y0": b0[1], "y1": b1[1]}
+        hi_r = {"x0": fx0, "x1": fx1, "y0": fy0, "y1": fy1}
+        normals = {}
+        for key, sign in (("x0", -1), ("x1", 1), ("y0", -1), ("y1", 1)):
+            run = hi_r[key] - lo_r[key]
+            axis = Vector((1, 0, 0)) if key[0] == "x" else Vector((0, 1, 0))
+            nrm = (axis * sign * (zt - zb) + Vector((0, 0, -sign * run))).normalized()
+            normals[key] = nrm
+        def inset(r, key):
+            nrm = normals[key]
+            h = math.hypot(nrm.x, nrm.y)
+            return r[key] - (BED / h) * (1 if key[1] == "1" else -1)
+        blo = {k: inset(lo_r, k) for k in lo_r}
+        bhi = {k: inset(hi_r, k) for k in hi_r}
+        part.hexa([(blo["x0"], blo["y0"], zb), (blo["x1"], blo["y0"], zb), (blo["x1"], blo["y1"], zb), (blo["x0"], blo["y1"], zb),
+                   (bhi["x0"], bhi["y0"], zt), (bhi["x1"], bhi["y0"], zt), (bhi["x1"], bhi["y1"], zt), (bhi["x0"], bhi["y1"], zt)],
+                  "Plaster", skip=("-z",))
+        L = lambda x, y, z: (x, y, z)
+        quads = {  # corners as seen from outside: bottom-left, bottom-right, top-right, top-left
+            "y0": [L(b0[0], b0[1], zb), L(b1[0], b0[1], zb), L(fx1, fy0, zt), L(fx0, fy0, zt)],
+            "x1": [L(b1[0], b0[1], zb), L(b1[0], b1[1], zb), L(fx1, fy1, zt), L(fx1, fy0, zt)],
+            "y1": [L(b1[0], b1[1], zb), L(b0[0], b1[1], zb), L(fx0, fy1, zt), L(fx1, fy1, zt)],
+            "x0": [L(b0[0], b1[1], zb), L(b0[0], b0[1], zb), L(fx0, fy0, zt), L(fx0, fy1, zt)],
+        }
+        for key, quad in quads.items():
+            lay_plane(part, quad, normals[key], 2, self.masonry, "chimney shoulder " + key)
+        self.beds.append({"part": "Chimney", "top": None, "faces": ["chimney shoulder " + k for k in quads]})
+        z = zt
         jog = [(0.0, 0.0), (0.03, -0.02), (-0.02, 0.03), (0.02, 0.01), (-0.01, -0.03)]
         courses = 4
         step = (CHIMNEY_TOP - z) / courses
+        flue = []
         for k in range(courses):
             dx, dy = jog[k]
-            part.box((fx0 + dx, fy0 + dy, z), (fx1 + dx, fy1 + dy, z + step), "Stone")
+            ax0, ax1, ay0, ay1 = fx0 + dx, fx1 + dx, fy0 + dy, fy1 + dy
+            part.box((ax0 + BED, ay0 + BED, z), (ax1 - BED, ay1 - BED, z + step), "Plaster")
+            faces = [
+                dict(name="flue %d front" % k, axis="y", coord=ay0, out=-1, u=(ax0, ax1), ends=("corner", "corner"), phase=0, T=T),
+                dict(name="flue %d back" % k, axis="y", coord=ay1, out=1, u=(ax0, ax1), ends=("corner", "corner"), phase=0, T=T),
+                dict(name="flue %d left" % k, axis="x", coord=ax0, out=-1, u=(ay0, ay1), ends=("corner", "corner"), phase=1, T=T),
+                dict(name="flue %d right" % k, axis="x", coord=ax1, out=1, u=(ay0, ay1), ends=("corner", "corner"), phase=1, T=T),
+            ]
+            lay_courses(part, faces, [z, z + step / 2, z + step], self.masonry, bottom_gap=JOINT / 2,
+                        top_gap=JOINT / 2 if k < courses - 1 else JOINT)
+            self.beds.append({"part": "Chimney", "top": None, "faces": [f["name"] for f in faces]})
+            flue.append(((ax0, ay0, z), (ax1, ay1, z + step)))
             z += step
         part.box((fx0 - 0.12, fy0 - 0.12, z), (fx1 + 0.12, fy1 + 0.12, z + 0.25), "Stone")
         cx, cy = (fx0 + fx1) / 2, (fy0 + fy1) / 2
         part.box((cx - 0.2, cy - 0.2, z + 0.25), (cx + 0.2, cy + 0.2, z + 0.7), "Dirt")
+        self.envelopes["Chimney"] = boxes + [((min(b0[0], fx0), min(b0[1], fy0), zb), (max(b1[0], fx1), max(b1[1], fy1), zt))] \
+            + flue + [((fx0 - 0.12, fy0 - 0.12, z), (fx1 + 0.12, fy1 + 0.12, z + 0.25)),
+                      ((cx - 0.2, cy - 0.2, z + 0.25), (cx + 0.2, cy + 0.2, z + 0.7))]
         part.finish(self.coll)
 
     # ---- sign -------------------------------------------------------------
@@ -1060,7 +1600,180 @@ def check(b):
         problems.append(f"chimney top {CHIMNEY_TOP} is less than 1 m above the roof ({roof_at:.2f})")
     problems += roof_checks(b)
     problems += tile_checks(b)
+    mp, b.masonry_summary = masonry_checks(b)
+    rp, b.render_summary = render_checks(b)
+    problems += mp + rp
     return problems, total, per, lo, hi
+
+
+def masonry_checks(b):
+    """Revision 5's stonework (plinth, threshold, chimney):
+    - every joint, between stones and between courses, at least 0.05 m;
+    - every stone 0.03 to 0.05 m proud of its bed (and an exposed top
+      course's tops 0.03 to 0.05 m over the bed's top);
+    - each course's vertical joints at least STAGGER from the course below's;
+    - no stone past revision 4's outline (the part's envelope boxes).
+    Returns problems and a summary."""
+    problems = []
+    eps = 1e-6
+    by_face = {}
+    n_stones = 0
+    min_joint, proud_lo, proud_hi, min_stagger = 9.0, 9.0, 0.0, 9.0
+    bed_top = {f: bd["top"] for bd in b.beds for f in bd["faces"]}
+    for rec in b.masonry:
+        by_face.setdefault(rec["face"], []).append(rec)
+        st = sorted(rec["stones"], key=lambda q: q["u"][0])
+        n_stones += len(st)
+        for a, c in zip(st, st[1:]):
+            gap = c["u"][0] - a["u"][1]
+            min_joint = min(min_joint, gap)
+            if gap < 0.05 - eps:
+                problems.append(f"{rec['face']} course {rec['course']}: a joint {gap:.3f} m wide at u {a['u'][1]:.2f}")
+        for q in st:
+            proud_lo, proud_hi = min(proud_lo, q["proud"]), max(proud_hi, q["proud"])
+            if not 0.03 - eps <= q["proud"] <= 0.05 + eps:
+                problems.append(f"{rec['face']}: a stone {q['proud']:.3f} m proud")
+            if rec.get("top") and bed_top.get(rec["face"]) is not None:
+                tp = q["z"][1] - bed_top[rec["face"]]
+                if not 0.03 - eps <= tp <= 0.05 + eps:
+                    problems.append(f"{rec['face']}: a top {tp:.3f} m over its bed")
+    for face, recs in by_face.items():
+        recs.sort(key=lambda r: r["course"])
+        for lo, hi in zip(recs, recs[1:]):
+            top_lo = max(q["z"][1] for q in lo["stones"]) if not lo.get("slab") else lo["row"][1]
+            bot_hi = min(q["z"][0] for q in hi["stones"]) if not hi.get("slab") else hi["row"][0]
+            gap = bot_hi - top_lo
+            min_joint = min(min_joint, gap)
+            if gap < 0.05 - eps:
+                problems.append(f"{face}: courses {lo['course']} and {hi['course']} only {gap:.3f} m apart")
+            for j in hi["joints"]:
+                for q in lo["joints"]:
+                    min_stagger = min(min_stagger, abs(j - q))
+                    if abs(j - q) < STAGGER - 1e-6:
+                        problems.append(f"{face} course {hi['course']}: a joint at {j:.2f} is {abs(j - q):.2f} m "
+                                        f"from one in the course below")
+    for name, boxes in b.envelopes.items():
+        obj = bpy.data.objects[name]
+        for v in obj.data.vertices:
+            p = v.co
+            if not any(all(lo[i] - eps <= p[i] <= hi[i] + eps for i in range(3)) for lo, hi in boxes):
+                problems.append(f"{name}: a vertex at {tuple(round(c, 3) for c in p)} is outside revision 4's outline")
+                break
+    summary = {"stones": n_stones, "courses": len(b.masonry), "min_joint": round(min_joint, 3),
+               "proud": (round(proud_lo, 3), round(proud_hi, 3)), "min_stagger": round(min_stagger, 3)}
+    return problems, summary
+
+
+def render_checks(b):
+    """Revision 5's render:
+    - every plaster panel (walls, gable and dormer faces and cheeks) faceted,
+      at least three facet tones, recessed at most FACET_MAX, never proud of
+      the revision-4 face;
+    - PATCH_COUNT spalled patches, each inside its panel, clear of the
+      windows, the doorway and the sign, on a wall the default camera
+      faces, its stones seen from that camera, at least three stones
+      inside its outline, JOINT apart, 0.03 to 0.05 proud of the bed and
+      behind the render's face;
+    - nothing of the foundation, walls, chimney or gables in the doorway or
+      the vestibule below HEADROOM except at or under the floor."""
+    problems = []
+    eps = 1e-6
+    fwd, right, up = view_axes()
+    for pn in b.panels:
+        tag = f"{pn['part']} {pn['wall']} panel {tuple(round(c, 2) for c in pn.get('cell', ()))}"
+        limit = PATCH_EDGE_MAX if pn["patched"] else FACET_MAX
+        if pn["depth"] > limit + eps or (not pn["patched"] and pn["depth"] < FACET_MIN - eps):
+            problems.append(f"{tag}: recessed {pn['depth']:.3f}")
+        tones = []
+        for nrm in pn["normals"]:
+            if all(angle_deg(nrm, t) > 1.0 for t in tones):
+                tones.append(nrm)
+        if len(tones) < 3:
+            problems.append(f"{tag}: only {len(tones)} facet directions")
+    walls = bpy.data.objects["Walls"]
+    for v in walls.data.vertices:
+        if not (PX0 - eps <= v.co.x <= PX1 + eps and PY0 - eps <= v.co.y <= PY1 + eps):
+            problems.append(f"Walls: a vertex at {tuple(round(c, 3) for c in v.co)} is proud of the plaster face")
+            break
+    for g in [CROSS_GABLE] + DORMERS:
+        obj = bpy.data.objects[g["name"]]
+        pi = [i for i, m in enumerate(obj.data.materials) if m.name == "Plaster"]
+        vs = {i for poly in obj.data.polygons if poly.material_index in pi for i in poly.vertices}
+        for i in vs:
+            co = obj.data.vertices[i].co
+            vdepth = (g["face_y"] - co.y) / g["out"]
+            if vdepth < -eps or abs(co.x - g["cx"]) > g["hw"] + eps:
+                problems.append(f"{g['name']}: plaster at {tuple(round(c, 3) for c in co)} is proud of revision 4's body")
+                break
+    if not PATCH_COUNT[0] <= len(b.patches) <= PATCH_COUNT[1]:
+        problems.append(f"{len(b.patches)} spalled patches, want {PATCH_COUNT[0]}-{PATCH_COUNT[1]}")
+    sign = bpy.data.objects["Sign"]
+    sign_s = (min(v.co.x for v in sign.data.vertices), max(v.co.x for v in sign.data.vertices))
+    scene = bpy.context.scene
+    dg = bpy.context.evaluated_depsgraph_get()
+
+    def rect_gap(a, c):
+        """Gap between two rectangles (s0, s1, z0, z1); 0 if they touch."""
+        ds = max(c[0] - a[1], a[0] - c[1], 0.0)
+        dz = max(c[2] - a[3], a[2] - c[3], 0.0)
+        return math.hypot(ds, dz)
+    report = []
+    for pt in b.patches:
+        s0, s1, z0, z1 = pt["cell"]
+        ol = pt["outline"]
+        box = (min(x for x, _ in ol), max(x for x, _ in ol), min(z for _, z in ol), max(z for _, z in ol))
+        tag = f"patch on the {pt['wall']} wall at s {box[0]:.2f}-{box[1]:.2f}, z {box[2]:.2f}-{box[3]:.2f}"
+        if (box[0] - s0 < PATCH_PANEL_MARGIN or s1 - box[1] < PATCH_PANEL_MARGIN
+                or box[2] - z0 < PATCH_PANEL_MARGIN or z1 - box[3] < PATCH_PANEL_MARGIN):
+            problems.append(f"{tag}: not {PATCH_PANEL_MARGIN} m inside its panel {pt['cell']}")
+        for a, c in WINDOWS[pt["wall"]]:
+            for win in ((a, c, WIN_Z[0], WIN_Z[1]), (a - 0.12, c + 0.12, WIN_Z[0] - 0.06, WIN_Z[0] + 0.03)):
+                if rect_gap(box, win) < PATCH_WINDOW_CLEAR:
+                    problems.append(f"{tag}: {rect_gap(box, win):.2f} m from a window")
+        if pt["wall"] == "front":
+            if rect_gap(box, (DOORWAY[0], DOORWAY[1], 0.0, DOOR_H + HEAD)) < PATCH_DOOR_CLEAR:
+                problems.append(f"{tag}: too near the doorway")
+            if max(sign_s[0] - box[1], box[0] - sign_s[1]) < PATCH_DOOR_CLEAR:
+                problems.append(f"{tag}: too near the sign")
+        facing = pt["out"].dot(-fwd)
+        if facing < PATCH_FACING:
+            problems.append(f"{tag}: the default camera sees it at {facing:.2f}, want >= {PATCH_FACING}")
+        inside = [q for q in pt["stones"] if q["centre_in"]]
+        if len(inside) < 3:
+            problems.append(f"{tag}: only {len(inside)} stones inside its outline")
+        seen = 0
+        for q in inside:
+            origin = q["centre"] - fwd * 60.0
+            hit, loc, *_ = scene.ray_cast(dg, origin, fwd)
+            seen += bool(hit and (loc - q["centre"]).length < 0.03)
+        if seen < max(3, 0.75 * len(inside)):
+            problems.append(f"{tag}: the default camera sees {seen} of its {len(inside)} stones")
+        rows = {}
+        for q in pt["stones"]:
+            if not 0.03 - eps <= q["proud"] <= 0.05 + eps:
+                problems.append(f"{tag}: a stone {q['proud']:.3f} proud")
+            if PATCH_DEPTH - q["proud"] < pt["edge_max"] + 0.005:
+                problems.append(f"{tag}: a stone stands in front of the render's broken edge")
+            rows.setdefault(round(q["z"][0], 4), []).append(q)
+        zs = sorted(rows)
+        for za, zb in zip(zs, zs[1:]):
+            if zb - max(q["z"][1] for q in rows[za]) < 0.05 - eps:
+                problems.append(f"{tag}: its courses are under 0.05 m apart")
+        for row in rows.values():
+            row.sort(key=lambda q: q["u"][0])
+            for a, c in zip(row, row[1:]):
+                if c["u"][0] - a["u"][1] < 0.05 - eps:
+                    problems.append(f"{tag}: a joint under 0.05 m")
+        report.append({"wall": pt["wall"], "s": (round(box[0], 2), round(box[1], 2)), "z": (round(box[2], 2), round(box[3], 2)),
+                       "stones_inside": len(inside), "seen": seen, "facing": round(facing, 3)})
+    for name in ["Foundation", "Walls", "Chimney"] + [CROSS_GABLE["name"]] + [d["name"] for d in DORMERS]:
+        for v in bpy.data.objects[name].data.vertices:
+            p = v.co
+            for label, (rx0, rx1, ry0, ry1) in (("doorway", DOORWAY_RECT), ("vestibule", VESTIBULE_RECT)):
+                if rx0 + 1e-4 < p.x < rx1 - 1e-4 and ry0 + 1e-4 < p.y < ry1 - 1e-4 and 1e-6 < p.z < HEADROOM:
+                    problems.append(f"{name}: a vertex in the {label} at {tuple(round(c, 3) for c in p)}")
+                    break
+    return problems, {"panels": len(b.panels), "patches": report}
 
 
 def roof_checks(b):
@@ -1475,6 +2188,129 @@ def render_roof_preview(b):
             "roof_ink_pixels": int(ink[S == roof_i].sum()), "roof_pixels": int((S == roof_i).sum())}
 
 
+# The engine's day palette (game/src/scene.cpp): shadow, mid and lit tones.
+DAY = {
+    "Stone": ((0x74, 0x74, 0x80), (0xa4, 0x9c, 0x8c), (0xbc, 0xac, 0x94)),
+    "Plaster": ((0x9c, 0x8a, 0x70), (0xc8, 0xbc, 0xa2), (0xe2, 0xd6, 0xb6)),
+    "Wood": ((0x4c, 0x36, 0x26), (0x86, 0x66, 0x4e), (0xa8, 0x80, 0x58)),
+    "Roof": ((0x3c, 0x44, 0x54), (0x5a, 0x66, 0x76), (0x7e, 0x8a, 0x98)),
+    "Dirt": ((0x5c, 0x64, 0x68), (0x7c, 0x78, 0x74), (0x94, 0x8c, 0x80)),
+}
+
+
+def game_crop(centre, width_m, height_m, yaw_deg, scale, smooth_name):
+    """One crop as the game's camera at yaw_deg sees it: ray cast pixel by
+    pixel at 24 px/m, toon-shaded with the day palette (the sun as the roof
+    preview's), with the edge pass's outline (a depth step over 0.35 m);
+    scaled `scale` times, nearest neighbour. Beside it a smooth Workbench
+    render of the same crop at `scale` x 24 px/m. Returns an RGBA array
+    (rows bottom-up, as Blender images)."""
+    import numpy as np
+
+    scene = bpy.context.scene
+    dg = bpy.context.evaluated_depsgraph_get()
+    fwd, right, up = view_axes(yaw_deg)
+    W, H = int(round(width_m * PX_PER_M)), int(round(height_m * PX_PER_M))
+    sun = Vector((-0.35, -0.55, 0.76)).normalized()
+    D = np.full((H, W), 1e9, dtype=np.float32)
+    C = np.zeros((H, W, 3), dtype=np.float32)
+    C[:] = (110, 128, 96)
+    centre = Vector(centre)
+    for row in range(H):
+        sy = ((row + 0.5) / H - 0.5) * height_m
+        for col in range(W):
+            sx = ((col + 0.5) / W - 0.5) * width_m
+            origin = centre + right * sx + up * sy - fwd * 60.0
+            hit, loc, nrm, idx, obj, _ = scene.ray_cast(dg, origin, fwd)
+            if not hit:
+                continue
+            mat = obj.data.materials[obj.data.polygons[idx].material_index].name
+            n = nrm.normalized()
+            if n.dot(fwd) > 0:
+                n = -n
+            D[row, col] = (loc - origin).dot(fwd)
+            ndl = n.dot(sun)
+            C[row, col] = DAY[mat][2 if ndl > 0.6 else (1 if ndl > 0.2 else 0)]
+    ink = np.zeros((H, W), dtype=bool)
+    for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        shifted = np.full((H, W), 1e9, dtype=np.float32)
+        r0, r1 = max(0, dr), H + min(0, dr)
+        c0, c1 = max(0, dc), W + min(0, dc)
+        shifted[r0 - dr:r1 - dr, c0 - dc:c1 - dc] = D[r0:r1, c0:c1]
+        ink |= (shifted - D > 0.35) & (D < 1e8)
+    C[ink] = C[ink] * 0.65 + np.array((0x4c, 0x4c, 0x66), dtype=np.float32) * 0.35
+    toon = np.repeat(np.repeat(C / 255.0, scale, axis=0), scale, axis=1)
+    toon = np.concatenate([toon, np.ones(toon.shape[:2] + (1,), dtype=np.float32)], axis=2)
+
+    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.display.shading.light = "STUDIO"
+    scene.display.shading.color_type = "MATERIAL"
+    scene.display.shading.show_object_outline = True
+    scene.render.resolution_x, scene.render.resolution_y = W * scale, H * scale
+    scene.render.resolution_percentage = 100
+    world = bpy.data.worlds.get("preview") or bpy.data.worlds.new("preview")
+    world.color = srgb(110, 128, 96)
+    scene.world = world
+    cam_data = bpy.data.cameras.new(smooth_name)
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = max(width_m, height_m)
+    cam = bpy.data.objects.new(smooth_name, cam_data)
+    scene.collection.objects.link(cam)
+    scene.camera = cam
+    cam.location = centre - fwd * 60.0
+    cam.rotation_euler = fwd.to_track_quat("-Z", "Y").to_euler()
+    path = os.path.join(os.path.dirname(MASONRY_PREVIEW), f"_{smooth_name}.png")
+    scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    bpy.data.objects.remove(cam)
+    bpy.data.cameras.remove(cam_data)
+    img = bpy.data.images.load(path)
+    smooth = np.empty(W * scale * H * scale * 4, dtype=np.float32)
+    img.pixels.foreach_get(smooth)
+    smooth = smooth.reshape(H * scale, W * scale, 4)
+    bpy.data.images.remove(img)
+    os.remove(path)
+    gap = np.ones((H * scale, 6, 4), dtype=np.float32)
+    return np.concatenate([toon, gap, smooth], axis=1)
+
+
+def render_masonry_preview(b):
+    """tavern_exterior_masonry.png: three rows, each a 24 px/m toon crop
+    (scaled up) beside a smooth render of the same crop -
+    1. the plinth, threshold and the patch under the left window, from the
+       game's default camera (8 x 3 m, 3x);
+    2. the chimney from the front-right (yaw 225; 3.2 x 9.6 m, 3x) beside
+       the patch over the right window from the default camera (2 x 1.2 m, 6x)."""
+    import numpy as np
+
+    rows = [
+        [game_crop((-1.5, -0.4, 0.9), 8.0, 3.0, DEFAULT_VIEW_YAW, 3, "m_plinth")],
+        [game_crop((5.1, 4.4, 4.0), 3.2, 9.6, 180.0 + 45.0, 3, "m_chimney"),
+         game_crop((3.25, -0.17, 3.72), 2.0, 1.2, DEFAULT_VIEW_YAW, 6, "m_patch")],
+    ]
+    lines = []
+    for row in rows:
+        h = max(p.shape[0] for p in row)
+        padded = []
+        for p in row:
+            pad = np.ones((h - p.shape[0], p.shape[1], 4), dtype=np.float32)
+            padded += [np.concatenate([pad, p], axis=0), np.ones((h, 16, 4), dtype=np.float32)]
+        lines.append(np.concatenate(padded[:-1], axis=1))
+    w = max(l.shape[1] for l in lines)
+    out_rows = []
+    for l in reversed(lines):  # image rows are bottom-up
+        out_rows.append(np.concatenate([l, np.ones((l.shape[0], w - l.shape[1], 4), dtype=np.float32)], axis=1))
+        out_rows.append(np.ones((16, w, 4), dtype=np.float32))
+    sheet = np.concatenate(out_rows[:-1], axis=0)
+    out = bpy.data.images.new("tavern_exterior_masonry", sheet.shape[1], sheet.shape[0])
+    out.pixels.foreach_set(sheet.astype(np.float32).ravel())
+    out.filepath_raw = MASONRY_PREVIEW
+    out.file_format = "PNG"
+    out.save()
+    bpy.data.images.remove(out)
+    print("wrote", MASONRY_PREVIEW)
+
+
 def export():
     os.makedirs(OUT_DIR, exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -1501,12 +2337,15 @@ def main():
         print(f"tavern_exterior: {k}: {v}")
     for k, v in tile_stats(b).items():
         print(f"tavern_exterior: tiles: {k}: {v}")
+    print(f"tavern_exterior: masonry: {b.masonry_summary}")
+    print(f"tavern_exterior: render: {b.render_summary}")
     if problems:
         raise RuntimeError("the exterior fails its checks:\n  " + "\n  ".join(problems))
     export()
     if not os.environ.get("PXE_SKIP_PREVIEW"):
         render_preview(b)
         print(f"tavern_exterior: roof preview ink: {render_roof_preview(b)}")
+        render_masonry_preview(b)
 
 
 if __name__ == "__main__" and bpy.app.background:
