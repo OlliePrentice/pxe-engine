@@ -1,0 +1,37 @@
+# Engine integration guide and minimal example
+Type: feature
+Status: open
+Cycle: 1
+
+## Goal
+Nothing tells a new project, or a model working on one, how to use pxe. docs/architecture.md says what goes where; README.md describes this game. Write docs/engine-guide.md, a guide to building a game on the engine, and examples/minimal/, a small program built in this repo that follows the guide, so the guide is compile-checked on every build.
+
+## Decisions
+- The guide is written for both people and LLMs: plain, complete, every API name exact, no reliance on reading the game's code.
+- The example is procedural: it uses no files from assets/ or game/, so it shows the engine alone.
+- The example is built by the root CMakeLists.txt by default, so every build check compiles it.
+- The example takes `--capture <file.png>` (render a few frames, write the view, exit) so it can be checked without a person. No other flags.
+
+## Layering
+- Engine: none. No engine API changes; if the guide exposes a gap, record it in handoff.md rather than changing the engine.
+- Game: none. examples/minimal is its own executable, using only `pxe/*.hpp`.
+
+## Acceptance criteria
+- [ ] docs/engine-guide.md covers, in this order: what the engine is and isn't (pointing to docs/architecture.md for the rules); adding it to a CMake project (add_subdirectory and FetchContent SOURCE_SUBDIR forms, dependencies it brings, the C++20 requirement); start-up order and ownership (Window, Renderer, Overlay, AudioDevice, Camera); the frame loop (input, game update, lighting via pxe::lightingAt, Renderer::render with FrameParams, overlay, swap); building a Scene (by hand, from .glb via loadGltf + buildSceneMaps + uploadScene, scattering grass and leaves, HeightMap/ShelterMap); fires, FireGrid and fireflies; skinned models; audio (engine plays, game owns sounds); capture/writePng; contracts (upload-then-render, the game owns every object, RNG order when scattering); and a header-by-header reference of engine/include/pxe with one or two lines each.
+- [ ] Every type, function, field and header the guide names exists with that exact name and signature in engine/include/pxe.
+- [ ] examples/minimal/main.cpp builds a small procedural scene (ground plus at least one solid, with grass), lights it at a fixed hour, renders in a window until closed or Escape, and supports `--capture`. It includes only pxe/ headers, glm and the standard library.
+- [ ] The example's code matches what the guide shows: snippets in the guide are taken from it or consistent with it.
+- [ ] The example's `--capture` output shows the scene (record the PNG path and a description in handoff.md).
+- [ ] The game's captures are byte-identical to the cycle base (same four cases as engine-standalone-build).
+- [ ] README.md mentions the example and the guide in one or two lines.
+- [ ] Project builds cleanly from a fresh build directory with CMake
+
+## Assets
+None
+
+## Out of scope
+- Engine or game code changes.
+- More than one example.
+- The root CLAUDE.md (orchestrator writes it after this task).
+
+## Cycle log
