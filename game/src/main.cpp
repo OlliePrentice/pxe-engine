@@ -19,6 +19,7 @@
 #include <glm/geometric.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -26,6 +27,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -1260,6 +1262,22 @@ int main(int argc, char** argv) {
 
           const glm::ivec2 fbSize = window->framebufferSize();
           const int fbW = fbSize.x, fbH = fbSize.y;
+          // A minimised window can have a 0x0 framebuffer (GLFW on Windows),
+          // and render throws when asked to present at that size. The world
+          // keeps going and so does its sound, but nothing is drawn, the
+          // menu included, until the window has a size again; the wait
+          // keeps the loop from spinning flat out meanwhile.
+          if (fbW <= 0 || fbH <= 0) {
+            audio.setVolumes(sound);
+            audio.setWeather(clock.cloudSpeed, clock.rain);
+            if (clock.strikes != heardStrikes) {
+              heardStrikes = clock.strikes;
+              audio.thunder(glm::dot(clock.flashDir, lastFrame.right) /
+                            std::max(glm::length(glm::vec2{clock.flashDir.x, clock.flashDir.z}), 1e-3f));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            continue;
+          }
 
           // Spell brushes: the ground under the cursor, picked through the
           // last frame drawn. Held down, the left button paints from where

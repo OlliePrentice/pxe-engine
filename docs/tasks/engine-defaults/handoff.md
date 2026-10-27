@@ -57,3 +57,47 @@ Every `render` call with `present` true sets `framebufferW/H` to `window->frameb
 - **Minimised windows.** The old `drawPresent` clamped a 0 size to 1. Now a 0x0 framebuffer while presenting throws. On platforms where GLFW reports a 0x0 framebuffer for an iconified window (Windows, at least), the game's interactive loop and the example would throw when minimised and exit with an error. I did not verify this on Windows. macOS keeps the size when minimised. I did not change the game or the example to skip rendering at 0x0, because the task says to leave the sizes and paths as they are. If wanted, a follow-up could skip `render` (or set `present = false`) while the framebuffer is 0x0, in the game and the example, and say so in the guide.
 - `--min-dist` changed meaning: it used to be scaled by 1/1.5 and is now the spacing used. A script that passed, say, `--min-dist 0.34` now gets sparser grass than before. The default output is unchanged.
 - The `std::max(..., 1)` in `drawPresent` is now redundant after the check in `render`. I left it as is.
+
+## Cycle 2
+Build: pass
+
+### Changes
+- game/src/main.cpp: in the interactive loop, once the game update is done (input, fox asks, clock, foxes, fireball, hero, camera), a framebuffer with a zero dimension makes the loop update the audio (volumes, weather, any new thunder panned with the last drawn frame), sleep 16 ms and `continue`. That skips the brush picks, `render`, the F4 shot, `menu.draw` (it holds both `Overlay::begin()` and `end()`, so they stay paired), the frame counter, the title and `swap`. Adds `<chrono>` and `<thread>`.
+- examples/minimal/main.cpp: the window loop reads `window.framebufferSize()` once. With a zero dimension it sleeps 16 ms and `continue`s before building params, rendering or swapping. Otherwise it passes that size to `frameParams`. Adds `<chrono>` and `<thread>`. The `--capture` path is unchanged.
+- docs/engine-guide.md: the frame-loop snippet is replaced with the example's new loop, word for word. A new "Minimised window" step says: skip `render`, the overlay frame and `swap` while `Window::framebufferSize()` has a zero dimension; keep polling and updating; wait a little rather than spin; hidden windows keep their size. The intro line says a frame stops after the update while minimised.
+- docs/tasks/engine-defaults/issues.md: ISSUE-001 is set to `fixed`, with fix notes.
+
+### Issues addressed
+- ISSUE-001: the game and the example skip drawing while the framebuffer is 0x0, so minimising no longer reaches the throw in `render`.
+
+### Layering
+- Engine: none. `pxe::Window` has no event-wait call (it wraps only `glfwPollEvents`). A `std::this_thread::sleep_for(16 ms)` in each loop is enough, so I added no engine API. A `Window::waitEvents(timeout)` wrapping `glfwWaitEventsTimeout` would let a minimised loop wake as soon as the window is restored, rather than up to 16 ms later. That is a nicety, not a need, and I don't recommend it for this task.
+- Game: the skip lives in the game's interactive loop in game/src/main.cpp. The example's skip lives in examples/minimal/main.cpp.
+- Misplaced code touched: none.
+
+### Verification
+- Fresh Debug build (`cmake -S . -B build-check -DCMAKE_BUILD_TYPE=Debug --fresh`, then `--clean-first`): passes. The only warning is stb_image_write's `sprintf`.
+- Against the b709c58 base binary (scratchpad `ed-verify/base/b/game/pxe`), the capture PNGs are byte-identical (`cmp`), and the logs match apart from the "wrote" line, for:
+  - default
+  - `--scene hills`
+  - `--hour 21 --foxes 3`
+  - `--hour 21 --candles --shelter-test --extra-fires 6`
+  - `--window-png` (1920x1080)
+- `--self-test`: PASS, and its output is identical to the base's.
+- Example `--capture`: writes its PNG and shows the same scene as in cycle 1: the green rolling lawn with tufts, the standing stone, the tree with its long shadow to the right, the lit campfire on its slab, and god rays. 78277 clumps, 2297 tufts.
+- Guide snippets: every snippet taken from the example still matches it after whitespace normalisation (checked by script), including the new loop.
+- Skip path on macOS: macOS keeps the framebuffer size when a window is minimised, so I tested in a scratch copy of the tree, not committed. In it, `Window::framebufferSize()` returned 0x0 from 1 s to 3 s after its first call, and the window closed itself after 5 s.
+  - `pxe_minimal` (interactive): exit 0, no throw. 118 of the 477 calls were 0x0, about 59 loop iterations a second while "minimised", so the loop waits rather than spins.
+  - `pxe --menu --mute` (interactive, with the overlay menu open): exit 0, no throw and no ImGui assertion. 108 of 461 calls were 0x0, about 54 a second. Drawing resumed when the size came back.
+
+### How to playtest
+- On Windows especially: run `pxe`, minimise it for a few seconds, and restore it. It should not exit. The clock should have moved on, characters should have kept moving, and weather sound and thunder should continue while minimised. Repeat with the settings menu open (Tab).
+- Do the same with `pxe_minimal`.
+- While minimised, CPU use should stay low, not one core flat out.
+- On macOS, minimising never gives a 0x0 framebuffer, so the game keeps drawing as before.
+
+### Known limitations
+- The grass fire is stepped on the GPU inside `render`, so it pauses while the window is minimised. On restore, the engine treats the time gap as a jump and takes one step, as it does after any hitch over 0.5 s. Grass ignited by the rolling fireball while minimised is kept and applied on the first frame after restore. The game's own fires (campfires, candles) run on `WorldClock` and carry on.
+- Scripted `--add-fox` and `--brush` events (used with `--ui-shot`) wait until frames are drawn again. Mouse brushes and fox clicks can't happen while minimised anyway.
+- The FPS average counts the skipped iterations for up to a second after restore. It is only shown in the menu.
+- Not verified on real Windows. The skip path was exercised only through the scratch 0x0 hack on macOS.

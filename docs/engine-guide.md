@@ -107,7 +107,7 @@ camera.setTarget(world.focus);
 The camera's yaw is in radians. At yaw 0 the view looks along +z; in general its flat forward direction is `(sin yaw, 0, cos yaw)` and its right is `(-cos yaw, 0, sin yaw)`. The pitch (30°), the pixel density and the eye distance are fixed. `setTarget` jumps to a point. `follow` eases toward one. `setPanVelocity` pans on the ground, and `rotateSteps` turns the view by 45° steps with a short ease. Call `update(dt)` once a frame to run the easing.
 
 ## The frame loop
-A frame is: poll input, update the game, work out the lighting, render, draw any UI, swap.
+A frame is: poll input, update the game, work out the lighting, render, draw any UI, swap. While the window is minimised to a 0x0 framebuffer, a frame stops after the update.
 
 ```cpp
 pxe::Input input;
@@ -124,7 +124,14 @@ while (!window.shouldClose()) {
   if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
   camera.update(dt);
 
-  const pxe::FrameParams params = frameParams(world, window.framebufferSize(), static_cast<float>(now));
+  // A minimised window can have a 0x0 framebuffer, and render throws when
+  // asked to present at that size: skip drawing, and wait rather than spin.
+  const glm::ivec2 framebuffer = window.framebufferSize();
+  if (framebuffer.x <= 0 || framebuffer.y <= 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    continue;
+  }
+  const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now));
   renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
   window.swap();
 }
@@ -162,6 +169,7 @@ Step by step:
 
   Every frame that calls `begin()` must call `end()`. Style the UI with `ImGui::GetStyle()` and `ImGui::GetIO()` once the overlay exists.
 - **Swap.** `Window::swap()` shows the frame.
+- **Minimised window.** On some platforms (GLFW on Windows) a minimised window's framebuffer is 0x0, and `render` throws if asked to present at that size. While `Window::framebufferSize()` has a zero dimension, skip the frame's drawing: no `render`, no overlay frame (so `begin()` and `end()` stay paired) and no `swap`. Keep polling events and updating the game, and wait a little each time round (the example sleeps 16 ms) so the loop does not spin flat out. A hidden window keeps its size, so offscreen captures are unaffected.
 
 `FrameParams` also carries switches: `showGrass`, `edges` (outlines and rims), `fire`, `rays`, `fireflies`, `grassFire`. It carries the frame's lists too: `fires`, `lights` (extra `PointLight`s), `igniteGrass`, `gridStrokes`, `actors`, `actorMaterials` and `actorEffects`. Debug views are `magentaGrass`, `showNdl`, `testColours` and `grassDepthTest`. Build it fresh each frame; nothing in it is kept.
 

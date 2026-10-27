@@ -24,12 +24,14 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <random>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -229,7 +231,14 @@ int main(int argc, char** argv) {
       if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
       camera.update(dt);
 
-      const pxe::FrameParams params = frameParams(world, window.framebufferSize(), static_cast<float>(now));
+      // A minimised window can have a 0x0 framebuffer, and render throws when
+      // asked to present at that size: skip drawing, and wait rather than spin.
+      const glm::ivec2 framebuffer = window.framebufferSize();
+      if (framebuffer.x <= 0 || framebuffer.y <= 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        continue;
+      }
+      const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now));
       renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
       window.swap();
     }
