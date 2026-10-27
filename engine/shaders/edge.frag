@@ -11,8 +11,9 @@
 // every plank groove would be noise. Indoors, oak is inked along its sharp
 // creases too, so a bar top reads against its front; wood is not, so the
 // floor's plank grooves stay unlined. Outdoors the roof's slates are inked
-// the same way, so each course and tile joint reads; nothing else outdoors
-// is.
+// the same way, so each course and tile joint reads. A character's creased
+// materials (the tavern door's planks and grain) are inked so too, indoors
+// and out; otherwise they are stone, as every character is.
 //
 // Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
 // grade, all drawn here from hashes. Splashes are hashed on cells of the
@@ -38,6 +39,7 @@ const int kSurfOak = 10;
 // A building's wood, plaster, roof and oak: outlined, never rimmed (edges()).
 bool timbered(int surface) { return (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak; }
 const float kSurfaceScale = 16.0;  // as common.glsl
+const int kSurfActorCrease = 11;   // an actor's creased material (mesh.frag), stone otherwise
 const int kLeafSprite = 15;        // a leaf sprite's alpha of 1, read as a surface
 
 // Cut stone and a building's wood, plaster, roof and oak: hard, flat-faced
@@ -50,7 +52,9 @@ const float kSilhouette = 0.35;  // metres of depth step that count as an outlin
 // surface turns sharply with no depth step: neighbouring normals more than
 // 40 degrees apart. Only those pixels are inked; where oak meets wood,
 // plaster or stone, or slate meets the chimney or a gable, the line falls
-// on the oak or slate side.
+// on the oak or slate side. An actor's creased material is inked the same
+// way, against its own kind (the door's wood against its grain) or, against
+// anything else (its iron, the wall), on its side.
 uniform int uIndoors;  // 1 in a room (pxe::Scene::indoors)
 bool creased(int surface) { return surface == (uIndoors != 0 ? kSurfOak : kSurfRoof); }
 const float kCreaseCos = 0.766;  // cos 40 degrees
@@ -106,7 +110,8 @@ uniform vec4 uGridDomain;      // xz of the grid's corner, 1 / its size in metre
 
 out vec4 oColor;
 
-vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
+// `actorCrease`: a pixel of an actor's creased material, its surface stone.
+vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
     if (uEnabled == 0 || (!built(surface) && surface != kSurfBark)) return col;
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
     float d = texelFetch(uDepth, p, 0).r * uDepthMetres;
@@ -115,7 +120,7 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
     bool ink = false;
     bool stroke = false;
     bool creaseInk = false;
-    bool creases = creased(surface);
+    bool creases = actorCrease || creased(surface);
     // Diagonal neighbours count for rims, so a seam that rasterises as a
     // 2:1 staircase joins into one line instead of a row of dots.
     const ivec2 kOffsets[8] = ivec2[8](ivec2(0, 1), ivec2(0, -1), ivec2(1, 0), ivec2(-1, 0),
@@ -144,8 +149,9 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
         // stone), on this oak or slate side.
         if (creases && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < kCreaseCos) {
             int sq = int(nq4.a * kSurfaceScale + 0.5) - 1;
+            bool partner = actorCrease ? sq == kSurfActorCrease : creased(sq);
             float toCam = dot(nq, uFwd) - dot(n, uFwd);  // < 0: this side faces the camera less
-            if (!creased(sq) || toCam < -1e-3 || (abs(toCam) <= 1e-3 && n.x > nq.x)) creaseInk = true;
+            if (!partner || toCam < -1e-3 || (abs(toCam) <= 1e-3 && n.x > nq.x)) creaseInk = true;
         }
     }
     // Bark is painted, not carved: no rims, a faint outline, and its few
@@ -158,9 +164,10 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
     // in colour, so its creases take a heavier mix to read as dark lines
     // along every course and tile joint; and slate in its shadow tone is
     // darker than the ink itself, so a slate crease is also kept at least a
-    // step darker than the slate it is drawn on.
+    // step darker than the slate it is drawn on. The door's dark wood takes
+    // the slate's treatment, indoors and out: at oak's mix it barely shows.
     if (creaseInk) {
-        if (uIndoors != 0) return mix(col, uInk, 0.35);
+        if (uIndoors != 0 && !actorCrease) return mix(col, uInk, 0.35);
         return min(mix(col, uInk, 0.65), col * 0.8);
     }
     return col;
@@ -493,7 +500,10 @@ void main() {
     vec3 col = texelFetch(uColor, p, 0).rgb;
     vec4 np = texelFetch(uNormal, p, 0);
     int surface = int(np.a * kSurfaceScale + 0.5) - 1;
-    col = edges(p, col, np, surface);
+    // An actor's creased material is stone to everything but its crease ink.
+    bool actorCrease = surface == kSurfActorCrease;
+    if (actorCrease) surface = kSurfStone;
+    col = edges(p, col, np, surface, actorCrease);
     col = godRays(p, col);
     col = pointLights(p, col, np, surface);
     col = rain(p, col, np, surface);

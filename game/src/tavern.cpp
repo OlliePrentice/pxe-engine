@@ -106,6 +106,9 @@ std::vector<Blocker> tavernBlockers() {
 pxe::SkinnedModel TavernDoor::loadModel() {
   pxe::SkinnedModel model = pxe::SkinnedModel::load(std::string(PXE_ASSET_DIR) + "/scenes/tavern_door.glb", kFirstMaterial);
   if (model.joint("hinge") < 0) throw std::runtime_error("tavern_door.glb has no hinge joint");
+  if (model.materials().size() != static_cast<std::size_t>(kMaterials))
+    throw std::runtime_error("tavern_door.glb has " + std::to_string(model.materials().size()) +
+                             " materials, not Door_Wood, Door_Iron and Door_Grain");
   return model;
 }
 
@@ -150,8 +153,10 @@ void TavernDoor::pose(std::vector<pxe::ActorDraw>& actors, pxe::ActorMaterial (&
   actors.push_back({&model_->mesh(), joints_});
   const auto& mats = model_->materials();
   const int first = model_->firstMaterial();
-  for (int i = 0; i < static_cast<int>(mats.size()) && first + i < pxe::kActorMaterials; ++i)
+  for (int i = 0; i < static_cast<int>(mats.size()) && first + i < pxe::kActorMaterials; ++i) {
     materials[first + i] = mats[static_cast<std::size_t>(i)];
+    materials[first + i].crease = i == kWood || i == kGrain;
+  }
 }
 
 }  // namespace game

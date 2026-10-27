@@ -95,12 +95,18 @@ class TavernDoor {
   static constexpr float kOpenDegrees = 100.f;
   static constexpr float kSwing = 0.4f;
   static constexpr float kReach = 3.f;
-  // Its two colours (Door_Wood, Door_Iron) take these actor-material slots,
-  // after the hero's 0-7 and the fox's 8-11.
+  // Its three colours (Door_Wood, Door_Iron, Door_Grain, in the model's
+  // order) take actor-material slots 12-14, after the hero's 0-7 and the
+  // fox's 8-11. The wood and grain are inked along their creases (plank
+  // joints, grain ridges); the iron is not.
   static constexpr int kFirstMaterial = 12;
+  static constexpr int kWood = 0;
+  static constexpr int kIron = 1;
+  static constexpr int kGrain = 2;
+  static constexpr int kMaterials = 3;
 
   // The model every door is drawn from, loaded once (needs the GL context);
-  // throws if it is missing or has no `hinge` joint.
+  // throws if it is missing, has no `hinge` joint or not kMaterials materials.
   static pxe::SkinnedModel loadModel();
   // Hang in `doorway`, closed, drawn from `model` (which must outlive it).
   void build(const pxe::SkinnedModel& model, const Doorway& doorway);

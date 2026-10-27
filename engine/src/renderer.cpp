@@ -1104,18 +1104,18 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     // The stone's ramp now, over its mid colour by day: the light a character stands in.
     const glm::vec3 day = glm::max(scene.palette[kPhaseDay][kSurfStone].band[1], glm::vec3{0.02f});
     std::vector<float> tint, colour;
-    std::vector<int> glow;
+    std::vector<int> flags;  // per slot: 1 glows, 2 creases (mesh.frag)
     for (int b = 0; b < 3; ++b) {
       const glm::vec3 t = params.testColours ? glm::vec3(b == 2, b == 1, b == 0) : lighting.palette[kSurfStone].band[b] / day;
       tint.insert(tint.end(), {t.x, t.y, t.z});
     }
     for (const ActorMaterial& m : params.actorMaterials) {
       colour.insert(colour.end(), {m.colour.x, m.colour.y, m.colour.z});
-      glow.push_back(m.glow ? 1 : 0);
+      flags.push_back((m.glow ? 1 : 0) | (m.crease ? 2 : 0));
     }
     u3fv(progMesh_, "uActorTint", 3, tint.data());
     u3fv(progMesh_, "uActorColour", kActorMaterials, colour.data());
-    glUniform1iv(uloc(progMesh_, "uActorGlow"), kActorMaterials, glow.data());
+    glUniform1iv(uloc(progMesh_, "uActorFlags"), kActorMaterials, flags.data());
     const glm::vec3 fire = lighting.fireBand[kSurfStone] / day;
     u3f(progMesh_, "uActorFire", fire.x, fire.y, fire.z);
   }

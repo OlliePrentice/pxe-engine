@@ -12,7 +12,8 @@ const int kSurfRoof = 9;
 const int kSurfOak = 10;
 // Each pixel's surface goes to the edge pass in the normal target's alpha,
 // as (surface + 1) / kSurfaceScale; 0 marks a grass sprite and 1 a leaf
-// sprite (edge.frag).
+// sprite (edge.frag). Past the scene's surfaces, 11 marks an actor's
+// creased material (mesh.frag's kSurfActorCrease).
 const float kSurfaceScale = 16.0;
 
 // Built structure - cut stone, and a building's wood, plaster, roof and
