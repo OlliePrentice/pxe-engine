@@ -175,4 +175,4 @@ Build: pass
 - Verified with fresh-build captures at hour 10 (sconces out) and 22 (lit).
 
 ### Known limitations
-- None.
+- As the cycle-3 entry notes for the brazier, a night-only fire keeps its `lit` flag by day, so the settings menu's fire count now also counts the four sconces as burning by day, and a fire brush on a sconce by day does nothing visible until dusk. Unchanged mechanism, not altered here (out of scope).
