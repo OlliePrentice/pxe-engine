@@ -76,7 +76,7 @@ Cycle: 1
 
 For a fix, add a `## Reproduction` section with the exact steps and the observed versus expected behaviour.
 
-Nobody runs the game during this workflow, so you verify the criteria yourself by reviewing the code. Write them so that's possible. Show the user the specification and get their confirmation before starting the cycle. Change it if they correct anything.
+Nobody runs the game during this workflow, so you verify the criteria yourself by reviewing the code. Write them so that's possible. Show the user the specification and get their confirmation before starting the cycle. The exception is an alignment task created by the alignment review in `CLAUDE.md`: it starts without confirmation. Change it if they correct anything.
 
 ## 3. Run the cycle
 Every change is committed, so any cycle can be undone with `git revert`. The designer and developer each commit their own work and report the hash. You commit `task.md` and `issues.md` yourself. Before cycle 1, make sure you're on a branch for the task, not `main`, and that the working tree is clean. If it isn't, ask the user. At the start of each cycle, record the current `HEAD` hash in the cycle log line: it is the cycle's base.
@@ -94,7 +94,7 @@ Every change is committed, so any cycle can be undone with `git revert`. The des
    cmake --build build-check --parallel
    ```
    If the project has `CMakePresets.json`, use its presets instead. Record each distinct compile error as a `critical` issue. Record new warnings as `minor` issues, but only in files listed in the handoff.
-4. **Review.** Read the cycle's diff (`git diff <cycle base>..HEAD`) against the spec. Check that it leaves existing content alone unless `## Decisions` names the change. Check the layering against `## Layering` and `docs/architecture.md`: no engine file includes a game header or names game content, game objects are created and owned in game code, and no misplaced code was moved or copied into a second layer. For each acceptance criterion, find the code that satisfies it. Record anything that's missing or wrong as an issue, along with obvious regressions in code the change touched. Check that every asset the developer loads matches its `assets.md` entry.
+4. **Review.** Read the cycle's diff (`git diff <cycle base>..HEAD`) against the spec. Check that it leaves existing content alone unless `## Decisions` names the change. Check the layering against `## Layering`, and run the **alignment review** in `CLAUDE.md` against `docs/architecture.md` and `docs/engine-guide.md`. Discrepancies in this cycle's diff are issues. Discrepancies it reveals in code the task didn't touch become new alignment tasks, delegated without asking the user (see `CLAUDE.md` for when to stop and ask instead). For each acceptance criterion, find the code that satisfies it. Record anything that's missing or wrong as an issue, along with obvious regressions in code the change touched. Check that every asset the developer loads matches its `assets.md` entry.
 5. **Resolve.** For each issue the developer marked `fixed`, check it's actually gone in this cycle's build or review, then set it to `resolved`. If it isn't gone, set it back to `open` and increment `Reopened`.
 6. **Commit.** Commit `task.md` and `issues.md` with the message `<task-id> cycle <n>: review`.
 7. **Loop.** If any issue is `open`, increment `Cycle` in `task.md`, add a cycle log line listing the outstanding issue IDs, and go back to step 1.
@@ -146,7 +146,7 @@ When a task is complete, merge it into the run's branch from the main working tr
 git merge --no-ff <task-id>
 ```
 - If the merge conflicts, run `git merge --abort`. Then delegate to **game-developer** in the task's worktree: merge the run's branch into the task branch, resolve the conflicts, build and commit. Treat it as a new cycle, with your build check and review. Then merge again.
-- After a task merges, do a fresh build check of the run's branch, because two tasks can build on their own and fail together.
+- After a task merges, do a fresh build check of the run's branch, because two tasks can build on their own and fail together. Then run the alignment review in `CLAUDE.md` on the merged diff. Code that only goes wrong in combination becomes a new alignment task.
 - Then remove its worktree and branch: `git worktree remove ../<repo-dir>-<task-id>` and `git branch -d <task-id>`. Never force either. If git refuses, something is unmerged or uncommitted: find out what before going on.
 
 ## 4. Close the task
@@ -155,6 +155,7 @@ Set `Status: complete` only when:
 - every acceptance criterion is ticked in `task.md`, with a one-line note naming the evidence (file and function)
 - every issue is `resolved`, or `wont-fix` with your written justification in the issue
 - every asset in the spec is in `assets.md`, and every request in `asset-requests.md` is `done`
+- `docs/architecture.md`, `docs/engine-guide.md` and `README.md` match the code as the task leaves it (see the alignment review in `CLAUDE.md`)
 - everything is committed, the closing `task.md` included
 
 ## Stop conditions
