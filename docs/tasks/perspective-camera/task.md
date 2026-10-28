@@ -70,4 +70,4 @@ None.
 - Cycle 1 review: build clean, byte-identical verified, first-person capture deterministic. ISSUE-001 open.
 - Cycle 2: 2026-10-28 started, base 7326d56 (task.md log fix on top), fixing ISSUE-001
 - Cycle 2 review: build clean, ISSUE-001 resolved. Task complete; waiting on the user's look gate.
-- Cycle 3: 2026-10-28 started, base {BASE}, walking in the example (user request at the look gate)
+- Cycle 3: 2026-10-28 started, base 5d7eb44, walking in the example (user request at the look gate)
