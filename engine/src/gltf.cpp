@@ -41,6 +41,7 @@ Surface surfaceFor(const char* name) {
   if (has("plaster")) return kSurfPlaster;
   if (has("roof")) return kSurfRoof;
   if (has("oak")) return kSurfOak;
+  if (has("sand")) return kSurfSand;
   return kSurfStone;
 }
 

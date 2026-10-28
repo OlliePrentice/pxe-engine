@@ -36,7 +36,7 @@ uniform sampler2D uDepth;
 uniform float uDepthMetres;  // far - near: the ortho depth buffer is linear
 uniform int uEnabled;
 
-const int kSurfaces = 11;  // pxe::kSurfCount
+const int kSurfaces = 12;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
@@ -47,7 +47,7 @@ const int kSurfOak = 10;
 // A building's wood, plaster, roof and oak: outlined, never rimmed (edges()).
 bool timbered(int surface) { return (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak; }
 const float kSurfaceScale = 16.0;  // as common.glsl
-const int kSurfActorCrease = 11;   // an actor's creased material (mesh.frag), stone otherwise
+const int kSurfActorCrease = 12;   // an actor's creased material (mesh.frag), stone otherwise
 const int kLeafSprite = 15;        // a leaf sprite's alpha of 1, read as a surface
 
 // Cut stone and a building's wood, plaster, roof and oak: hard, flat-faced

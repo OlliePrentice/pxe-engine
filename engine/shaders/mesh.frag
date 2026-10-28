@@ -28,7 +28,7 @@ const int kActorGlows = 1;
 const int kActorCreases = 2;
 // The normal target's surface for an actor's creased material, past the
 // scene's surfaces: edge.frag treats it as stone, and inks its creases too.
-const int kSurfActorCrease = 11;
+const int kSurfActorCrease = 12;
 uniform vec3 uActorTint[3];
 uniform vec3 uActorFire;  // a base colour's tint in full firelight
 

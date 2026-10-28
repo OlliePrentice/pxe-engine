@@ -36,8 +36,8 @@ struct SurfaceGeometry {
 
 // Gives the scene the maps it is queried through: `shelter` from the stone
 // and roofs (built structure keeps the rain off; tree crowns let it
-// through), `ground` from the grass, dirt, stone, bark, foam, wood, plaster
-// and oak (not the roofs, which are all overhead), and `waterTop` from the
+// through), `ground` from the grass, dirt, stone, bark, foam, wood, plaster,
+// oak and sand (not the roofs, which are all overhead), and `waterTop` from the
 // water. `overhead`, if given, leaves out of the ground what things on it
 // pass under, as HeightMap::build's does.
 void buildSceneMaps(Scene& scene, const SurfaceGeometry& geometry,

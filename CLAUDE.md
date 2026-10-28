@@ -1,6 +1,10 @@
 # pxe
 
-A C++20 engine for t3ssel8r-style 3D pixel art (`engine/`, library `pxe_engine`, namespace `pxe`) and one game built on it (`game/`, executable `pxe`, namespace `game`). `examples/minimal/` is a small procedural program that uses only the engine.
+A C++20 engine for t3ssel8r-style 3D pixel art (`engine/`, library `pxe_engine`, namespace `pxe`) and two games built on it:
+- `game/` (executable `pxe`, namespace `game`): the ruins, the tavern, the hero and the foxes, under the orthographic camera. Its assets are in the top-level `assets/` and `tools/blender/`.
+- `desert/` (executable `pxe_desert`, namespace `desert`): first person on procedural sand dunes with one date palm. Its assets are in `desert/assets/` and `desert/tools/blender/`.
+
+`examples/minimal/` is a small procedural program that uses only the engine. Neither game includes the other's code. "The game" in a rule means whichever game a change is in.
 
 ## Read first
 - `docs/architecture.md`: what belongs in the engine and what in the game, and where every area lives now. Follow it for every change. Settle where code goes by its test ("Would a different game in this style need this code, unchanged?"), not by where similar code happens to be.
@@ -9,19 +13,20 @@ A C++20 engine for t3ssel8r-style 3D pixel art (`engine/`, library `pxe_engine`,
 
 ## Hard rules
 - The engine never includes game headers, calls game code or names game content (fox, hero, tavern, ruins...) in identifiers, APIs or comments.
-- The game creates and owns every object in its world. The engine keeps no pointer to game data between calls.
+- Each game creates and owns every object in its world. The engine keeps no pointer to game data between calls.
 - `engine/` stays self-contained: no path outside it in `engine/CMakeLists.txt`, no files read from the source tree at run time. A new shader goes in `engine/shaders/` and in `PXE_SHADERS` in `engine/CMakeLists.txt`.
 - Never commit to `main`. Work on a branch.
 
 ## Build
-CMake presets (`CMakePresets.json`, needs CMake 3.21+) and a wrapper script that builds the engine, game and example, and can run one of them:
+CMake presets (`CMakePresets.json`, needs CMake 3.21+) and a wrapper script that builds the engine, both games and the example, and can run one of them:
 ```bash
 tools/build.sh                                        # release build into build/release
 tools/build.sh debug                                  # debug build into build/debug
 tools/build.sh release game -- --hour 21 --foxes 3    # build, then run the game with flags
+tools/build.sh release desert -- --hour 18            # build, then run the desert game
 tools/build.sh release example -- --capture out.png   # build, then run the example
 ```
-The binaries are `build/<config>/game/pxe` and `build/<config>/examples/minimal/pxe_minimal`. Run from the caller's directory, so relative output paths land there.
+The binaries are `build/<config>/game/pxe`, `build/<config>/desert/pxe_desert` and `build/<config>/examples/minimal/pxe_minimal`. Run from the caller's directory, so relative output paths land there.
 
 For a clean check, reconfigure and recompile everything (`--fresh` alone keeps the object files, so it is not a clean build):
 ```bash
@@ -31,12 +36,14 @@ cmake --build --preset check --clean-first
 The only expected warning is stb_image_write's `sprintf` deprecation.
 
 ## Verifying a change
-Nothing tests rendering automatically. `./build/game/pxe --help` lists every flag. The useful ones:
+Nothing tests rendering automatically. `./build/<config>/game/pxe --help` lists every flag of the game. The useful ones:
 - `--capture <png>`: render a few frames at fixed times and write the 960x540 view. Captures are deterministic.
 - `--window-png <png>`, `--audio-wav <wav>`, `--self-test`, `--bench`.
 - Scene and state: `--scene hills`, `--hour <0-24>`, `--foxes <n>`, `--candles`, `--shelter-test`, `--extra-fires <n>`, `--rain <0-1>`.
 
-A refactor that should not change output must be **byte-identical**. Build the base commit from `git archive <base> | tar -x -C <dir>` in a scratch directory, run both binaries with the same flags, and compare with `cmp`. Standard cases: the game's default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6` and `--self-test`, and the example's `--capture` and `--first-person --capture`. Logs match apart from the line naming the output file. In zsh, pass multi-word arguments through `"$@"` or an array.
+`pxe_desert` has only `--help`, `--capture <png>` (from the spawn pose), `--window-png <png>` and `--hour <0-24>` (default 16.5).
+
+A refactor that should not change output must be **byte-identical**. Build the base commit from `git archive <base> | tar -x -C <dir>` in a scratch directory, run both binaries with the same flags, and compare with `cmp`. Standard cases: the game's default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6` and `--self-test`, the desert game's `--capture`, and the example's `--capture` and `--first-person --capture`. Logs match apart from the line naming the output file. In zsh, pass multi-word arguments through `"$@"` or an array.
 
 Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
 

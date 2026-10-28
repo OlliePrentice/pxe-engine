@@ -10,6 +10,8 @@ namespace pxe {
 // are built structure (buildings and their furniture): flat-faced like cut
 // stone, and outlined in the edge pass as stone is. Oak is the light wood of
 // a room's furniture, set apart from the darker Wood of its floor and frame.
+// Sand is desert ground: walkable like grass and dirt, banded by the curved
+// surfaces' toon ramp, with no outline or rim.
 // New surfaces go on the end, so no surface's index changes meaning.
 enum Surface : int {
   kSurfGrass = 0,
@@ -23,7 +25,8 @@ enum Surface : int {
   kSurfPlaster = 8,
   kSurfRoof = 9,
   kSurfOak = 10,
-  kSurfCount = 11,
+  kSurfSand = 11,
+  kSurfCount = 12,
 };
 
 // World-space vertex. Lighting uses the vertex normal, so a crown's custom

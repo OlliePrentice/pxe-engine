@@ -39,7 +39,7 @@ void buildSceneMaps(Scene& scene, const SurfaceGeometry& geometry,
     scene.shelter.build(roofs);
   }
   std::vector<glm::vec3> solid;
-  for (Surface s : {kSurfGrass, kSurfDirt, kSurfStone, kSurfBark, kSurfFoam, kSurfWood, kSurfPlaster, kSurfOak}) {
+  for (Surface s : {kSurfGrass, kSurfDirt, kSurfStone, kSurfBark, kSurfFoam, kSurfWood, kSurfPlaster, kSurfOak, kSurfSand}) {
     const std::vector<glm::vec3> c = geometry.corners(s);
     solid.insert(solid.end(), c.begin(), c.end());
   }

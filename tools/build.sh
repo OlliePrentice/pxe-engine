@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 # Configure (first time only) and build pxe with the CMakePresets.json presets,
-# then optionally run the game or the minimal example. macOS and Linux.
+# then optionally run one of the games or the minimal example. macOS and Linux.
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: tools/build.sh [debug|release] [game|example] [-- args...]
+Usage: tools/build.sh [debug|release] [game|desert|example] [-- args...]
 
-Builds the engine, the game and the minimal example with the CMake preset
-(default: release; build dir build/<config>), configuring it first if the
-build dir isn't configured yet, and prints the paths of the built binaries.
+Builds the engine, the game, the desert game and the minimal example with
+the CMake preset (default: release; build dir build/<config>), configuring
+it first if the build dir isn't configured yet, and prints the paths of the
+built binaries.
 
   debug | release   Build configuration (default: release).
-  game | example    After a successful build, run the game (pxe) or the
-                    minimal example (pxe_minimal) and exit with its exit code.
-  -- args...        Arguments passed to the binary run (needs game or example).
+  game | desert | example
+                    After a successful build, run the game (pxe), the
+                    desert game (pxe_desert) or the minimal example
+                    (pxe_minimal) and exit with its exit code.
+  -- args...        Arguments passed to the binary run (needs game, desert
+                    or example).
   -h, --help        Print this help.
 
 The binary runs in your current directory, so relative paths such as
@@ -24,6 +28,7 @@ Examples:
   tools/build.sh
   tools/build.sh debug
   tools/build.sh release game -- --capture shot.png --scene hills
+  tools/build.sh desert -- --hour 18
   tools/build.sh example -- --capture out.png
 EOF
 }
@@ -47,7 +52,7 @@ while (($# > 0)); do
       fi
       config="$1"
       ;;
-    game | example)
+    game | desert | example)
       if [[ -n "$target" ]]; then
         echo "build.sh: target given twice: $target and $1" >&2
         usage >&2
@@ -74,7 +79,7 @@ if [[ -z "$config" ]]; then
   config="release"
 fi
 if ((have_run_args)) && [[ -z "$target" ]]; then
-  echo "build.sh: arguments after -- need game or example" >&2
+  echo "build.sh: arguments after -- need game, desert or example" >&2
   usage >&2
   exit 2
 fi
@@ -108,13 +113,16 @@ find_binary() {
 }
 
 game_bin="$(find_binary "$build_dir/game" pxe)"
+desert_bin="$(find_binary "$build_dir/desert" pxe_desert)"
 example_bin="$(find_binary "$build_dir/examples/minimal" pxe_minimal)"
 
 echo "game:    $game_bin"
+echo "desert:  $desert_bin"
 echo "example: $example_bin"
 
 case "$target" in
   game) bin="$game_bin" ;;
+  desert) bin="$desert_bin" ;;
   example) bin="$example_bin" ;;
   *) exit 0 ;;
 esac

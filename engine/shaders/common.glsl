@@ -1,6 +1,6 @@
 // Shared toon ramp. Spliced into the mesh fragment shader and the grass
 // vertex shader so both run the same function on the same kind of inputs.
-const int kSurfaces = 11;  // pxe::kSurfCount
+const int kSurfaces = 12;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
@@ -10,9 +10,10 @@ const int kSurfWood = 7;
 const int kSurfPlaster = 8;
 const int kSurfRoof = 9;
 const int kSurfOak = 10;
+const int kSurfSand = 11;
 // Each pixel's surface goes to the edge pass in the normal target's alpha,
 // as (surface + 1) / kSurfaceScale; 0 marks a grass sprite and 1 a leaf
-// sprite (edge.frag). Past the scene's surfaces, 11 marks an actor's
+// sprite (edge.frag). Past the scene's surfaces, 12 marks an actor's
 // creased material (mesh.frag's kSurfActorCrease).
 const float kSurfaceScale = 16.0;
 
