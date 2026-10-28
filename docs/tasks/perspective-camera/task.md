@@ -63,4 +63,4 @@ None.
 - Edge-crawl stabilisation under perspective
 
 ## Cycle log
-- Cycle 1: 2026-10-28 started
+- Cycle 1: 2026-10-28 started, base 4b0c221
