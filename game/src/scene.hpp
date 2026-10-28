@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pxe/scatter.hpp"
 #include "pxe/scene.hpp"
 
 #include <glm/vec2.hpp>
@@ -66,13 +67,14 @@ struct BuildOptions {
   // "ruins" (the Blender pond-and-pillars scene) or "hills".
   std::string scene = "ruins";
   // Horizontal Poisson-disk radius for blade clumps, in metres. A clump is
-  // about five pixels (0.3 m) wide, so this keeps band edges continuous.
-  float minDist = 0.34f;
+  // about five pixels wide, so the engine's default keeps band edges
+  // continuous.
+  float minDist = pxe::GrassScatter{}.clumpSpacing;
   // Spacing of the sparse detail tufts.
-  float tuftDist = 2.f;
+  float tuftDist = pxe::GrassScatter{}.tuftSpacing;
   bool tufts = true;
   // Leaf clusters per square metre of crown.
-  float leafDensity = 6.f;
+  float leafDensity = pxe::kDefaultLeafDensity;
   // Eight isolated sprites instead of the field, for the pixel-exact check
   // (hills only).
   bool stamps = false;
@@ -92,7 +94,29 @@ struct BuildOptions {
   std::vector<BedFootprint> beds;
 };
 
-pxe::Scene buildScene(const BuildOptions& options = {});
+// A fire the scene starts with: where its flames rise from, whether a
+// structure roofs it over (from `pxe::Scene::shelter`), so rain cannot reach
+// it, and how big it is (1 a campfire, about 0.2 a candle; see
+// pxe::FireDraw).
+struct FireSite {
+  glm::vec3 base{0.f};
+  bool sheltered = false;
+  float size = 1.f;
+};
+
+// A built scene: what the engine draws and queries, and what the game starts
+// it with.
+struct BuiltScene {
+  pxe::Scene scene;
+  // Fires the scene starts with. The game owns them from then on, and can
+  // add, move and remove fires as it runs (see WorldClock).
+  std::vector<FireSite> fires;
+  // Where the camera starts.
+  glm::vec3 focus{0.f};
+  float yawDegrees = 45.f;
+};
+
+BuiltScene buildScene(const BuildOptions& options = {});
 
 // What foxes need of a scene before it is built (their beds clear the grass
 // as it is built): where beds may go, and what beds and walks keep clear of.

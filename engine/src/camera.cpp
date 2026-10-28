@@ -51,8 +51,8 @@ const SecondOrder kFollow = SecondOrder::from(2.6f, 1.f, 0.f);
 Camera::Camera() {
   glm::vec3 forward, right, up;
   basis(yaw_, forward, right, up);
-  // 40 low-res pixels below the view centre, matching the brief's mock so
-  // the hill and the lit stripes sit where the reference metrics expect.
+  // Initial focus: 40 low-res pixels below the view centre. A default; the
+  // game moves the camera with setTarget.
   const glm::vec3 focus = up * 2.5f;
   rawPos_ = smoothPos_ = focus;
 }

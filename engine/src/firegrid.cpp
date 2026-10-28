@@ -68,12 +68,12 @@ FireGrid::~FireGrid() {
   if (flameVbo_) glDeleteBuffers(1, &flameVbo_);
 }
 
-void FireGrid::init(const std::string& dir) {
-  progStep_ = linkProgram(dir + "/edge.vert", dir + "/gridstep.frag");
-  progBurn_ = linkProgram(dir + "/edge.vert", dir + "/gridburn.frag");
-  progSum_ = linkProgram(dir + "/edge.vert", dir + "/gridsum.frag");
-  progGlow_ = linkProgram(dir + "/edge.vert", dir + "/gridglow.frag");
-  progFlame_ = linkProgram(dir + "/gridflame.vert", dir + "/fire.frag");
+void FireGrid::init() {
+  progStep_ = linkProgram("edge.vert", "gridstep.frag");
+  progBurn_ = linkProgram("edge.vert", "gridburn.frag");
+  progSum_ = linkProgram("edge.vert", "gridsum.frag");
+  progGlow_ = linkProgram("edge.vert", "gridglow.frag");
+  progFlame_ = linkProgram("gridflame.vert", "fire.frag");
   glGenVertexArrays(1, &vao_);
   glGenVertexArrays(1, &flameVao_);
   glGenBuffers(1, &flameVbo_);
@@ -291,7 +291,7 @@ void FireGrid::build(const Scene& scene, float rain) {
   if (std::getenv("PXE_FIRE_DEBUG"))
     std::fprintf(stderr, "pxe: grass fire grid %dx%d cells from (%.1f, %.1f), %dx%d patches\n", w_, h_, min_.x, min_.y, pw_,
                  ph_);
-  scene_ = &scene;
+  built_ = true;
   cur_ = 0;
   tick_ = 0;
   reads_ = 0;
@@ -307,7 +307,7 @@ void FireGrid::build(const Scene& scene, float rain) {
 
 void FireGrid::advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite,
                        const std::vector<Stroke>& strokes, float rain, glm::vec2 wind) {
-  if (scene_ != &scene) build(scene, rain);
+  if (!built_) build(scene, rain);
   ignite_.insert(ignite_.end(), ignite.begin(), ignite.end());
   strokes_.insert(strokes_.end(), strokes.begin(), strokes.end());
   // Steps run ahead of the frame: the latest is at or just after `time`,

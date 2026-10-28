@@ -61,7 +61,7 @@ class Camera {
   glm::vec3 smoothVel_{0.f};
   glm::vec2 wishPan_{0.f};
 
-  float yaw_ = 0.7853981633974483f;  // 45 degrees, the brief's view
+  float yaw_ = 0.7853981633974483f;  // 45 degrees, the default view
   float yawFrom_ = yaw_;
   float yawTo_ = yaw_;
   float yawT_ = 1.f;

@@ -3,20 +3,22 @@
 #include "gl.hpp"
 
 #include <algorithm>
-#include <fstream>
-#include <sstream>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 
 namespace pxe {
 namespace {
 
-std::string readAll(const std::string& path) {
-  std::ifstream in(path);
-  if (!in) throw std::runtime_error("failed to open shader " + path);
-  std::stringstream ss;
-  ss << in.rdbuf();
-  return ss.str();
+// An embedded shader with LF line ends whatever the checkout it was built
+// from: a CR before a LF (a Windows checkout with CRLF line ends) is dropped.
+std::string shaderSource(const std::string& name) {
+  const std::string bytes = embeddedShader(name);
+  std::string source;
+  source.reserve(bytes.size());
+  for (std::size_t i = 0; i < bytes.size(); ++i)
+    if (!(bytes[i] == '\r' && i + 1 < bytes.size() && bytes[i + 1] == '\n')) source += bytes[i];
+  return source;
 }
 
 std::string compose(const std::string& source, const std::string& common) {
@@ -56,12 +58,12 @@ unsigned compile(unsigned type, const std::string& source, const std::string& la
 
 }  // namespace
 
-unsigned linkProgram(const std::string& vertPath, const std::string& fragPath,
-                     const std::string& commonPath, const std::string& commonPrefix) {
-  const std::string common = commonPath.empty() ? std::string{} : commonPrefix + readAll(commonPath);
-  const std::string defines = commonPath.empty() ? commonPrefix : std::string{};
-  const unsigned vs = compile(GL_VERTEX_SHADER, withDefines(compose(readAll(vertPath), common), defines), vertPath);
-  const unsigned fs = compile(GL_FRAGMENT_SHADER, withDefines(compose(readAll(fragPath), common), defines), fragPath);
+unsigned linkProgram(const std::string& vert, const std::string& frag, const std::string& common,
+                     const std::string& commonPrefix) {
+  const std::string commonSource = common.empty() ? std::string{} : commonPrefix + shaderSource(common);
+  const std::string defines = common.empty() ? commonPrefix : std::string{};
+  const unsigned vs = compile(GL_VERTEX_SHADER, withDefines(compose(shaderSource(vert), commonSource), defines), vert);
+  const unsigned fs = compile(GL_FRAGMENT_SHADER, withDefines(compose(shaderSource(frag), commonSource), defines), frag);
   const unsigned prog = glCreateProgram();
   glAttachShader(prog, vs);
   glAttachShader(prog, fs);
@@ -76,7 +78,7 @@ unsigned linkProgram(const std::string& vertPath, const std::string& fragPath,
     std::string log(static_cast<std::size_t>(std::max(len, 1)), '\0');
     glGetProgramInfoLog(prog, len, nullptr, log.data());
     glDeleteProgram(prog);
-    throw std::runtime_error("link failed (" + vertPath + ", " + fragPath + "):\n" + log);
+    throw std::runtime_error("link failed (" + vert + ", " + frag + "):\n" + log);
   }
   return prog;
 }

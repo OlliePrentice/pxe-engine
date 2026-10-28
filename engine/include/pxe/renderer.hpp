@@ -55,12 +55,17 @@ struct ActorDraw {
 };
 
 struct FrameParams {
-  int framebufferW = 1920;
-  int framebufferH = 1080;
+  // The window's framebuffer in pixels (Window::framebufferSize()), which
+  // the view is presented into. Required when `present` is true: render
+  // throws std::invalid_argument if either is not positive. Unused, and may
+  // stay 0, when `present` is false.
+  int framebufferW = 0;
+  int framebufferH = 0;
   bool showGrass = true;
   bool magentaGrass = false;
   bool showNdl = false;
   bool testColours = false;
+  // Scale the view into the window's framebuffer at the end of the frame.
   bool present = true;
   // When false, grass still draws but ignores the depth buffer. Used to
   // stamp isolated sprites for the pixel-exact check.
@@ -125,9 +130,12 @@ class Renderer {
   int viewH() const { return RenderConfig::kViewH; }
   int rtW() const { return RenderConfig::kViewW + 2 * RenderConfig::kPad; }
   int rtH() const { return RenderConfig::kViewH + 2 * RenderConfig::kPad; }
+  // Take a scene to draw: its grass goes to the GPU, and every cache drawn
+  // from the scene (sun, lightning and firelight shadow maps) and the fire
+  // state are dropped. Call again whenever the game builds or swaps a scene.
   void upload(const Scene& scene);
-  // Just the grass, after the game has changed scene.grass (blades cleared
-  // from under a fox added as it runs); everything else upload() set stays.
+  // Just the grass, after the game has changed scene.grass (say, cleared
+  // some blades); everything else upload() set stays.
   void uploadGrass(const Scene& scene);
   // A point of the window (framebuffer pixels from its top left, `fbW` x
   // `fbH`) as presented for `camera`: the view ray through it starts at the
@@ -135,10 +143,17 @@ class Renderer {
   glm::vec3 rayThrough(const CameraFrame& camera, int fbW, int fbH, glm::vec2 px) const;
   // And back: where a world point shows in the window.
   glm::vec2 windowPoint(const CameraFrame& camera, int fbW, int fbH, glm::vec3 world) const;
+  // Draw a frame. `scene` must be the scene last passed to upload(): the
+  // renderer keeps shadow maps drawn from it between frames and redraws them
+  // only when the light changes or upload() is called again, never by
+  // checking which scene it is given. Throws std::invalid_argument, before
+  // drawing anything, if params.present is set without a positive
+  // framebuffer size.
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
 
-  // Centre 640×360 of the low-res target, bottom-up RGBA8. This is the
-  // snapped image, before the subpixel present shift.
+  // Centre RenderConfig::kViewW x kViewH of the low-res target (the view
+  // without its padding), bottom-up RGBA8. This is the snapped image,
+  // before the subpixel present shift.
   std::vector<std::uint8_t> readView();
   // Window framebuffer, bottom-up RGBA8. Call before swapping buffers.
   std::vector<std::uint8_t> readPresented(int width, int height);
@@ -210,7 +225,7 @@ class Renderer {
     std::uint32_t fire = 0;  // id of the fire it belongs to
     float shadowed = 0.f;    // 0 no shadows .. 1 full shadows
     bool leaving = false;    // fading out before it is given up
-    const Scene* drawnScene = nullptr;
+    bool drawn = false;      // the cube holds the uploaded scene seen from drawnPos
     glm::vec3 drawnPos{0.f};
   };
   struct LightSlot {
@@ -281,11 +296,12 @@ class Renderer {
 
   bool ready_ = false;
   bool profiling_ = false;
-  // The shadow map is only redrawn when the light or the scene changes.
+  // The shadow maps are only redrawn when the light changes or they are
+  // invalidated: by upload() or when their textures are recreated.
   glm::vec3 shadowLight_{0.f};
   glm::vec3 flashLight_{0.f};
-  const Scene* flashScene_ = nullptr;
-  const Scene* shadowScene_ = nullptr;
+  bool shadowValid_ = false;  // the sun's map holds the uploaded scene from shadowLight_
+  bool flashValid_ = false;   // flashShadow_ holds the uploaded scene from flashLight_
   unsigned queries_[PassTimes::kCount] = {};
   PassTimes passTimes_;
   void beginPass(int pass);

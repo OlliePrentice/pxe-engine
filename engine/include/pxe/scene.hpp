@@ -41,16 +41,11 @@ enum Phase : int {
   kPhaseCount = 4,
 };
 
-// A fire the scene starts with: where its flames rise from, whether a
-// structure roofs it over (from `Scene::shelter`), so rain cannot reach it,
-// and how big it is (1 a campfire, about 0.2 a candle; see FireDraw).
-struct FireSite {
-  glm::vec3 base{0.f};
-  bool sheltered = false;
-  float size = 1.f;
-};
-
 struct Scene {
+  // Starts with the reference palettes, rim and ink (see `palette`), and an
+  // empty scene.
+  Scene();
+
   std::vector<Mesh> meshes;  // opaque; all cast shadows
   // Water sheets, drawn after the opaque meshes with reflections. They do
   // not cast shadows. waterLevel is the height of the (flat) water plane,
@@ -60,10 +55,7 @@ struct Scene {
   glm::vec3 waterMin{0.f};
   glm::vec3 waterMax{0.f};
   std::vector<GrassInstance> grass;
-  // Fires the scene starts with. The game owns them from then on, and can
-  // add, move and remove fires as it runs (see FrameParams::fires).
-  std::vector<FireSite> fires;
-  // Built structure overhead, for keeping rain off fires.
+  // Built structure overhead, which keeps the rain off what stands under it.
   ShelterMap shelter;
   // The top of the ground and everything standing on it (not tree crowns),
   // and of the water, for things that roll over the scene.
@@ -71,8 +63,12 @@ struct Scene {
   HeightMap waterTop;
   // Where each firefly wanders round, when they are out.
   std::vector<glm::vec3> fireflyHomes;
+  // Each surface's colours per phase. They default to the reference style,
+  // sampled from t3ssel8r's videos, for every phase and surface; a game
+  // overrides only the ramps it wants different.
   Palette palette[kPhaseCount][kSurfCount];
   // Edge-pass colours per phase: light rim on stone tops, dark outline.
+  // Default to the reference style's, like `palette`.
   glm::vec3 rim[kPhaseCount]{};
   glm::vec3 ink[kPhaseCount]{};
 
@@ -97,10 +93,6 @@ struct Scene {
 
   glm::vec3 boundsMin{0.f};
   glm::vec3 boundsMax{0.f};
-
-  // Where the camera starts.
-  glm::vec3 focus{0.f};
-  float yawDegrees = 45.f;
 };
 
 }  // namespace pxe

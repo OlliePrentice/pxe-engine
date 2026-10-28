@@ -4,12 +4,16 @@
 #include <glm/vec3.hpp>
 
 #include "audio.hpp"
+#include "scene.hpp"
+#include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 
 #include <cstdint>
 #include <vector>
 
-struct GLFWwindow;
+namespace pxe {
+class Overlay;
+}
 
 namespace game {
 
@@ -55,7 +59,7 @@ struct WorldClock {
   int strikes = 0;  // counts flashes, so the game can follow each with thunder
 
   // One burning fire per scene fire, sheltered as the scene says.
-  void placeFires(const std::vector<pxe::FireSite>& sites);
+  void placeFires(const std::vector<FireSite>& sites);
   // Light a new fire at `base` (sheltered from `shelter`); returns its id.
   std::uint32_t addFire(glm::vec3 base, const pxe::ShelterMap& shelter, float size = 1.f);
   void removeFire(std::uint32_t id);
@@ -76,6 +80,8 @@ struct WorldClock {
   static constexpr float kRainPutsOutFire = 0.45f;
   // Unit vector, world XZ, the wind blows toward.
   glm::vec2 windDir() const;
+  // The weather now, for pxe::lightingAt.
+  pxe::Weather weather() const;
 
  private:
   float random();
@@ -105,12 +111,13 @@ struct BrushSettings {
   float radius = 1.f;  // metres
 };
 
-// Dear ImGui panel toggled with Tab. Drawn at window resolution on top of
-// the upscaled pixel art.
+// Dear ImGui panel toggled with Tab, built on the engine's overlay. Drawn at
+// window resolution on top of the upscaled pixel art.
 class SettingsMenu {
  public:
-  void init(GLFWwindow* window);
-  void shutdown();
+  // Draw through `overlay`, which must outlive the menu's use; applies the
+  // menu's style to it.
+  void init(pxe::Overlay& overlay);
 
   void toggle() { open_ = !open_; }
   bool open() const { return open_; }
@@ -128,7 +135,7 @@ class SettingsMenu {
             const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint, float fps);
 
  private:
-  bool ready_ = false;
+  pxe::Overlay* overlay_ = nullptr;
   bool open_ = false;
 };
 
