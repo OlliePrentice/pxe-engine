@@ -25,7 +25,8 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
   - About 18 fronds in a full crown, each 3–4 m long: a central rib with a row of blades either side, from flat triangles, the outer fronds drooping.
   - Two or three blocky date clusters hanging below the crown.
   - Materials: trunk and dates `Bark`, fronds `Leaf`, so no new surface for the palm. A `Frond` surface may follow later only if the green looks wrong. No leaf sprites are scattered on the palm.
-- **Placement and spawn.** The palm stands at the world origin, on the side of a low dune rather than on a crest. The player spawns 14 m south of it, facing it, pitched 5° down. This is also the `--capture` pose. The sun direction (`Scene::sunEast`, `sunSouth`) puts the palm's shadow across the sand to the view's right at the default hour.
+- **Placement and spawn.** The palm stands at the world origin, on the side of a low dune rather than on a crest. The player spawns 25 m south of it (engine -Z, the default `Scene::sunSouth`), facing it, looking level (pitch 0°). This is also the `--capture` pose. Changed from 14 m and 5° down after the palm was built: the fronds sit 9.3–14.65 m up, out of frame from there (user decision). The glb's origin goes at the ground height at the palm's spot; its trunk runs 0.5 m below that.
+- **Frond detail is judged in the first capture.** If the 15 thin blades per side speckle or crawl, the designer cuts them to about 6 broader blades per side as a follow-up asset request (user decision). The sun direction (`Scene::sunEast`, `sunSouth`) puts the palm's shadow across the sand to the view's right at the default hour.
 - **Collision.** The palm is a vertical cylinder at its trunk base, with the radius recorded in `assets.md`. The player slides along it and along the play-area boundary. Nothing else blocks.
 - **Time and weather.** A fixed hour from `--hour <0-24>`, default 16.5. The clock doesn't run. There is no weather, rain, wind, fire or audio, and no copy of the existing game's `WorldClock`.
 - **Flags.** `--help`, `--capture <png>` (deterministic, from the spawn pose), `--hour <0-24>` and `--window-png <png>`. No self-test, bench or audio.
@@ -51,7 +52,7 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
 - [ ] `pxe::Surface` has a Sand value, glTF material `Sand` loads as it, and its default palettes match the decided colours. The shader surface constants match
 - [ ] The dune height function gives layered wind-aligned ridges 2–6 m high on a 1 m grid over 300 × 300 m, all Sand, with no grass
 - [ ] The palm loads from `desert/assets/scenes/date_palm.glb` at the origin, standing on the ground height there
-- [ ] The player spawns 14 m south of the palm, facing it, pitched 5° down, with the eye 1.7 m above the ground
+- [ ] The player spawns 25 m south of the palm, facing it, pitch 0°, with the eye 1.7 m above the ground
 - [ ] WASD at 3.5 m/s, Shift sprint at 6 m/s; left stick move, right stick look, left stick press sprint; pitch clamped to ±85°; Y not inverted
 - [ ] The cursor is captured while playing; Esc releases it, a second Esc quits, a click captures it again
 - [ ] The eye follows the terrain height with smoothing
