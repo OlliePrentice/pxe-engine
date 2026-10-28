@@ -86,4 +86,5 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
 - Ripples, rocks or scrub on the sand
 
 ## Cycle log
-- Waiting on `perspective-camera` and its look gate.
+- Look gate approved by the user 2026-10-28.
+- Cycle 1: 2026-10-28 started, base 4030291 (art style docs split first, by the orchestrator)
