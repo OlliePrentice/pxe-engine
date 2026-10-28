@@ -14,6 +14,9 @@ Run headless (builds, checks, exports, then renders the preview beside the glb):
     threshold and a spalled patch from the default camera, the chimney from
     the front-right, and one spalled patch close up - each beside a smooth
     render of the same crop.
+    tavern_exterior_hall.png beside it (revision 6): the hall through the
+    doorway from the default camera (24 px/m toon and smooth), and a
+    cutaway from above with the roof hidden.
 
 Or step by step in an open Blender, to watch it go together:
     import runpy; tx = runpy.run_path(".../build_tavern_exterior.py", run_name="tavern")
@@ -39,8 +42,10 @@ each joint, its two faces turned more than 40 degrees from the tile, the
 joints of each course half a tile along from the course below's, so the
 engine's crease ink draws a line on every joint as well as every course lip. The doorway
 is empty - the door model (build_tavern_door.py) hangs there - and opens on
-a short dark vestibule (Dirt walls, Wood floor) so the open door shows an
-inside rather than the back of the walls.
+a dark hall (Dirt side walls, Wood floor) that runs back to the rear wall's
+inside face, so the open door shows a floor running into the building
+rather than the back of the walls (revision 6: the vestibule's Dirt back
+wall is gone; the game darkens the hall).
 
 Axes and origin (Blender): the door faces -Y (+Z in the engine). The origin
 is the middle of the doorway's threshold - centred across the doorway and
@@ -64,6 +69,7 @@ OUT = os.path.join(OUT_DIR, "tavern_exterior.glb")
 PREVIEW = os.path.join(OUT_DIR, "tavern_exterior.png")
 ROOF_PREVIEW = os.path.join(OUT_DIR, "tavern_exterior_roof.png")
 MASONRY_PREVIEW = os.path.join(OUT_DIR, "tavern_exterior_masonry.png")
+HALL_PREVIEW = os.path.join(OUT_DIR, "tavern_exterior_hall.png")
 COLLECTION = "Tavern_Exterior"
 
 
@@ -128,7 +134,7 @@ WINDOWS = {
     "right": [(0.9, 2.1)],
 }
 DOORWAY = (-DOOR_W / 2 - JAMB, DOOR_W / 2 + JAMB)  # the hole the jambs and door fill, on the front
-VESTIBULE = (-1.9, 1.9, 3.0)        # x0, x1 and the back wall's face (y)
+VESTIBULE = (-1.9, 1.9, PY1 - WALL_T)  # x0, x1 and the hall's back (y): the rear wall's inside face (revision 6; was 3.0)
 # Roof (revision 3: slate). The eave line and underside are revision 2's.
 EAVE_OUT = 0.55
 EAVE_LOW, EAVE_TOP = 4.35, 4.6      # the slate eave's underside and the top of its edge
@@ -177,6 +183,7 @@ BRACKET_Z = 4.05
 TRI_BUDGET = 14000                  # revision 5 (revision 4: 8,000)
 PLINTH_SIZE = (9.0, 7.0)            # checked
 MIN_VESTIBULE = 2.5                 # checked: the trigger zone's depth
+HALL_TRI_BUDGET = 100               # revision 6: the Vestibule node stays under this
 MIN_SIGN_TO_JAMB = 0.3              # checked: the sign's nearest part to the jamb's outer edge
 # Revision 3's roof rules (checked): everything the new roof adds stays inside
 # revision 2's eaves in plan, its top at most MAX_RISE above revision 2's
@@ -230,7 +237,7 @@ PATCH_FACING = 0.5                  # checked: the wall's normal . the way to th
 ROOF_PARTS = ["Roof", CROSS_GABLE["name"]] + [d["name"] for d in DORMERS]
 # Engine rectangles (assets.md / scene.cpp kTavernDoorway, kTavernVestibule) in Blender (x0, x1, y0, y1).
 DOORWAY_RECT = (-1.1, 1.1, -0.85, 0.25)
-VESTIBULE_RECT = (-1.9, 1.9, 0.25, 3.0)
+VESTIBULE_RECT = (-1.9, 1.9, 0.25, PY1 - WALL_T)  # revision 6: the whole hall (was y 0.25 to 3.0)
 
 
 def wall_point(wall, s, v, z):
@@ -1214,8 +1221,9 @@ class Builder:
 
     def doorway(self):
         """The door's frame (Wood jambs and head, through the wall), and the
-        vestibule behind it: a Wood floor and dark Dirt walls, open to the
-        doorway, deep enough for the door to swing 100 degrees inward."""
+        hall behind it (the `Vestibule` node): a Wood floor and two dark Dirt
+        side walls, open to the doorway, running back to the rear wall's
+        inside face, which closes it (revision 6: no back wall of its own)."""
         part = Part("Doorway")
         dl, dr = DOORWAY
         yo, yi = PY0 - (POST_PROUD - PROUD) - PROUD, PY0 + WALL_T  # proud as the posts; the wall's inside face
@@ -1227,9 +1235,8 @@ class Builder:
         vest = Part("Vestibule")
         vx0, vx1, vy1 = VESTIBULE
         vest.box((vx0, yi, -0.1), (vx1, vy1, 0.0), "Wood")
-        vest.box((vx0 - 0.2, yi, 0.0), (vx0, vy1 + 0.2, PLATE_TOP - 0.2), "Dirt")
-        vest.box((vx1, yi, 0.0), (vx1 + 0.2, vy1 + 0.2, PLATE_TOP - 0.2), "Dirt")
-        vest.box((vx0, vy1, 0.0), (vx1, vy1 + 0.2, PLATE_TOP - 0.2), "Dirt")
+        vest.box((vx0 - 0.2, yi, 0.0), (vx0, vy1, PLATE_TOP - 0.2), "Dirt")
+        vest.box((vx1, yi, 0.0), (vx1 + 0.2, vy1, PLATE_TOP - 0.2), "Dirt")
         vest.finish(self.coll)
 
     # ---- roof -------------------------------------------------------------
@@ -1600,10 +1607,47 @@ def check(b):
         problems.append(f"chimney top {CHIMNEY_TOP} is less than 1 m above the roof ({roof_at:.2f})")
     problems += roof_checks(b)
     problems += tile_checks(b)
+    problems += hall_checks(b)
     mp, b.masonry_summary = masonry_checks(b)
     rp, b.render_summary = render_checks(b)
     problems += mp + rp
     return problems, total, per, lo, hi
+
+
+def hall_checks(b):
+    """Revision 6's hall (the Vestibule node):
+    - its back (VESTIBULE[2]) is the rear wall's inside face, measured from
+      the Walls mesh behind the hall;
+    - the Wood floor (top y 0) and both Dirt side walls reach that face;
+    - no back wall: nothing of it inside x -1.9..1.9 above the floor;
+    - under HALL_TRI_BUDGET triangles."""
+    problems = []
+    eps = 1e-5
+    vx0, vx1, vy1 = VESTIBULE
+    walls = bpy.data.objects["Walls"].data.vertices
+    behind = [v.co.y for v in walls if v.co.y > (Y0 + Y1) / 2 and vx0 - 0.2 - eps <= v.co.x <= vx1 + 0.2 + eps]
+    face = min(behind)
+    if abs(face - vy1) > eps:
+        problems.append(f"the hall's back is y {vy1:.3f}, but the rear wall's inside face is y {face:.3f}")
+    vest = bpy.data.objects["Vestibule"]
+    mesh = vest.data
+    vs = [v.co for v in mesh.vertices]
+    if abs(max(v.y for v in vs) - face) > eps:
+        problems.append(f"the hall reaches y {max(v.y for v in vs):.3f}, not the rear wall's {face:.3f}")
+    for mat, x0, x1 in (("Wood", vx0, vx1), ("Dirt", vx0 - 0.2, vx0), ("Dirt", vx1, vx1 + 0.2)):
+        mi = [m.name for m in mesh.materials].index(mat)
+        reach = max((mesh.vertices[i].co.y for p in mesh.polygons if p.material_index == mi
+                     for i in p.vertices if x0 - eps <= mesh.vertices[i].co.x <= x1 + eps), default=-1e9)
+        if abs(reach - face) > eps:
+            problems.append(f"the hall's {mat} at x {x0}..{x1} reaches y {reach:.3f}, not {face:.3f}")
+    for v in vs:
+        if vx0 + eps < v.x < vx1 - eps and v.z > eps:
+            problems.append(f"Vestibule: a vertex over the hall floor at {tuple(round(c, 3) for c in v)} (no back wall)")
+            break
+    n = triangles(vest)
+    if n >= HALL_TRI_BUDGET:
+        problems.append(f"Vestibule: {n} triangles, budget under {HALL_TRI_BUDGET}")
+    return problems
 
 
 def masonry_checks(b):
@@ -2311,6 +2355,55 @@ def render_masonry_preview(b):
     print("wrote", MASONRY_PREVIEW)
 
 
+def render_hall_preview(b):
+    """tavern_exterior_hall.png (revision 6): the hall through the doorway.
+    Top: the doorway from the game's default camera (as the dark-hall
+    capture sees it), 24 px/m toon (3x) beside a smooth render - with no
+    door and no darkening, so the floor and side walls show plainly.
+    Bottom: the same yaw from 60 degrees down with the roof, gables and
+    dormers hidden, so the whole hall shows inside the shell."""
+    import numpy as np
+
+    top = game_crop((0.0, 1.2, 1.9), 6.0, 4.5, DEFAULT_VIEW_YAW, 3, "h_doorway")
+    scene = bpy.context.scene
+    hidden = [bpy.data.objects[n] for n in ROOF_PARTS]
+    for o in hidden:
+        o.hide_render = True
+    W, H = top.shape[1], 720
+    scene.render.resolution_x, scene.render.resolution_y = W, H
+    cam_data = bpy.data.cameras.new("h_cutaway")
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = 12.0 * W / H if W > H else 12.0
+    cam = bpy.data.objects.new("h_cutaway", cam_data)
+    scene.collection.objects.link(cam)
+    scene.camera = cam
+    yaw, pitch = math.radians(DEFAULT_VIEW_YAW), math.radians(60)
+    fwd = Vector((math.sin(yaw) * math.cos(pitch), -math.cos(yaw) * math.cos(pitch), -math.sin(pitch)))
+    cam.location = Vector((0.3, 3.0, 1.5)) - fwd * 80
+    cam.rotation_euler = fwd.to_track_quat("-Z", "Y").to_euler()
+    path = os.path.join(os.path.dirname(HALL_PREVIEW), "_h_cutaway.png")
+    scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    bpy.data.objects.remove(cam)
+    bpy.data.cameras.remove(cam_data)
+    for o in hidden:
+        o.hide_render = False
+    img = bpy.data.images.load(path)
+    low = np.empty(W * H * 4, dtype=np.float32)
+    img.pixels.foreach_get(low)
+    bpy.data.images.remove(img)
+    os.remove(path)
+    low = low.reshape(H, W, 4)
+    sheet = np.concatenate([low, np.ones((16, W, 4), dtype=np.float32), top], axis=0)  # rows bottom-up
+    out = bpy.data.images.new("tavern_exterior_hall", W, sheet.shape[0])
+    out.pixels.foreach_set(sheet.astype(np.float32).ravel())
+    out.filepath_raw = HALL_PREVIEW
+    out.file_format = "PNG"
+    out.save()
+    bpy.data.images.remove(out)
+    print("wrote", HALL_PREVIEW)
+
+
 def export():
     os.makedirs(OUT_DIR, exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -2346,6 +2439,7 @@ def main():
         render_preview(b)
         print(f"tavern_exterior: roof preview ink: {render_roof_preview(b)}")
         render_masonry_preview(b)
+        render_hall_preview(b)
 
 
 if __name__ == "__main__" and bpy.app.background:
