@@ -16,9 +16,9 @@ layout(location = 1) out vec4 oNormal;
 // colour comes from uActorColour. They take the scene's light through its
 // stone ramp - uActorTint is the stone's shadow, mid and lit colours now over
 // its mid colour by day - so they darken and cool with the evening as the
-// ruins do.
+// scene's stone does.
 // Their bands sit lower than the ground's, since most of a figure faces
-// sideways. Glowing materials (eyes, the blade) ignore the light.
+// sideways. Glowing materials (eyes, a blade) ignore the light.
 const int kActorSurface = 16;
 const int kActorMaterials = 64;  // pxe::kActorMaterials
 uniform vec3 uActorColour[kActorMaterials];

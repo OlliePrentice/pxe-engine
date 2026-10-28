@@ -1,6 +1,6 @@
 #include "audio.hpp"
 
-#include <miniaudio.h>
+#include "pxe/audio_device.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -78,9 +78,6 @@ struct Clap {
 }  // namespace
 
 struct Audio::Impl {
-  ma_device device{};
-  bool open = false;
-
   std::atomic<float> windTarget{1.f};
   std::atomic<float> rainTarget{0.f};
   std::atomic<float> master{0.8f}, windVol{0.7f}, rainVol{0.8f}, thunderVol{1.f};
@@ -102,6 +99,10 @@ struct Audio::Impl {
   OnePole hissLow[2], hissHigh[2], roar[2];
   Svf patterBand[2];
   Grains patter[2];
+
+  // Last, so it closes first: the audio thread stops calling render before
+  // anything render reads is destroyed.
+  pxe::AudioDevice device;
 
   void render(float* out, int frames);
   float thunderSample(Clap& c);
@@ -213,26 +214,11 @@ void Audio::Impl::render(float* out, int frames) {
 
 Audio::Audio() : impl_(std::make_unique<Impl>()) {}
 
-Audio::~Audio() {
-  if (impl_->open) ma_device_uninit(&impl_->device);
-}
+Audio::~Audio() = default;
 
 bool Audio::start() {
-  ma_device_config config = ma_device_config_init(ma_device_type_playback);
-  config.playback.format = ma_format_f32;
-  config.playback.channels = 2;
-  config.sampleRate = kRate;
-  config.pUserData = impl_.get();
-  config.dataCallback = [](ma_device* device, void* out, const void*, ma_uint32 frames) {
-    static_cast<Impl*>(device->pUserData)->render(static_cast<float*>(out), static_cast<int>(frames));
-  };
-  if (ma_device_init(nullptr, &config, &impl_->device) != MA_SUCCESS) return false;
-  if (ma_device_start(&impl_->device) != MA_SUCCESS) {
-    ma_device_uninit(&impl_->device);
-    return false;
-  }
-  impl_->open = true;
-  return true;
+  Impl* impl = impl_.get();
+  return impl->device.open(kRate, [impl](float* out, int frames) { impl->render(out, frames); });
 }
 
 void Audio::setWeather(float windStrength, float rain) {

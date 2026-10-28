@@ -71,32 +71,58 @@ So is the Sleeping Fox: [`tools/blender/build_tavern_exterior.py`](tools/blender
 
 ## Build
 
-C++20, CMake 3.20+, and a network connection the first time (GLFW and glm are fetched). OpenGL 4.1 core, GLSL 410.
+C++20, CMake 3.20+ (3.21+ for the presets), and a network connection the first time (GLFW, glm, Dear ImGui and miniaudio are fetched). OpenGL 4.1 core, GLSL 410.
+
+`CMakePresets.json` names three builds: `debug` (`build/debug`), `release` (`build/release`) and `check` (`build-check`, a Debug build for the clean-build check). Each builds the engine, the game and the minimal example, in parallel:
+
+```bash
+cmake --preset release
+cmake --build --preset release
+./build/release/game/pxe                      # the game
+./build/release/examples/minimal/pxe_minimal  # the example
+```
+
+IDEs that read CMake presets (Visual Studio, CLion, VS Code) list the same three.
+
+On macOS and Linux, `tools/build.sh` does the same in one command and can run what it built. It configures the preset the first time, builds it, prints the binaries' paths and, with `game` or `example`, runs that binary with the arguments after `--` and exits with its exit code. It works from any directory and runs the binary in yours, so relative paths such as `--capture shot.png` land where you are:
+
+```bash
+tools/build.sh                     # build release
+tools/build.sh debug               # build debug
+tools/build.sh release game -- --capture shot.png --scene hills
+tools/build.sh example -- --capture out.png
+tools/build.sh -h                  # usage
+```
+
+Without presets, the plain form still works (any build directory; `build/` is git-ignored):
+
+```bash
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
+cmake --build build/release --parallel
+```
 
 ### macOS (Apple Silicon or Intel)
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-./build/game/pxe
+tools/build.sh release game
 ```
 
-The window defaults to 1920×1080, an exact 2× scale of the 960×540 target. Retina framebuffers use `glfwGetFramebufferSize`, and the upscale is `floor` of the fit so it stays an integer.
+The window defaults to 1920×1080, an exact 2× scale of the 960×540 target. Retina framebuffers use the window's framebuffer size (`pxe::Window::framebufferSize`), and the upscale is `floor` of the fit so it stays an integer.
 
 ### Linux
 
 ```bash
 sudo apt install build-essential cmake libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-./build/game/pxe
+tools/build.sh release game
 ```
 
 Headless capture of the low-res target (not the upscaled window):
 
 ```bash
-xvfb-run -a -s "-screen 0 1920x1080x24" ./build/game/pxe --capture shot.png
+xvfb-run -a -s "-screen 0 1920x1080x24" ./build/release/game/pxe --capture shot.png
 ```
+
+To build a new game on the engine, start with [docs/engine-guide.md](docs/engine-guide.md). [`examples/minimal`](examples/minimal/main.cpp) is the small procedural scene it walks through, built with everything else: `./build/release/examples/minimal/pxe_minimal` (or `--capture out.png`).
 
 ## Controls
 

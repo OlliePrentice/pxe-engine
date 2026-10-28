@@ -7,36 +7,30 @@
 #include "settings.hpp"
 #include "tavern.hpp"
 
+#include "pxe/audio_file.hpp"
 #include "pxe/camera.hpp"
 #include "pxe/config.hpp"
-#include "pxe/gl_loader.hpp"
+#include "pxe/image.hpp"
+#include "pxe/input.hpp"
 #include "pxe/lighting.hpp"
+#include "pxe/overlay.hpp"
 #include "pxe/renderer.hpp"
-
-#include <GLFW/glfw3.h>
-
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#endif
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+#include "pxe/scatter.hpp"
+#include "pxe/window.hpp"
 
 #include <glm/geometric.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <optional>
 #include <random>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -104,7 +98,7 @@ struct Options {
   bool haveYaw = false;
   float yawDeg = 45.f;
   float slide = 0.f;
-  float minDist = 0.34f;
+  float minDist = pxe::GrassScatter{}.clumpSpacing;  // metres, as scattered
   bool haveTarget = false;
   glm::vec3 target{0.f};
   // The hooded hero: on when playing, off for captures unless asked for.
@@ -145,7 +139,7 @@ void printUsage() {
   std::fprintf(stderr,
                "pxe — contoured terrain and grass\n"
                "  --width N --height N\n"
-               "  --capture path.png       640x360 low-res framebuffer, then exit\n"
+               "  --capture path.png       the %dx%d low-res view, then exit\n"
                "  --window-png path.png    integer-upscaled window, then exit\n"
                "  --scene ruins|hills|tavern  default ruins; tavern starts inside the Sleeping Fox (in play, at\n"
                "                           its inside door; walking out loads the ruins)\n"
@@ -201,12 +195,14 @@ void printUsage() {
                "  --add-fox X,Z,SECS       ruins: add a fox as a click with the fox tool (4) at world X,Z would:\n"
                "                           in play SECS s in; in captures before the shot, or with --fox-wake\n"
                "                           SECS s into the foxes' run (repeatable)\n"
-               "  --min-dist metres        clump Poisson spacing (default 0.34)\n"
+               "  --min-dist metres        clump Poisson spacing (default %.4g, the engine's)\n"
                "  --time seconds           wind time for captures (default 0)\n"
                "  --hide-grass --magenta --ndl --test-colours --no-tufts --no-edges\n"
                "  --stamps --no-depth\n"
                "  --self-test              snap stability of the low-res image\n"
-               "  --no-vsync\n");
+               "  --no-vsync\n",
+               pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH,
+               static_cast<double>(pxe::GrassScatter{}.clumpSpacing));
 }
 
 bool parseTarget(const char* text, glm::vec3& out) {
@@ -394,19 +390,6 @@ Options parseArgs(int argc, char** argv) {
   return opt;
 }
 
-bool writePng(const std::string& path, int w, int h, const std::vector<std::uint8_t>& bottomUp) {
-  if (w <= 0 || h <= 0 || bottomUp.size() < static_cast<std::size_t>(w * h * 4)) return false;
-  std::filesystem::path file(path);
-  if (file.has_parent_path()) std::filesystem::create_directories(file.parent_path());
-  std::vector<std::uint8_t> top(static_cast<std::size_t>(w * h * 4));
-  const int stride = w * 4;
-  for (int y = 0; y < h; ++y) {
-    std::memcpy(top.data() + static_cast<std::size_t>(h - 1 - y) * stride,
-                bottomUp.data() + static_cast<std::size_t>(y) * stride, stride);
-  }
-  return stbi_write_png(path.c_str(), w, h, 4, top.data(), stride) != 0;
-}
-
 struct Input {
   float panX = 0.f;
   float panY = 0.f;
@@ -433,30 +416,25 @@ struct Input {
   bool quit = false;
 };
 
-bool pressed(GLFWwindow* win, int key, bool& latch) {
-  const bool down = glfwGetKey(win, key) == GLFW_PRESS;
-  const bool edge = down && !latch;
-  latch = down;
-  return edge;
-}
-
-Input pollInput(GLFWwindow* win, bool keyboardTaken, game::Gamepad& pad) {
+// This frame's actions from the keys and the pad. While the menu has the
+// keyboard only Tab and the pad's Menu button (to close it) are read.
+Input pollInput(const pxe::Input& raw, bool keyboardTaken, game::Gamepad& pad) {
+  using Key = pxe::Key;
+  auto pressed = [&](Key key) { return raw.keyPressed(key); };
+  auto down = [&](Key key) { return raw.keyDown(key); };
   Input in;
-  static bool tab = false;
-  if (pressed(win, GLFW_KEY_TAB, tab)) in.toggleMenu = true;
-  pad.poll();
+  if (pressed(Key::kTab)) in.toggleMenu = true;
+  pad.poll(raw);
   if (pad.toggleMenu) in.toggleMenu = true;
   if (keyboardTaken) return in;
   if (pad.togglePause) in.togglePause = true;
-  static bool xkey = false;
-  if (pressed(win, GLFW_KEY_X, xkey) || pad.attack) in.attack = true;
-  in.attackHeld = xkey || pad.attackHeld;
+  if (pressed(Key::kX) || pad.attack) in.attack = true;
+  in.attackHeld = down(Key::kX) || pad.attackHeld;
   in.rotate += pad.rotate;
-  auto down = [&](int key) { return glfwGetKey(win, key) == GLFW_PRESS; };
-  if (down(GLFW_KEY_A) || down(GLFW_KEY_LEFT)) in.panX -= 1.f;
-  if (down(GLFW_KEY_D) || down(GLFW_KEY_RIGHT)) in.panX += 1.f;
-  if (down(GLFW_KEY_W) || down(GLFW_KEY_UP)) in.panY += 1.f;
-  if (down(GLFW_KEY_S) || down(GLFW_KEY_DOWN)) in.panY -= 1.f;
+  if (down(Key::kA) || down(Key::kLeft)) in.panX -= 1.f;
+  if (down(Key::kD) || down(Key::kRight)) in.panX += 1.f;
+  if (down(Key::kW) || down(Key::kUp)) in.panY += 1.f;
+  if (down(Key::kS) || down(Key::kDown)) in.panY -= 1.f;
   // The pad's stick adds to the keys; pushed part way, the hero goes at
   // part pace.
   in.move = glm::vec2{in.panX, in.panY} + pad.move;
@@ -465,43 +443,35 @@ Input pollInput(GLFWwindow* win, bool keyboardTaken, game::Gamepad& pad) {
     in.panX = pad.move.x;
     in.panY = pad.move.y;
   }
-  in.walk = down(GLFW_KEY_LEFT_SHIFT) || down(GLFW_KEY_RIGHT_SHIFT);
+  in.walk = down(Key::kLeftShift) || down(Key::kRightShift);
   const float speed = in.walk ? 14.f : 6.f;
   in.panX *= speed;
   in.panY *= speed;
 
-  static bool q = false, e = false, f1 = false, f2 = false, f3 = false, f4 = false, esc = false, space = false,
-              slower = false, faster = false;
-  if (pressed(win, GLFW_KEY_SPACE, space)) in.togglePause = true;
-  static bool rkey = false;
-  if (pressed(win, GLFW_KEY_R, rkey)) in.cycleRain = true;
-  static bool lkey = false;
-  if (pressed(win, GLFW_KEY_L, lkey)) in.strike = true;
-  static bool mkey = false;
-  if (pressed(win, GLFW_KEY_M, mkey)) in.toggleSound = true;
-  static bool gkey = false;
-  if (pressed(win, GLFW_KEY_G, gkey)) in.igniteGrass = true;
-  static bool fkey = false, ckey = false;
-  if (pressed(win, GLFW_KEY_F, fkey)) in.launchFireball = true;
-  static bool one = false, two = false, three = false, four = false;
-  if (pressed(win, GLFW_KEY_1, one)) in.brush = 0;
-  if (pressed(win, GLFW_KEY_2, two)) in.brush = 1;
-  if (pressed(win, GLFW_KEY_3, three)) in.brush = 2;
-  if (pressed(win, GLFW_KEY_4, four)) in.brush = game::BrushSettings::kFox;
-  if (pressed(win, GLFW_KEY_C, ckey)) in.follow = true;
-  if (down(GLFW_KEY_L)) in.steer.x += 1.f;
-  if (down(GLFW_KEY_J)) in.steer.x -= 1.f;
-  if (down(GLFW_KEY_I)) in.steer.y += 1.f;
-  if (down(GLFW_KEY_K)) in.steer.y -= 1.f;
-  if (pressed(win, GLFW_KEY_LEFT_BRACKET, slower)) in.speedSteps -= 1;
-  if (pressed(win, GLFW_KEY_RIGHT_BRACKET, faster)) in.speedSteps += 1;
-  if (pressed(win, GLFW_KEY_Q, q)) in.rotate -= 1;
-  if (pressed(win, GLFW_KEY_E, e)) in.rotate += 1;
-  if (pressed(win, GLFW_KEY_F1, f1)) in.toggleNdl = true;
-  if (pressed(win, GLFW_KEY_F2, f2)) in.toggleGrass = true;
-  if (pressed(win, GLFW_KEY_F3, f3)) in.toggleMagenta = true;
-  if (pressed(win, GLFW_KEY_F4, f4)) in.shot = true;
-  if (pressed(win, GLFW_KEY_ESCAPE, esc)) in.quit = true;
+  if (pressed(Key::kSpace)) in.togglePause = true;
+  if (pressed(Key::kR)) in.cycleRain = true;
+  if (pressed(Key::kL)) in.strike = true;
+  if (pressed(Key::kM)) in.toggleSound = true;
+  if (pressed(Key::kG)) in.igniteGrass = true;
+  if (pressed(Key::kF)) in.launchFireball = true;
+  if (pressed(Key::k1)) in.brush = 0;
+  if (pressed(Key::k2)) in.brush = 1;
+  if (pressed(Key::k3)) in.brush = 2;
+  if (pressed(Key::k4)) in.brush = game::BrushSettings::kFox;
+  if (pressed(Key::kC)) in.follow = true;
+  if (down(Key::kL)) in.steer.x += 1.f;
+  if (down(Key::kJ)) in.steer.x -= 1.f;
+  if (down(Key::kI)) in.steer.y += 1.f;
+  if (down(Key::kK)) in.steer.y -= 1.f;
+  if (pressed(Key::kLeftBracket)) in.speedSteps -= 1;
+  if (pressed(Key::kRightBracket)) in.speedSteps += 1;
+  if (pressed(Key::kQ)) in.rotate -= 1;
+  if (pressed(Key::kE)) in.rotate += 1;
+  if (pressed(Key::kF1)) in.toggleNdl = true;
+  if (pressed(Key::kF2)) in.toggleGrass = true;
+  if (pressed(Key::kF3)) in.toggleMagenta = true;
+  if (pressed(Key::kF4)) in.shot = true;
+  if (pressed(Key::kEscape)) in.quit = true;
   return in;
 }
 
@@ -532,92 +502,6 @@ int shiftedDiff(const std::vector<std::uint8_t>& base, const std::vector<std::ui
 }
 
 constexpr float kCaptureHour = 15.f;
-
-pxe::Lighting lightingFor(const pxe::Scene& scene, const game::WorldClock& clock) {
-  pxe::Lighting lighting = pxe::lightingAt(scene, clock.hour);
-  lighting.cloudCover = clock.cloudCover;
-  lighting.cloudOffset = clock.cloudOffset;
-  lighting.cloudStrength = clock.cloudStrength;
-  lighting.windDir = clock.windDir();
-  lighting.windStrength = clock.cloudSpeed;
-  // Rain brings a murky, even overcast that fades sun and moon shadows. The
-  // drifting cloud shadows fade out as it sets in - under a rain sky there
-  // are no separate clouds to see - and are gone from moderate rain up.
-  lighting.rain = clock.rain;
-  lighting.overcast = 0.7f * clock.rain;
-  lighting.cloudStrength *= std::clamp(1.f - 2.f * clock.rain, 0.f, 1.f);
-
-  // God rays: only from the sun. Strong in the morning and at dusk while it
-  // is low, barely there with it high. A drizzle catches the light and
-  // brings them out more; from moderate rain up the sun is gone and so are
-  // they. Cloud shadows block them where they fall (in the edge pass).
-  {
-    const float elev = lighting.sunElevationDegrees;
-    const bool sunLights = pxe::sunDirection(scene, clock.hour).y >= pxe::moonDirection(scene, clock.hour).y;
-    auto ramp = [](float x, float a, float b) {
-      const float t = std::clamp((x - a) / (b - a), 0.f, 1.f);
-      return t * t * (3.f - 2.f * t);
-    };
-    const float low = 1.f - ramp(elev, 8.f, 35.f);
-    const float r = clock.rain;
-    const float rainLight = r <= 0.3f ? 1.f + 2.5f * r : std::max(0.f, 1.75f * (1.f - (r - 0.3f) / 0.15f));
-    lighting.rays = sunLights ? ramp(elev, 0.f, 3.f) * (0.1f + low) * rainLight : 0.f;
-    lighting.rayColour = glm::mix(glm::vec3{1.f, 0.97f, 0.86f}, glm::vec3{1.f, 0.8f, 0.56f}, 1.f - ramp(elev, 6.f, 24.f));
-  }
-
-  // Firefly light, like the firelight: direct sun drowns it out, so by day
-  // it shows only in the shade, and at night it lights all round them.
-  {
-    const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
-    lighting.fireflyLight = 1.4f;
-    lighting.fireflyDim = 0.95f * (1.f - dark);
-    const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
-    for (int s = 0; s < pxe::kSurfCount; ++s)
-      lighting.fireflyBand[s] = glm::mix(noon.palette[s].band[2], glm::vec3{0.85f, 1.f, 0.5f}, 0.5f);
-  }
-
-  // Firelight: a warm pool round the campfire. By day direct sun drowns it
-  // out, so it shows only in the shade round the fire; once the sun is down
-  // it lights everything near and carries farther. Each surface's colour in
-  // full firelight is its midday lit colour pulled toward a golden orange.
-  {
-    const float dark = std::clamp((8.f - lighting.sunElevationDegrees) / 16.f, 0.f, 1.f);
-    lighting.fireLight = 1.5f;
-    lighting.fireDim = 0.9f * (1.f - dark);
-    lighting.fireReach = 6.f + 3.5f * dark;
-    const pxe::Lighting noon = pxe::lightingAt(scene, 12.f);
-    for (int s = 0; s < pxe::kSurfCount; ++s)
-      lighting.fireBand[s] = glm::mix(noon.palette[s].band[2] * 1.05f, glm::vec3{1.f, 0.52f, 0.34f}, 0.55f);
-  }
-
-  // A lightning flash: a second light from the flash's direction with hard
-  // shadows, blended over the sun or moon by its strength, and the overcast
-  // drops away while it lasts. Lit faces take the midday colours washed out
-  // to a cold blue-white; the shadow side stays close to the storm's dark.
-  if (clock.flash > 0.f) {
-    const float f = clock.flash;
-    const pxe::Lighting day = pxe::lightingAt(scene, 12.f);
-    auto cold = [](glm::vec3 c) {
-      const float l = glm::dot(c, glm::vec3{0.299f, 0.587f, 0.114f});
-      return glm::mix(c, glm::vec3{l}, 0.55f) * glm::vec3{0.86f, 0.95f, 1.18f};
-    };
-    for (int s = 0; s < pxe::kSurfCount; ++s)
-      for (int b = 0; b < 3; ++b) {
-        pxe::Palette& p = lighting.palette[s];
-        const pxe::Palette& d = day.palette[s];
-        const float k = f * (b == 0 ? 0.35f : 1.f);
-        p.band[b] = glm::mix(p.band[b], cold(d.band[b]), k);
-        p.detail[b] = glm::mix(p.detail[b], cold(d.detail[b]), k);
-        p.tip[b] = glm::mix(p.tip[b], cold(d.tip[b]), k);
-      }
-    lighting.rim = glm::mix(lighting.rim, cold(day.rim), f);
-    lighting.ink = glm::mix(lighting.ink, day.ink, f);
-    lighting.flashDir = clock.flashDir;
-    lighting.overcast *= 1.f - f;
-    lighting.flash = f;
-  }
-  return lighting;
-}
 
 // The fires burning this frame, for the renderer.
 std::vector<pxe::FireDraw> fireDraws(const game::WorldClock& clock) {
@@ -733,11 +617,11 @@ std::vector<game::Blocker> foxBodies(const std::vector<game::Fox>& foxes) {
 // foxes, with their one model, the scene's layout and (where beds may be
 // searched for) the fox's sweep, which stay for the whole run, for adding
 // foxes to it. Built once and in place - the foxes keep a pointer to the
-// model and the renderer to the scene - at the start, or, starting in the
-// tavern, when the hero first walks out of it.
+// model - at the start, or, starting in the tavern, when the hero first
+// walks out of it.
 struct Outdoors {
   bool built = false;
-  pxe::Scene scene;
+  game::BuiltScene world;
   std::optional<pxe::SkinnedModel> foxModel;
   game::Fox::Sweep foxSweep;
   std::vector<game::Fox> foxes;
@@ -783,13 +667,13 @@ bool buildOutdoors(const Options& opt, game::BuildOptions build, Outdoors& out) 
   }
   for (const game::FoxBed& b : out.beds) build.beds.push_back({b.xz, game::Fox::kFootprint});
   try {
-    out.scene = game::buildScene(build);
+    out.world = game::buildScene(build);
   } catch (const std::exception& ex) {
     std::fprintf(stderr, "scene build failed: %s\n", ex.what());
     return false;
   }
   for (std::size_t i = 0; i < out.foxes.size(); ++i) {
-    out.foxes[i].spawn(out.scene, out.beds[i].xz, out.beds[i].yaw);
+    out.foxes[i].spawn(out.world.scene, out.beds[i].xz, out.beds[i].yaw);
     out.foxes[i].setFires(out.layout.campfires, game::kCampfireReach);
     if (opt.foxWalk) out.foxes[i].forceWalk();
   }
@@ -900,11 +784,12 @@ pxe::FrameParams makeParams(const Options& opt) {
   return params;
 }
 
-int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const pxe::Scene& scene) {
+int selfTest(pxe::Renderer& renderer, pxe::Camera& camera, const game::BuiltScene& built) {
+  const pxe::Scene& scene = built.scene;
   pxe::FrameParams params;
   params.lighting = pxe::lightingAt(scene, kCaptureHour);
-  for (std::uint32_t i = 0; i < scene.fires.size(); ++i)
-    params.fires.push_back({i, scene.fires[i].base, 1.f, 0.f, scene.fires[i].size});
+  for (std::uint32_t i = 0; i < built.fires.size(); ++i)
+    params.fires.push_back({i, built.fires[i].base, 1.f, 0.f, built.fires[i].size});
   params.framebufferW = 320;
   params.framebufferH = 180;
   params.present = false;
@@ -951,7 +836,8 @@ int writeAudioWav(const Options& opt) {
   constexpr int kSeconds = 20;
   const int rate = game::Audio::kRate;
   std::vector<float> buf(static_cast<std::size_t>(rate) * 2);
-  std::vector<std::int16_t> pcm;
+  std::vector<float> samples;
+  samples.reserve(buf.size() * kSeconds);
   for (int sec = 0; sec < kSeconds; ++sec) {
     if (sec == 2) audio.thunderAt(-0.7f, 0.05f);
     if (sec == 10) audio.thunderAt(0.7f, 0.8f);
@@ -961,29 +847,11 @@ int writeAudioWav(const Options& opt) {
     for (float v : buf) {
       sum += static_cast<double>(v) * v;
       peak = std::max(peak, std::fabs(v));
-      pcm.push_back(static_cast<std::int16_t>(std::clamp(v, -1.f, 1.f) * 32767.f));
     }
+    samples.insert(samples.end(), buf.begin(), buf.end());
     std::fprintf(stderr, "audio: %2d s  rms %.3f  peak %.3f\n", sec, std::sqrt(sum / buf.size()), peak);
   }
-  std::FILE* f = std::fopen(opt.audioWav.c_str(), "wb");
-  if (!f) return 1;
-  auto u32 = [&](std::uint32_t v) { std::fwrite(&v, 4, 1, f); };
-  auto u16 = [&](std::uint16_t v) { std::fwrite(&v, 2, 1, f); };
-  const std::uint32_t bytes = static_cast<std::uint32_t>(pcm.size() * 2);
-  std::fwrite("RIFF", 1, 4, f);
-  u32(36 + bytes);
-  std::fwrite("WAVEfmt ", 1, 8, f);
-  u32(16);
-  u16(1);
-  u16(2);
-  u32(static_cast<std::uint32_t>(rate));
-  u32(static_cast<std::uint32_t>(rate) * 4);
-  u16(4);
-  u16(16);
-  std::fwrite("data", 1, 4, f);
-  u32(bytes);
-  std::fwrite(pcm.data(), 2, pcm.size(), f);
-  std::fclose(f);
+  if (!pxe::writeWav(opt.audioWav, rate, samples)) return 1;
   std::fprintf(stderr, "pxe: wrote %s\n", opt.audioWav.c_str());
   return 0;
 }
@@ -992,29 +860,20 @@ int main(int argc, char** argv) {
   const Options opt = parseArgs(argc, argv);
   if (!opt.audioWav.empty()) return writeAudioWav(opt);
 
-  if (!glfwInit()) {
-    std::fprintf(stderr, "glfwInit failed\n");
-    return 1;
-  }
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-  glfwWindowHint(GLFW_SAMPLES, 0);
-  glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_FALSE);
-  glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
   const bool headless = opt.selfTest || !opt.capture.empty() || !opt.windowPng.empty() || opt.bench > 0;
-  if (headless || !opt.uiShot.empty()) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-
-  GLFWwindow* window = glfwCreateWindow(opt.width, opt.height, "pxe", nullptr, nullptr);
-  if (!window) {
-    std::fprintf(stderr, "failed to create an OpenGL 4.1 window\n");
-    glfwTerminate();
+  pxe::WindowOptions windowOptions;
+  windowOptions.width = opt.width;
+  windowOptions.height = opt.height;
+  windowOptions.title = "pxe";
+  windowOptions.visible = !headless && opt.uiShot.empty();
+  windowOptions.vsync = opt.vsync && !headless;
+  std::optional<pxe::Window> window;
+  try {
+    window.emplace(windowOptions);
+  } catch (const std::exception& ex) {
+    std::fprintf(stderr, "%s\n", ex.what());
     return 1;
   }
-  glfwMakeContextCurrent(window);
-  glfwSwapInterval(opt.vsync && !headless ? 1 : 0);
-  pxe::loadGl(+[](const char* name) -> void* { return reinterpret_cast<void*>(glfwGetProcAddress(name)); });
 
   int exitCode = 0;
   {
@@ -1027,12 +886,7 @@ int main(int argc, char** argv) {
     }
     if (exitCode == 0) {
       game::BuildOptions build;
-      // Grass and leaf sprites are sized in pixels and their spacing was tuned
-      // at 16 px/m, so scale it to keep the same density per pixel.
-      const float density = pxe::RenderConfig::kPixelsPerUnit / 16.f;
-      build.minDist = opt.minDist / density;
-      build.tuftDist /= density;
-      build.leafDensity *= density * density;
+      build.minDist = opt.minDist;
       build.tufts = opt.tufts && !opt.stamps;
       build.stamps = opt.stamps;
       build.shelterTest = opt.shelterTest;
@@ -1047,24 +901,23 @@ int main(int argc, char** argv) {
       game::BuildOptions tavernBuild;
       tavernBuild.scene = "tavern";
       Outdoors outdoors;
-      std::optional<pxe::Scene> tavern;
-      bool built = true;
+      std::optional<game::BuiltScene> tavern;
+      bool ready = true;
       if (startsInside) {
         try {
           tavern.emplace(game::buildScene(tavernBuild));
         } catch (const std::exception& ex) {
           std::fprintf(stderr, "scene build failed: %s\n", ex.what());
-          built = false;
+          ready = false;
         }
       } else {
-        built = buildOutdoors(opt, build, outdoors);
+        ready = buildOutdoors(opt, build, outdoors);
       }
-      if (!built) {
-        glfwDestroyWindow(window);
-        glfwTerminate();
+      if (!ready) {
         return 1;
       }
-      pxe::Scene& scene = startsInside ? *tavern : outdoors.scene;
+      game::BuiltScene& built = startsInside ? *tavern : outdoors.world;
+      pxe::Scene& scene = built.scene;
       std::vector<game::Fox>& foxes = outdoors.foxes;
       std::optional<pxe::SkinnedModel>& foxModel = outdoors.foxModel;
       renderer.upload(scene);
@@ -1093,8 +946,8 @@ int main(int argc, char** argv) {
       }
 
       pxe::Camera camera;
-      camera.setYawRadians((opt.haveYaw ? opt.yawDeg : scene.yawDegrees) * 3.14159265f / 180.f);
-      camera.setTarget(opt.haveTarget ? opt.target : scene.focus);
+      camera.setYawRadians((opt.haveYaw ? opt.yawDeg : built.yawDegrees) * 3.14159265f / 180.f);
+      camera.setTarget(opt.haveTarget ? opt.target : built.focus);
       if (opt.slide != 0.f) {
         const float yaw = camera.yawRadians();
         const glm::vec3 flatForward{std::sin(yaw), 0.f, std::cos(yaw)};
@@ -1155,8 +1008,8 @@ int main(int argc, char** argv) {
 
       if (opt.bench > 0) {
         // Same frame as the default window, wind running, timed per pass.
-        int fbW = 0, fbH = 0;
-        glfwGetFramebufferSize(window, &fbW, &fbH);
+        const glm::ivec2 fbSize = window->framebufferSize();
+        const int fbW = fbSize.x, fbH = fbSize.y;
         game::WorldClock clock;
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
@@ -1164,7 +1017,7 @@ int main(int argc, char** argv) {
         clock.lightning = opt.lightning;
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
-        clock.placeFires(scene.fires);
+        clock.placeFires(built.fires);
         game::Fireball ball;
         // With --hero, the hero stands at the view's focus facing the camera
         // (in the tavern, at its inside door), idling, kept out of any foxes
@@ -1184,10 +1037,10 @@ int main(int argc, char** argv) {
         renderer.setProfiling(passes);
         double sum[pxe::PassTimes::kCount] = {};
         const int warmup = 10;
-        const double start = glfwGetTime();
+        const double start = window->time();
         double timedStart = start;
         for (int f = 0; f < warmup + opt.bench; ++f) {
-          if (f == warmup) timedStart = glfwGetTime();
+          if (f == warmup) timedStart = window->time();
           pxe::FrameParams params = makeParams(opt);
           params.framebufferW = fbW;
           params.framebufferH = fbH;
@@ -1199,7 +1052,7 @@ int main(int argc, char** argv) {
           scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
           scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
           brushFires(clock, params.gridStrokes);
-          params.lighting = lightingFor(scene, clock);
+          params.lighting = pxe::lightingAt(scene, clock.hour, clock.weather());
           clock.followSun(params.lighting.sunElevationDegrees, 1.f / 60.f);
           params.fires = fireDraws(clock);
           for (game::Fox& fox : foxes) fox.update(scene, 1.f / 60.f, foxes);
@@ -1209,27 +1062,27 @@ int main(int argc, char** argv) {
           for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
           doorOf(scene).pose(params.actors, params.actorMaterials);
           draw(params);
-          glfwSwapBuffers(window);
+          window->swap();
           if (f >= warmup)
             for (int i = 0; i < pxe::PassTimes::kCount; ++i) sum[i] += renderer.passTimes().ms[i];
         }
-        const double wall = (glfwGetTime() - timedStart) / opt.bench * 1000.0;
+        const double wall = (window->time() - timedStart) / opt.bench * 1000.0;
         if (passes) {
           for (int i = 0; i < pxe::PassTimes::kCount; ++i)
             std::fprintf(stderr, "bench: %-10s %6.2f ms (GPU timer)\n", pxe::PassTimes::name(i), sum[i] / opt.bench);
         }
         std::fprintf(stderr, "bench: wall %6.2f ms/frame (%.0f fps uncapped), %dx%d\n", wall, 1000.0 / wall, fbW, fbH);
       } else if (opt.selfTest) {
-        exitCode = selfTest(renderer, camera, scene);
+        exitCode = selfTest(renderer, camera, built);
       } else if (headless) {
-        int fbW = 0, fbH = 0;
-        glfwGetFramebufferSize(window, &fbW, &fbH);
+        const glm::ivec2 fbSize = window->framebufferSize();
+        const int fbW = fbSize.x, fbH = fbSize.y;
         game::WorldClock clock;
         clock.hour = opt.hour >= 0.f ? opt.hour : kCaptureHour;
         clock.cloudCover = opt.clouds;
         clock.rain = opt.rain;
         clock.lightning = opt.lightning;
-        clock.placeFires(scene.fires);
+        clock.placeFires(built.fires);
         game::Fireball ball;
         for (game::WorldClock::Fire& f : clock.fires) {
           f.level = opt.fireLevel;
@@ -1255,7 +1108,7 @@ int main(int argc, char** argv) {
             scriptFireball(opt, ball, clock, scene, f, 1.f / 60.f, params.igniteGrass);
             scriptBrushes(opt, static_cast<float>(f) / 60.f, 1.f / 60.f, params.gridStrokes);
             brushFires(clock, params.gridStrokes);
-            params.lighting = lightingFor(scene, clock);
+            params.lighting = pxe::lightingAt(scene, clock.hour, clock.weather());
             clock.followSun(params.lighting.sunElevationDegrees, 1.f / 60.f);
             params.fires = fireDraws(clock);
             draw(params);
@@ -1346,7 +1199,7 @@ int main(int argc, char** argv) {
           brushFires(clock, params.gridStrokes);
         }
         for (const game::Fox& fox : foxes) fox.pose(params.actors, params.actorMaterials);
-        params.lighting = lightingFor(scene, clock);
+        params.lighting = pxe::lightingAt(scene, clock.hour, clock.weather());
         // After a settle the night-only fires are where it left them;
         // otherwise as the hour has them.
         clock.followSun(params.lighting.sunElevationDegrees, opt.settle > 0.f ? 1.f / 60.f : -1.f);
@@ -1355,15 +1208,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "pxe: snap error %.4f %.4f\n", frame.texelError.x, frame.texelError.y);
         bool ok = true;
         if (!opt.capture.empty()) {
-          ok = writePng(opt.capture, renderer.viewW(), renderer.viewH(),
+          ok = pxe::writePng(opt.capture, renderer.viewW(), renderer.viewH(),
                         renderer.readView()) &&
                ok;
           std::fprintf(stderr, "pxe: %s %s\n", ok ? "wrote" : "failed", opt.capture.c_str());
         }
         if (!opt.windowPng.empty()) {
-          int fbW = 0, fbH = 0;
-          glfwGetFramebufferSize(window, &fbW, &fbH);
-          const bool wrote = writePng(opt.windowPng, fbW, fbH, renderer.readPresented(fbW, fbH));
+          const glm::ivec2 fbSize = window->framebufferSize();
+          const int fbW = fbSize.x, fbH = fbSize.y;
+          const bool wrote = pxe::writePng(opt.windowPng, fbW, fbH, renderer.readPresented(fbW, fbH));
           std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", wrote ? "wrote" : "failed", opt.windowPng.c_str(),
                        fbW, fbH);
           ok = wrote && ok;
@@ -1386,14 +1239,21 @@ int main(int argc, char** argv) {
         clock.windDegrees = opt.windDegrees;
         clock.cloudSpeed = opt.windStrength;
         clock.grassFireLife = opt.fireLife;
-        clock.placeFires(scene.fires);
+        clock.placeFires(built.fires);
         game::SoundSettings sound;
         sound.on = opt.sound;
         game::Audio audio;
         if (!audio.start()) std::fprintf(stderr, "pxe: no audio output, running silent\n");
         int heardStrikes = 0;
+        std::optional<pxe::Overlay> overlay;
+        try {
+          overlay.emplace(*window);
+        } catch (const std::exception& ex) {
+          std::fprintf(stderr, "%s\n", ex.what());
+          return 1;
+        }
         game::SettingsMenu menu;
-        menu.init(window);
+        menu.init(*overlay);
         if (opt.menu) menu.toggle();
         // Averaged over a whole second, so a slow first frame or a hitch
         // does not skew it; with vsync on it tops out at the display rate.
@@ -1413,7 +1273,7 @@ int main(int argc, char** argv) {
         // --ui-shot: the frame to save; with --brush, once the strokes are done.
         const int uiFrames = opt.brushes.empty() ? 8 : static_cast<int>(std::ceil((brushesEnd(opt) + 1.f) * 60.f));
         // Indoors the camera keeps the room's yaw, whatever --yaw asks.
-        if (scene.indoors) camera.setYawRadians(glm::radians(scene.yawDegrees));
+        if (scene.indoors) camera.setYawRadians(glm::radians(built.yawDegrees));
         pxe::CameraFrame lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
         // The hero stands at the view's focus facing the camera (in the
         // tavern, at its inside door); WASD moves it (Shift walks) and the
@@ -1449,7 +1309,6 @@ int main(int argc, char** argv) {
         const std::vector<Options::AddedFox> scriptedFoxes = addedFoxes(opt);
         std::size_t nextScriptedFox = 0;
         float played = 0.f;      // seconds since the start, for --add-fox
-        bool leftHeld = false;   // the left button was down last frame
         constexpr float kNoRoomShown = 2.f;
         float noRoomFor = 0.f;
         glm::vec2 noRoomAt{0.f};
@@ -1503,11 +1362,13 @@ int main(int argc, char** argv) {
           ignite.clear();
           following = false;
           painting = false;
-          renderer.upload(*tavern);
+          // The lawn's burnt grass is kept for the way back out: no grass
+          // fire runs indoors.
+          renderer.upload(tavern->scene, true);
           clock.placeFires(tavern->fires);
-          hero.spawn(*tavern, tavernWay.arrive, tavernWay.arriveYaw);
+          hero.spawn(tavern->scene, tavernWay.arrive, tavernWay.arriveYaw);
           camera.setYawRadians(glm::radians(tavern->yawDegrees));
-          camera.setTarget(framed(*tavern, hero.position() + glm::vec3{0.f, hero.size(), 0.f},
+          camera.setTarget(framed(tavern->scene, hero.position() + glm::vec3{0.f, hero.size(), 0.f},
                                   camera.frame(renderer.rtW(), renderer.rtH())));
           inside = true;
         };
@@ -1519,22 +1380,24 @@ int main(int argc, char** argv) {
         auto goOutside = [&]() {
           if (!outdoors.built) {
             if (!buildOutdoors(opt, build, outdoors)) return;
-            clock.placeFires(outdoors.scene.fires);
-            outdoorYaw = glm::radians(outdoors.scene.yawDegrees);
+            clock.placeFires(outdoors.world.fires);
+            outdoorYaw = glm::radians(outdoors.world.yawDegrees);
           } else {
             clock.fires = outdoorFires;
             clock.nextFireId = outdoorNextFire;
           }
-          renderer.upload(outdoors.scene);
-          hero.spawn(outdoors.scene, ruinsWay.arrive, ruinsWay.arriveYaw);
+          // Its grass fire's burnt grass as it was left.
+          renderer.upload(outdoors.world.scene, true);
+          hero.spawn(outdoors.world.scene, ruinsWay.arrive, ruinsWay.arriveYaw);
           camera.setYawRadians(outdoorYaw);
           camera.setTarget(hero.position() + glm::vec3{0.f, hero.size(), 0.f});
           inside = false;
         };
 
-        double previous = glfwGetTime();
-        while (!glfwWindowShouldClose(window)) {
-          const double now = glfwGetTime();
+        pxe::Input rawInput;
+        double previous = window->time();
+        while (!window->shouldClose()) {
+          const double now = window->time();
           float dt = static_cast<float>(now - previous);
           previous = now;
           fpsTime += dt;
@@ -1545,9 +1408,10 @@ int main(int argc, char** argv) {
             fpsFrames = 0;
           }
           dt = std::clamp(dt, 0.f, 0.05f);
-          glfwPollEvents();
-          Input input = pollInput(window, menu.wantsKeyboard(), gamepad);
-          if (input.quit) glfwSetWindowShouldClose(window, GLFW_TRUE);
+          window->pollEvents();
+          rawInput.update(*window);
+          Input input = pollInput(rawInput, menu.wantsKeyboard(), gamepad);
+          if (input.quit) window->requestClose();
           if (input.toggleMenu) menu.toggle();
           if (input.togglePause) clock.paused = !clock.paused;
           if (input.brush >= 0) brush.kind = brush.kind == input.brush ? game::BrushSettings::kNone : input.brush;
@@ -1557,13 +1421,13 @@ int main(int argc, char** argv) {
             if (inside) goOutside();
             else goInside();
             passage.loaded = true;
-            passage.loadedAt = glfwGetTime();
+            passage.loadedAt = window->time();
             wasInZone = false;
             // The view as it now is, for steering and framing until the next
             // frame is drawn.
             lastFrame = camera.frame(renderer.rtW(), renderer.rtH());
           }
-          pxe::Scene& here = inside ? *tavern : outdoors.scene;
+          pxe::Scene& here = inside ? tavern->scene : outdoors.world.scene;
           game::TavernDoor& door = doorOf(here);
           // While the loading screen is up the hero stands where it is; and
           // indoors the camera keeps the room's yaw, and the brushes, the
@@ -1585,7 +1449,7 @@ int main(int argc, char** argv) {
                            ask.at.x, ask.at.y);
               continue;
             }
-            if (!addFox(foxes, *foxModel, outdoors.foxSweep, outdoors.layout, outdoors.scene, renderer, ask.at,
+            if (!addFox(foxes, *foxModel, outdoors.foxSweep, outdoors.layout, outdoors.world.scene, renderer, ask.at,
                         lastFrame.forward)) {
               noRoomFor = kNoRoomShown;
               noRoomAt = ask.shownAt;
@@ -1652,7 +1516,7 @@ int main(int argc, char** argv) {
             if (inZone && !wasInZone) {
               passage = Passage{};
               passage.active = true;
-              passage.since = glfwGetTime();
+              passage.since = window->time();
               passage.lore = pickLore(loreRng);
             }
             wasInZone = inZone;
@@ -1664,8 +1528,24 @@ int main(int argc, char** argv) {
           if (input.rotate) camera.rotateSteps(input.rotate);
           camera.update(dt);
 
-          int fbW = 0, fbH = 0;
-          glfwGetFramebufferSize(window, &fbW, &fbH);
+          const glm::ivec2 fbSize = window->framebufferSize();
+          const int fbW = fbSize.x, fbH = fbSize.y;
+          // A minimised window can have a 0x0 framebuffer (GLFW on Windows),
+          // and render throws when asked to present at that size. The world
+          // keeps going and so does its sound, but nothing is drawn, the
+          // menu included, until the window has a size again; the wait
+          // keeps the loop from spinning flat out meanwhile.
+          if (fbW <= 0 || fbH <= 0) {
+            audio.setVolumes(sound);
+            audio.setWeather(clock.cloudSpeed, clock.rain);
+            if (clock.strikes != heardStrikes) {
+              heardStrikes = clock.strikes;
+              audio.thunder(glm::dot(clock.flashDir, lastFrame.right) /
+                            std::max(glm::length(glm::vec2{clock.flashDir.x, clock.flashDir.z}), 1e-3f));
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            continue;
+          }
 
           // Spell brushes: the ground under the cursor, picked through the
           // last frame drawn. Held down, the left button paints from where
@@ -1675,8 +1555,7 @@ int main(int argc, char** argv) {
           std::vector<pxe::FireGrid::Stroke> strokes;
           std::vector<glm::vec2> brushOutline;
           if (!inside && !passage.active) {
-            int winW = 0, winH = 0;
-            glfwGetWindowSize(window, &winW, &winH);
+            const int winW = window->windowSize().x;
             const float pointScale = winW > 0 ? static_cast<float>(fbW) / static_cast<float>(winW) : 1.f;
             auto pick = [&](glm::vec2 px, glm::vec3& hit) {
               return here.ground.raycast(renderer.rayThrough(lastFrame, fbW, fbH, px), lastFrame.forward, 400.f, hit);
@@ -1695,30 +1574,25 @@ int main(int argc, char** argv) {
             glm::vec2 cursorPx{-1.f};
             float cursorRadius = brush.radius;
             int cursorKind = brush.kind;
-            const bool leftDown = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+            const bool leftDown = rawInput.mouseDown(pxe::MouseButton::kLeft);
             if (brush.kind == game::BrushSettings::kFox) {
               // A ring as wide as a curl; whether a fox fits is only looked
               // into on a click.
-              double cx = 0.0, cy = 0.0;
-              glfwGetCursorPos(window, &cx, &cy);
-              cursorPx = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
+              cursorPx = rawInput.mousePosition();
               cursorRadius = game::Fox::kFootprint;
               glm::vec3 hit{0.f};
-              if (leftDown && !leftHeld && !menu.wantsMouse() && pick(cursorPx, hit))
+              if (rawInput.mousePressed(pxe::MouseButton::kLeft) && !menu.wantsMouse() && pick(cursorPx, hit))
                 foxAsks.push_back({{hit.x, hit.z}, cursorPx / pointScale});
               painting = false;
             } else if (brush.kind != game::BrushSettings::kNone) {
-              double cx = 0.0, cy = 0.0;
-              glfwGetCursorPos(window, &cx, &cy);
-              cursorPx = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
-              const bool down = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && !menu.wantsMouse();
+              cursorPx = rawInput.mousePosition();
+              const bool down = leftDown && !menu.wantsMouse();
               if (down) paint(painting ? lastPaintPx : cursorPx, cursorPx, brush.radius, brush.kind);
               painting = down;
               lastPaintPx = cursorPx;
             } else {
               painting = false;
             }
-            leftHeld = leftDown;
             while (nextScriptedFox < scriptedFoxes.size() && scriptedFoxes[nextScriptedFox].secs <= played) {
               const glm::vec2 at = scriptedFoxes[nextScriptedFox++].at;
               foxAsks.push_back({at, shown(at) / pointScale});
@@ -1749,7 +1623,6 @@ int main(int argc, char** argv) {
             }
           } else {
             painting = false;
-            leftHeld = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
           }
 
           pxe::FrameParams params = makeParams(opt);
@@ -1760,7 +1633,7 @@ int main(int argc, char** argv) {
           params.fire = view.fire;
           params.rays = view.rays;
           params.fireflies = view.fireflies;
-          params.lighting = lightingFor(here, clock);
+          params.lighting = pxe::lightingAt(here, clock.hour, clock.weather());
           clock.followSun(params.lighting.sunElevationDegrees, dt);
           params.fires = fireDraws(clock);
           // The lawn's grass fire runs only while the hero is out on it; it
@@ -1800,7 +1673,7 @@ int main(int argc, char** argv) {
                           std::max(glm::length(glm::vec2{clock.flashDir.x, clock.flashDir.z}), 1e-3f));
           }
           if (input.shot) {
-            const bool ok = writePng("shot.png", renderer.viewW(), renderer.viewH(),
+            const bool ok = pxe::writePng("shot.png", renderer.viewW(), renderer.viewH(),
                                      renderer.readView());
             std::fprintf(stderr, "pxe: %s shot.png\n", ok ? "wrote" : "failed");
           }
@@ -1812,7 +1685,7 @@ int main(int argc, char** argv) {
             loading.title = "The Sleeping Fox";
             loading.passage = game::kTavernLore[passage.lore];
             loading.opacity =
-                passage.loaded ? static_cast<float>(std::clamp(1.0 - (glfwGetTime() - fadeFrom) / kLoadingFade, 0.0, 1.0)) : 1.f;
+                passage.loaded ? static_cast<float>(std::clamp(1.0 - (window->time() - fadeFrom) / kLoadingFade, 0.0, 1.0)) : 1.f;
           }
           menu.draw(clock, view, sound, brush, brushOutline, noRoomFor > 0.f ? "No room for a fox here" : nullptr, noRoomAt,
                     fps, passage.active ? &loading : nullptr);
@@ -1822,24 +1695,21 @@ int main(int argc, char** argv) {
           }
           ++frameCount;
           if (!opt.uiShot.empty() && frameCount == uiFrames) {
-            const bool ok = writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
+            const bool ok = pxe::writePng(opt.uiShot, fbW, fbH, renderer.readPresented(fbW, fbH));
             std::fprintf(stderr, "pxe: %s %s (%dx%d)\n", ok ? "wrote" : "failed", opt.uiShot.c_str(), fbW, fbH);
             if (!opt.brushes.empty()) std::fprintf(stderr, "pxe: brush picks within %.3f m of the scripted strokes\n", pickError);
-            glfwSetWindowShouldClose(window, GLFW_TRUE);
+            window->requestClose();
           }
           char title[384];
           const int minutes = static_cast<int>(clock.hour * 60.f) % (24 * 60);
           std::snprintf(title, sizeof(title),
                         "pxe  |  %02d:%02d%s  |  Tab settings   Space pause   [ ] speed   WASD / left stick move (Shift walk)   X attack (hold: charge)   Q/E / LB RB yaw   G grass fire   1/2/3 fire, water, regrow brush   4 add a fox   F fireball, IJKL roll   F4 capture   walk through the Sleeping Fox's door to go in",
                         minutes / 60, minutes % 60, clock.paused ? " (paused)" : "");
-          glfwSetWindowTitle(window, title);
-          glfwSwapBuffers(window);
+          window->setTitle(title);
+          window->swap();
         }
-        menu.shutdown();
       }
     }
   }
-  glfwDestroyWindow(window);
-  glfwTerminate();
   return exitCode;
 }

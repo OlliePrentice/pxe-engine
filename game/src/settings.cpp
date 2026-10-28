@@ -1,8 +1,8 @@
 #include "settings.hpp"
 
+#include "pxe/overlay.hpp"
+
 #include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
 
 #include <glm/geometric.hpp>
 
@@ -123,10 +123,10 @@ void WorldClock::followSun(float sunElevationDegrees, float dt) {
   }
 }
 
-void WorldClock::placeFires(const std::vector<pxe::FireSite>& sites) {
+void WorldClock::placeFires(const std::vector<FireSite>& sites) {
   fires.clear();
   nextFireId = 0;
-  for (const pxe::FireSite& site : sites) {
+  for (const FireSite& site : sites) {
     Fire f;
     f.id = nextFireId++;
     f.base = site.base;
@@ -189,41 +189,38 @@ glm::vec2 WorldClock::windDir() const {
   return {std::sin(a), -std::cos(a)};
 }
 
-void SettingsMenu::init(GLFWwindow* window) {
-  IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
-  ImGuiIO& io = ImGui::GetIO();
-  io.IniFilename = nullptr;
-  io.FontGlobalScale = 1.2f;
+pxe::Weather WorldClock::weather() const {
+  pxe::Weather w;
+  w.cloudCover = cloudCover;
+  w.cloudOffset = cloudOffset;
+  w.cloudStrength = cloudStrength;
+  w.windDir = windDir();
+  w.windStrength = cloudSpeed;
+  w.rain = rain;
+  w.flash = flash;
+  w.flashDir = flashDir;
+  return w;
+}
+
+void SettingsMenu::init(pxe::Overlay& overlay) {
+  overlay_ = &overlay;
+  ImGui::GetIO().FontGlobalScale = 1.2f;
   ImGui::StyleColorsDark();
   ImGuiStyle& style = ImGui::GetStyle();
   style.WindowRounding = 6.f;
   style.FrameRounding = 4.f;
   style.Colors[ImGuiCol_WindowBg].w = 0.92f;
-  ImGui_ImplGlfw_InitForOpenGL(window, true);
-  ImGui_ImplOpenGL3_Init("#version 410");
-  ready_ = true;
 }
 
-void SettingsMenu::shutdown() {
-  if (!ready_) return;
-  ImGui_ImplOpenGL3_Shutdown();
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext();
-  ready_ = false;
-}
+bool SettingsMenu::wantsKeyboard() const { return overlay_ && open_ && overlay_->wantsKeyboard(); }
 
-bool SettingsMenu::wantsKeyboard() const { return ready_ && open_ && ImGui::GetIO().WantTextInput; }
-
-bool SettingsMenu::wantsMouse() const { return ready_ && open_ && ImGui::GetIO().WantCaptureMouse; }
+bool SettingsMenu::wantsMouse() const { return overlay_ && open_ && overlay_->wantsMouse(); }
 
 void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
                         const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint,
                         float fps, const LoadingScreen* loading) {
-  if (!ready_) return;
-  ImGui_ImplOpenGL3_NewFrame();
-  ImGui_ImplGlfw_NewFrame();
-  ImGui::NewFrame();
+  if (!overlay_) return;
+  overlay_->begin();
 
   if (open_) {
     ImGui::SetNextWindowPos(ImVec2(16.f, 16.f), ImGuiCond_FirstUseEver);
@@ -407,8 +404,7 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
                   IM_COL32(214, 204, 186, alpha(255)), loading->passage, nullptr, wrap);
   }
 
-  ImGui::Render();
-  ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+  overlay_->end();
 }
 
 }  // namespace game
