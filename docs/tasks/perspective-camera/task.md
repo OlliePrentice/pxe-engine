@@ -1,7 +1,7 @@
 # Perspective first-person camera
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 The engine can only draw through its orthographic camera (`pxe::Camera`: 30° pitch, 45° yaw steps, texel-snapped eye). Add a perspective first-person camera as a general engine capability: an eye position, free yaw and pitch, and a vertical field of view. The renderer draws a scene through it with a sky behind the geometry and distance haze, so a game can be played from eye height. This is the engine half of a first-person desert game (task `desert-poc`, which waits on this one). The orthographic path, and so the existing game's output, must not change at all. `examples/minimal` gains a first-person mode, so the capability can be checked before any game uses it, and so the user can judge whether the art style holds up in first person before the desert game is built.
@@ -21,6 +21,7 @@ The engine can only draw through its orthographic camera (`pxe::Camera`: 30° pi
 - **Mouse look needs input support.** The engine gains cursor capture on `pxe::Window` (the cursor hidden and held, with unbounded motion) and a per-frame mouse motion delta on `pxe::Input`. These are input-device machinery, which `docs/architecture.md` places in the engine.
 - **Example flag.** `pxe_minimal --first-person` renders the existing scene from a fixed eye at standing height (1.7 m above the ground) looking at the stone and tree. It works with `--capture`, which stays deterministic. In the window, the mouse looks around, with no walking. Under perspective the example's grass and tree crown show as bare faceted surfaces with no sprites, and the campfire has no flames or light pool. That is expected.
 - **Look gate.** When this task passes review, the orchestrator stops and gives the user first-person captures at several hours plus a checklist for turning the view in the window. `desert-poc` starts only once the user approves the look.
+- **Also switched off under perspective (cycle 1 review).** Water and its reflections (`water.frag` assumes the orthographic depth buffer) and all `FrameParams::lights` (their screen-tile culling assumes the orthographic projection). `Renderer::rayThrough` and `windowPoint` are orthographic only. The desert game needs none of them, so this follows the "port only what the first user needs" decision; each is ported when a game needs it.
 - **Standard byte-identical cases.** The example's `--first-person --capture` is added to the refactor cases in `CLAUDE.md`. The desert game's capture is added by `desert-poc`.
 
 ## Layering
@@ -64,3 +65,5 @@ None.
 
 ## Cycle log
 - Cycle 1: 2026-10-28 started, base 4b0c221
+- Cycle 1 review: build clean, byte-identical verified, first-person capture deterministic. ISSUE-001 open.
+- Cycle 2: 2026-10-28 started, base f37cf3f, fixing ISSUE-001
