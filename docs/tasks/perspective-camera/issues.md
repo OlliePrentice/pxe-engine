@@ -1,5 +1,5 @@
 ## ISSUE-001: Mouse delta depends on display density
-Status: fixed
+Status: resolved
 Severity: minor
 Source: review
 Found in cycle: 1

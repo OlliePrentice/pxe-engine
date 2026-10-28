@@ -1,6 +1,6 @@
 # Perspective first-person camera
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -35,22 +35,22 @@ The engine can only draw through its orthographic camera (`pxe::Camera`: 30° pi
 - Example: `examples/minimal/main.cpp` gains `--first-person`, using `pxe::FirstPersonCamera` and the mouse delta.
 
 ## Acceptance criteria
-- [ ] `pxe::FirstPersonCamera` exists in `engine/include/pxe/` with setters or fields for eye position, yaw, pitch, vertical FOV (default 60°) and far plane (default 300 m), and a `frame(rtW, rtH)` returning a perspective `CameraFrame`
-- [ ] `CameraFrame` has a projection kind and `fovY`. `pxe::Camera::frame` sets the orthographic kind and every field it set before, unchanged
-- [ ] Perspective frames are not snapped: `texelError` is zero and the eye is the camera's eye
-- [ ] The edge pass rebuilds world positions correctly from the perspective depth buffer, and its depth-step thresholds scale with distance under perspective. The orthographic code path is unchanged
-- [ ] A sky gradient (horizon to zenith, flat bands) fills every pixel with no geometry under perspective, with default day, golden, twilight and night palettes blended by time of day. It is not drawn under the orthographic camera
-- [ ] Haze fades surfaces into the horizon colour over the last 40% of the far distance under perspective only
-- [ ] Under perspective, the shadow map fits a 60 m radius around the eye, pushed ahead along the view
-- [ ] Under perspective, god rays, grass and leaf sprites, rain, flames, fire light circles and fireflies are skipped
-- [ ] `pxe::Window` can capture and release the cursor. `pxe::Input` reports the mouse motion since the previous update
-- [ ] `pxe_minimal --first-person` renders from a fixed eye 1.7 m above the ground looking at the stone and tree, `--capture` works with it and two runs produce identical PNGs, and in the window the mouse turns the view with pitch clamped to ±85°
-- [ ] The engine names no game content and includes no game headers (`docs/architecture.md`)
-- [ ] Byte-identical to the base commit: the game's standard cases in `CLAUDE.md` (default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`, `--self-test`) and `pxe_minimal --capture`
-- [ ] `docs/engine-guide.md` documents `FirstPersonCamera`, the sky, haze, cursor capture and mouse delta, and the passes not yet supported under perspective. Its snippets still match `examples/minimal/main.cpp` word for word
-- [ ] `docs/architecture.md`'s "Where things live" table lists the perspective camera, the sky and haze
-- [ ] `CLAUDE.md` lists the example's `--first-person --capture` as a standard byte-identical case. `README.md` documents the example's new flag
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `pxe::FirstPersonCamera` exists in `engine/include/pxe/` with setters or fields for eye position, yaw, pitch, vertical FOV (default 60°) and far plane (default 300 m), and a `frame(rtW, rtH)` returning a perspective `CameraFrame` — `engine/include/pxe/first_person_camera.hpp`, `FirstPersonCamera::frame`
+- [x] `CameraFrame` has a projection kind and `fovY`. `pxe::Camera::frame` sets the orthographic kind and every field it set before, unchanged — `camera.hpp` `CameraFrame::Projection`, `Camera::frame`; byte-identical verified
+- [x] Perspective frames are not snapped: `texelError` is zero and the eye is the camera's eye — `FirstPersonCamera::frame` sets `texelError` 0, `eye = eye_`
+- [x] The edge pass rebuilds world positions correctly from the perspective depth buffer, and its depth-step thresholds scale with distance under perspective. The orthographic code path is unchanged — `edge.frag` `PERSPECTIVE`: `viewDepth`, `worldAt`, distance-scaled `tol`
+- [x] A sky gradient (horizon to zenith, flat bands) fills every pixel with no geometry under perspective, with default day, golden, twilight and night palettes blended by time of day. It is not drawn under the orthographic camera — `backdrop.frag`, `Renderer::draw` perspective block, `Scene::skyHorizon/skyZenith`, `lightingAt`
+- [x] Haze fades surfaces into the horizon colour over the last 40% of the far distance under perspective only — `edge.frag` `distanceHaze`, `uHazeSpan` 0.6–1.0 × far
+- [x] Under perspective, the shadow map fits a 60 m radius around the eye, pushed ahead along the view — `renderer.cpp` `fitLightAhead`, `kShadowReach` 60
+- [x] Under perspective, god rays, grass and leaf sprites, rain, flames, fire light circles and fireflies are skipped — `Renderer::render` cuts `FrameParams`; water and point lights off too (Decisions)
+- [x] `pxe::Window` can capture and release the cursor. `pxe::Input` reports the mouse motion since the previous update — `Window::setCursorCaptured`, `Input::mouseDelta` (window points, ISSUE-001)
+- [x] `pxe_minimal --first-person` renders from a fixed eye 1.7 m above the ground looking at the stone and tree, `--capture` works with it and two runs produce identical PNGs, and in the window the mouse turns the view with pitch clamped to ±85° — `examples/minimal/main.cpp` `--first-person`, `kMaxPitch`; two captures identical
+- [x] The engine names no game content and includes no game headers (`docs/architecture.md`) — cycle 1 and 2 diffs reviewed
+- [x] Byte-identical to the base commit: the game's standard cases in `CLAUDE.md` (default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`, `--self-test`) and `pxe_minimal --capture` — rerun by the orchestrator against 4b0c221: all cases `cmp` identical
+- [x] `docs/engine-guide.md` documents `FirstPersonCamera`, the sky, haze, cursor capture and mouse delta, and the passes not yet supported under perspective. Its snippets still match `examples/minimal/main.cpp` word for word — First-person camera section; snippets checked against main.cpp
+- [x] `docs/architecture.md`'s "Where things live" table lists the perspective camera, the sky and haze — table row "Perspective first-person camera..."
+- [x] `CLAUDE.md` lists the example's `--first-person --capture` as a standard byte-identical case. `README.md` documents the example's new flag — CLAUDE.md standard cases; README example flags
+- [x] Project builds cleanly from a fresh build directory with CMake — fresh `check` build, cycle 2: only the stb warning
 
 ## Assets
 None.
@@ -67,3 +67,4 @@ None.
 - Cycle 1: 2026-10-28 started, base 4b0c221
 - Cycle 1 review: build clean, byte-identical verified, first-person capture deterministic. ISSUE-001 open.
 - Cycle 2: 2026-10-28 started, base 7326d56 (task.md log fix on top), fixing ISSUE-001
+- Cycle 2 review: build clean, ISSUE-001 resolved. Task complete; waiting on the user's look gate.
