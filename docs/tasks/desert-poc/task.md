@@ -1,6 +1,6 @@
 # First-person desert game: proof of concept
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -47,22 +47,22 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
   - Follows `docs/engine-guide.md`'s start-up order, frame loop and scene build order.
 
 ## Acceptance criteria
-- [ ] `desert/` builds `pxe_desert` in namespace `desert`, added from the root `CMakeLists.txt`, includes only engine headers, and sets its own asset directory under `desert/assets`
-- [ ] `tools/build.sh` builds and can run `desert` with arguments, and its help lists it
-- [ ] `pxe::Surface` has a Sand value, glTF material `Sand` loads as it, and its default palettes match the decided colours. The shader surface constants match
-- [ ] The dune height function gives layered wind-aligned ridges 2–6 m high; the ground is Sand with smooth normals, on a 1 m grid within ±120 m and 4 m cells out to ±380 m with no cracks between them, with no grass
-- [ ] The palm loads from `desert/assets/scenes/date_palm.glb` at the origin, standing on the ground height there
-- [ ] The player spawns 25 m south of the palm, facing it, pitch 0°, with the eye 1.7 m above the ground
-- [ ] WASD at 3.5 m/s, Shift sprint at 6 m/s; left stick move, right stick look, left stick press sprint; pitch clamped to ±85°; Y not inverted
-- [ ] The cursor is captured while playing; Esc releases it, a second Esc quits, a click captures it again
-- [ ] The eye follows the terrain height with smoothing
-- [ ] The player cannot enter the palm's cylinder or leave the middle 160 × 160 m, and slides along both
-- [ ] `--help`, `--capture <png>`, `--hour <0-24>` (default 16.5) and `--window-png <png>` work. Two `--capture` runs give identical PNGs
-- [ ] No weather, clock, audio or `WorldClock` copy in `desert/`
-- [ ] The existing game's standard cases and `pxe_minimal --capture` (both modes) are byte-identical to the cycle base
-- [ ] `docs/art-style.md` is moved to `game/docs/art-style.md`, `desert/docs/art-style.md` exists, `docs/engine-guide.md` has the asset contract including `Sand`, and `CLAUDE.md`, the feature skill and the designer agent point at the per-game style docs
-- [ ] `docs/architecture.md` describes the project as an engine with two games, and its table covers `desert/`. `README.md` documents the desert game, its build and its flags. `CLAUDE.md` describes both games, their binaries, and `pxe_desert --capture` as a standard byte-identical case
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `desert/` builds `pxe_desert` in namespace `desert`, added from the root `CMakeLists.txt`, includes only engine headers, and sets its own asset directory under `desert/assets` — `desert/CMakeLists.txt` (own `PXE_ASSET_DIR`), root `CMakeLists.txt`; only `pxe/` engine headers included
+- [x] `tools/build.sh` builds and can run `desert` with arguments, and its help lists it — `tools/build.sh` target `desert`, listed in `--help`
+- [x] `pxe::Surface` has a Sand value, glTF material `Sand` loads as it, and its default palettes match the decided colours. The shader surface constants match — `mesh.hpp` `kSurfSand`, `gltf.cpp` `surfaceFor`, `scene.cpp` palettes, shader `kSurfaces` 12
+- [x] The dune height function gives layered wind-aligned ridges 2–6 m high; the ground is Sand with smooth normals, on a 1 m grid within ±120 m and 4 m cells out to ±380 m with no cracks between them, with no grass — `world.cpp` `duneHeight`, `appendGround` (smooth normals, 1 m / 4 m stitched ring); ISSUE-001, ISSUE-002
+- [x] The palm loads from `desert/assets/scenes/date_palm.glb` at the origin, standing on the ground height there — `world.cpp` `buildWorld`, placed at `groundHeight(kPalmSpot)`
+- [x] The player spawns 25 m south of the palm, facing it, pitch 0°, with the eye 1.7 m above the ground — `main.cpp` `kSpawn` (0, -25), `Player::spawn` pitch 0
+- [x] WASD at 3.5 m/s, Shift sprint at 6 m/s; left stick move, right stick look, left stick press sprint; pitch clamped to ±85°; Y not inverted — `world.hpp`/`main.cpp` speeds and input mapping, `Player::update` pitch clamp
+- [x] The cursor is captured while playing; Esc releases it, a second Esc quits, a click captures it again — `main.cpp` frame loop Escape/click handling
+- [x] The eye follows the terrain height with smoothing — `Player::update` `kEyeEase`
+- [x] The player cannot enter the palm's cylinder or leave the middle 160 × 160 m, and slides along both — `player.cpp` `outsidePalm`, `kPlayHalf` clamp
+- [x] `--help`, `--capture <png>`, `--hour <0-24>` (default 16.5) and `--window-png <png>` work. Two `--capture` runs give identical PNGs — `main.cpp` flag parsing; two captures identical (orchestrator run)
+- [x] No weather, clock, audio or `WorldClock` copy in `desert/` — no clock, rain, audio or `WorldClock` in `desert/src`; default `pxe::Weather{}` only
+- [x] The existing game's standard cases and `pxe_minimal --capture` (both modes) are byte-identical to the cycle base — orchestrator `cmp` after cycle 1; cycle 2 changed only `desert/` and docs
+- [x] `docs/art-style.md` is moved to `game/docs/art-style.md`, `desert/docs/art-style.md` exists, `docs/engine-guide.md` has the asset contract including `Sand`, and `CLAUDE.md`, the feature skill and the designer agent point at the per-game style docs — `game/docs/art-style.md`, `desert/docs/art-style.md`, guide Asset contract, CLAUDE.md, SKILL.md, designer.md
+- [x] `docs/architecture.md` describes the project as an engine with two games, and its table covers `desert/`. `README.md` documents the desert game, its build and its flags. `CLAUDE.md` describes both games, their binaries, and `pxe_desert --capture` as a standard byte-identical case — architecture.md (two games, desert rows), README.md, CLAUDE.md
+- [x] Project builds cleanly from a fresh build directory with CMake — fresh `check` build after cycle 2: only the stb warning
 
 ## Assets
 - **date_palm**: a single date palm as described in `## Decisions`. Follow `desert/docs/art-style.md`: low-poly, faceted, flat-shaded, one solid colour per material.
@@ -91,3 +91,4 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
 - Cycle 1: 2026-10-28 started, base 4030291 (art style docs split first, by the orchestrator)
 - Cycle 1 review: fresh build clean; existing game and example byte-identical and desert capture deterministic (rerun by the orchestrator). REQ-001 (broader frond blades) done in e1e3506 and checked in an engine capture. ISSUE-001, ISSUE-002 open from user look decisions. The gamepad has no release or quit: out of scope.
 - Cycle 2: 2026-10-28 started, base b19bc75, fixing ISSUE-001, ISSUE-002
+- Cycle 2 review: fresh build clean, ISSUE-001 and ISSUE-002 resolved, captures checked (clean dune bands, hazed horizon from the corner, solid fronds). Task complete.

@@ -1,5 +1,5 @@
 ## ISSUE-001: Dunes shade as a sawtooth triangle checker
-Status: fixed
+Status: resolved
 Severity: major
 Source: review
 Found in cycle: 1
@@ -14,7 +14,7 @@ Root cause: `appendGround` emitted three unshared vertices per triangle, each ca
 Change (`desert/src/world.cpp`): the ground is now indexed, one vertex per grid corner, and each vertex's normal is `duneNormal(x, z)`, a central difference of `duneHeight` 0.5 m either side (`kNormalStep`), as `examples/minimal` builds its ground's normals. The normal depends only on the world position, so the corners the fine and coarse grids share (ISSUE-002) have one normal and the two grids shade alike where they meet. Positions, the (i, j)-(i+1, j+1) split and `groundHeight` are unchanged. In the new `capture_hour16.5.png` the slopes cut into a few clean bands that follow the dunes, and the triangle checker and sawtooth are gone.
 
 ## ISSUE-002: The ground's edge shows as a hard line at the horizon
-Status: fixed
+Status: resolved
 Severity: major
 Source: review
 Found in cycle: 1
