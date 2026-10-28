@@ -71,7 +71,7 @@ struct Doorway {
   bool inZone(glm::vec2 xz) const;
 };
 // The exterior's doorway, in the ruins: its zone is just inside the
-// threshold, in the vestibule, and the hero arrives on the lawn outside,
+// threshold, in the hall, and the hero arrives on the lawn outside,
 // facing away from the tavern.
 Doorway ruinsDoorway();
 // The room's doorway, in the tavern: its zone is on the step outside the
@@ -82,6 +82,9 @@ Doorway tavernDoorway();
 // stool and bench and the brazier, which are left out of the ground, and
 // the two near walls, which the camera sees only as stubs a step high.
 std::vector<Blocker> tavernBlockers();
+// Where the hero may not go in the ruins besides its ground and the foxes:
+// the line across the exterior's hall that it may not pass.
+std::vector<Blocker> ruinsBlockers();
 
 // A tavern door (tools/blender/build_tavern_door.py), hung in a doorway. One
 // model serves every door. It swings into the building by kOpenDegrees over

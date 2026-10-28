@@ -39,6 +39,8 @@ constexpr int kFireShadow = 512;  // per cube face
 constexpr float kFireflyReach = 2.3f;
 // Windows a room's sky light comes through, at most (kSkyWindows in common.glsl).
 constexpr int kSkyWindows = 8;
+// Dark regions drawn, at most (kDarkRegions in common.glsl and edge.frag).
+constexpr int kDarkRegions = 8;
 
 int uloc(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
 
@@ -117,6 +119,37 @@ std::vector<float> ramp(const Lighting& lighting, glm::vec3 (Palette::*field)[3]
   return out;
 }
 
+// The scene's dark regions (Scene::darkRegions), in the toon shaders or the
+// edge pass: per region its centre, its own +x and +z in the world, its half
+// extents, the open face's outward normal in its own frame, and its start
+// and end strengths and fade distance.
+void bindDarkRegions(unsigned prog, const Scene& scene) {
+  std::vector<float> centre, axisX, axisZ, half, open, fade;
+  for (const DarkRegion& r : scene.darkRegions) {
+    if (centre.size() / 3 >= static_cast<std::size_t>(kDarkRegions)) break;
+    const float c = std::cos(r.yaw), s = std::sin(r.yaw);
+    const int face = static_cast<int>(r.openFace);
+    glm::vec3 out{0.f};
+    out[face / 2] = face % 2 == 0 ? 1.f : -1.f;
+    centre.insert(centre.end(), {r.centre.x, r.centre.y, r.centre.z});
+    axisX.insert(axisX.end(), {c, 0.f, -s});
+    axisZ.insert(axisZ.end(), {s, 0.f, c});
+    half.insert(half.end(), {r.halfExtents.x, r.halfExtents.y, r.halfExtents.z});
+    open.insert(open.end(), {out.x, out.y, out.z});
+    fade.insert(fade.end(), {r.startStrength, r.endStrength, r.fadeDistance});
+  }
+  const int count = static_cast<int>(centre.size() / 3);
+  u1i(prog, "uDarkCount", count);
+  if (count > 0) {
+    u3fv(prog, "uDarkCentre", count, centre.data());
+    u3fv(prog, "uDarkAxisX", count, axisX.data());
+    u3fv(prog, "uDarkAxisZ", count, axisZ.data());
+    u3fv(prog, "uDarkHalf", count, half.data());
+    u3fv(prog, "uDarkOpen", count, open.data());
+    u3fv(prog, "uDarkFade", count, fade.data());
+  }
+}
+
 // This frame's firelights, flattened for the toon shaders.
 struct FireUniforms {
   int count = 0;
@@ -192,6 +225,7 @@ void bindToon(unsigned prog, const Lighting& lighting, const Scene& scene, const
   u3fv(prog, "uFireBand", kSurfCount, fireBand.data());
   glUniform4f(uloc(prog, "uHorizon"), lighting.horizon.x, lighting.horizon.y, lighting.horizon.z, lighting.horizon.w);
   u1f(prog, "uHorizonRelief", lighting.horizonRelief);
+  bindDarkRegions(prog, scene);
 }
 
 }  // namespace
@@ -1417,6 +1451,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   const glm::vec3 edgeLight = glm::normalize(lighting.lightDir);
   u3f(progEdge_, "uLight", edgeLight.x, edgeLight.y, edgeLight.z);
   u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
+  // Light rims and point lights stay out of the dark regions.
+  bindDarkRegions(progEdge_, scene);
   u1f(progEdge_, "uRain", scene.indoors ? 0.f : lighting.rain);
   u1i(progEdge_, "uIndoors", scene.indoors ? 1 : 0);
   u1f(progEdge_, "uSunRain", lighting.rain);

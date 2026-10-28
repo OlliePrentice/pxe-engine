@@ -51,6 +51,11 @@ float actorTone(vec3 wpos, vec3 n) {
 vec3 actorColour(int m, vec3 n) {
     vec3 a = uActorColour[m];
     if ((uActorFlags[m] & kActorGlows) != 0) return a;
+    // In a dark region, a share of its mid colour, unlit.
+    if (uDarkCount > 0) {
+        float dark = darkAt(vWorld);
+        if (dark >= 0.0) return a * uActorTint[1] * dark;
+    }
     float tone = actorTone(vWorld, n);
     vec3 col = rampColour(a * uActorTint[0], a * uActorTint[1], a * uActorTint[2], tone);
     float shade = cloudShade(vWorld);
@@ -116,4 +121,10 @@ void main() {
     col = clouded(col, vSurface, shade);
     oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * sunTone * (1.0 - shade)), 1.0);
 #endif
+    // In a dark region, none of the above light reaches: a share of the
+    // surface's mid colour for the time of day, by depth from its opening.
+    if (uDarkCount > 0) {
+        float dark = darkAt(vWorld);
+        if (dark >= 0.0) oColor = vec4(bandColour(vSurface, 1) * dark, 1.0);
+    }
 }

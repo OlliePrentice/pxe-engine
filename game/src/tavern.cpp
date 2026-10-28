@@ -33,7 +33,7 @@ bool Doorway::inZone(glm::vec2 p) const {
 // The exterior (tavern_exterior.glb, assets.md), in its own coordinates and
 // placed by tavernPoint: the door hangs at (-1.1, 0, -0.25) at the exterior's
 // yaw, its leaf closed along z = -0.19 from x -1.1 to 1.1; the doorway's
-// middle is the origin; the vestibule behind it runs back to z = -3. The
+// middle is the origin; the hall behind it runs back to z = -6.05. The
 // zone starts 0.45 m in from the wall's inside face, past where the open
 // door's leaf lies (x -1.49 to -1.1). The hero arrives 2.3 m out on the
 // lawn, clear of the threshold step and the eaves, within reach of the door.
@@ -101,6 +101,16 @@ std::vector<Blocker> tavernBlockers() {
   out.push_back({{-11.5f, -8.9f}, {-11.5f, 8.9f}, 0.2f});
   out.push_back({{-11.7f, -8.7f}, {11.7f, -8.7f}, 0.2f});
   return out;
+}
+
+// The exterior's hall (tavern_exterior.glb, assets.md) runs back from the
+// doorway to the rear wall, but the hero goes no deeper than the vestibule's
+// old back wall let it: an invisible wall on that wall's line, from side
+// wall to side wall (its own coordinates x -1.9 to 1.9, z -3.0 to -3.2).
+std::vector<Blocker> ruinsBlockers() {
+  const glm::vec2 a = xz(tavernPoint({-1.9f, 0.f, -3.1f}));
+  const glm::vec2 b = xz(tavernPoint({1.9f, 0.f, -3.1f}));
+  return {{a, b, 0.1f}};
 }
 
 pxe::SkinnedModel TavernDoor::loadModel() {

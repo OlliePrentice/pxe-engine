@@ -61,6 +61,34 @@ const float kCreaseCos = 0.766;  // cos 40 degrees
 uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
 uniform vec3 uInk;
+// Dark regions (pxe::Scene::darkRegions), as common.glsl has them: a light
+// rim inside one takes the region's share of the rim colour, and no point
+// light reaches into one.
+const int kDarkRegions = 8;  // Renderer: regions past this are left out
+uniform int uDarkCount;
+uniform vec3 uDarkCentre[kDarkRegions];
+uniform vec3 uDarkAxisX[kDarkRegions];
+uniform vec3 uDarkAxisZ[kDarkRegions];
+uniform vec3 uDarkHalf[kDarkRegions];
+uniform vec3 uDarkOpen[kDarkRegions];
+uniform vec3 uDarkFade[kDarkRegions];
+
+// As common.glsl's darkAt: the share a point in a dark region takes, -1
+// outside every region.
+float darkAt(vec3 wpos) {
+    float k = -1.0;
+    for (int i = 0; i < uDarkCount; ++i) {
+        vec3 d = wpos - uDarkCentre[i];
+        vec3 l = vec3(dot(d, uDarkAxisX[i]), d.y, dot(d, uDarkAxisZ[i]));
+        if (any(greaterThan(abs(l), uDarkHalf[i]))) continue;
+        vec3 o = uDarkOpen[i];
+        float depth = dot(uDarkHalf[i], abs(o)) - dot(l, o);
+        vec3 f = uDarkFade[i];
+        float s = f.z > 0.0 ? mix(f.x, f.y, clamp(depth / f.z, 0.0, 1.0)) : f.y;
+        k = k < 0.0 ? max(s, 0.0) : min(k, max(s, 0.0));
+    }
+    return k;
+}
 
 uniform float uRain;        // 0 dry .. 1 downpour (0 indoors: no rain is drawn there)
 uniform float uSunRain;     // the rain as it is, indoors too: how far it has put out direct sun
@@ -110,6 +138,9 @@ uniform vec4 uGridDomain;      // xz of the grid's corner, 1 / its size in metre
 
 out vec4 oColor;
 
+// The world position under a pixel, from depth (below).
+vec3 worldAt(ivec2 p);
+
 // `actorCrease`: a pixel of an actor's creased material, its surface stone.
 vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
     if (uEnabled == 0 || (!built(surface) && surface != kSurfBark)) return col;
@@ -157,6 +188,11 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
     // Bark is painted, not carved: no rims, a faint outline, and its few
     // seam strokes are soft.
     if (surface == kSurfBark) rim = false;
+    // In a dark region a light line takes the region's share of the rim.
+    if (uDarkCount > 0 && (stroke || rim)) {
+        float dark = darkAt(worldAt(p));
+        if (dark >= 0.0) return mix(col, uRim * dark, stroke ? 0.15 : 0.4);
+    }
     if (stroke) return mix(col, uRim, 0.15);
     if (rim) return mix(col, uRim, 0.4);
     if (ink) return mix(col, uInk, surface == kSurfBark ? 0.15 : 0.35);
@@ -356,6 +392,8 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
     if (count == 0) return col;
 #endif
     vec3 s = worldAt(p);
+    // No point light, nor the grass fire's glow, reaches into a dark region.
+    if (uDarkCount > 0 && darkAt(s) >= 0.0) return col;
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
     int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, kSurfaces - 1));
     float k = 0.0;     // fireflies

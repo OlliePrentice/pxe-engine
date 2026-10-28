@@ -993,12 +993,16 @@ int main(int argc, char** argv) {
         return frame;
       };
       // A scene's tavern door (none in the hills), and where the hero may not
-      // go in it: every fox's body in the ruins, or the room's chairs, stools
-      // and near walls in the tavern; and the door's leaf until it is open.
+      // go in it: every fox's body and the line across the tavern's hall in
+      // the ruins, or the room's chairs, stools and near walls in the
+      // tavern; and the door's leaf until it is open.
       auto doorOf = [&](const pxe::Scene& s) -> game::TavernDoor& { return s.indoors ? insideDoor : outsideDoor; };
       const std::vector<game::Blocker> roomBlockers = game::tavernBlockers();
+      const std::vector<game::Blocker> ruinsBlockers =
+          opt.scene == "hills" ? std::vector<game::Blocker>{} : game::ruinsBlockers();
       auto blockersIn = [&](const pxe::Scene& s) {
         std::vector<game::Blocker> out = s.indoors ? roomBlockers : foxBodies(foxes);
+        if (!s.indoors) out.insert(out.end(), ruinsBlockers.begin(), ruinsBlockers.end());
         doorOf(s).block(out);
         return out;
       };

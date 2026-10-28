@@ -65,6 +65,38 @@ uniform float uFireDim;         // how far direct sun or moon light drowns it ou
 uniform vec3 uFireBand[kSurfaces];  // each surface's colour in full firelight
 uniform samplerCubeArray uFireShadow;  // per cube, distance from its fire to the nearest surface, per direction
 
+// Dark regions (pxe::Scene::darkRegions): boxes the scene's light does not
+// reach, each open on one face. Per region its centre, its own +x and +z in
+// the world, its half extents, the open face's outward normal in its own
+// frame, and (start strength, end strength, fade distance).
+const int kDarkRegions = 8;    // Renderer: regions past this are left out
+uniform int uDarkCount;
+uniform vec3 uDarkCentre[kDarkRegions];
+uniform vec3 uDarkAxisX[kDarkRegions];
+uniform vec3 uDarkAxisZ[kDarkRegions];
+uniform vec3 uDarkHalf[kDarkRegions];
+uniform vec3 uDarkOpen[kDarkRegions];
+uniform vec3 uDarkFade[kDarkRegions];
+
+// The share of its mid colour a point inside a dark region takes: the start
+// strength at the open face, moving linearly to the end strength at the
+// fade distance in from it and held there; the darkest where regions
+// overlap. -1 outside every region.
+float darkAt(vec3 wpos) {
+    float k = -1.0;
+    for (int i = 0; i < uDarkCount; ++i) {
+        vec3 d = wpos - uDarkCentre[i];
+        vec3 l = vec3(dot(d, uDarkAxisX[i]), d.y, dot(d, uDarkAxisZ[i]));
+        if (any(greaterThan(abs(l), uDarkHalf[i]))) continue;
+        vec3 o = uDarkOpen[i];
+        float depth = dot(uDarkHalf[i], abs(o)) - dot(l, o);
+        vec3 f = uDarkFade[i];
+        float s = f.z > 0.0 ? mix(f.x, f.y, clamp(depth / f.z, 0.0, 1.0)) : f.y;
+        k = k < 0.0 ? max(s, 0.0) : min(k, max(s, 0.0));
+    }
+    return k;
+}
+
 vec3 bandColour(int surface, int band) {
     return uBand[surface * 3 + band];
 }

@@ -46,9 +46,21 @@ struct Rect {
 };
 // The Sleeping Fox's exterior (its own coordinates, assets.md): its doorway's
 // clear opening, from the wall's inside face out to the eaves' edge, and the
-// vestibule behind it, out to its walls.
+// hall behind it (the `Vestibule` node), out to its side walls and back to
+// the rear wall's inside face.
 constexpr Rect kTavernDoorway{{-1.1f, -0.25f}, {1.1f, 0.85f}};
-constexpr Rect kTavernVestibule{{-1.9f, -3.f}, {1.9f, -0.25f}};
+constexpr Rect kTavernVestibule{{-1.9f, -6.05f}, {1.9f, -0.25f}};
+// The hall seen through the open door is a dark region (pxe::DarkRegion):
+// open on the front wall's inside face (z -0.25), back to the rear wall's
+// (z -6.05), across to the side walls' inner faces (x +-1.9) and from the
+// floor (y 0) to the walls' top (y 4.4). Its floor shows at 35% of its mid
+// colour at the threshold, falling to 5% by 4 m in and held to the back.
+constexpr float kHallDarkStart = 0.35f;
+constexpr float kHallDarkEnd = 0.05f;
+constexpr float kHallDarkFade = 4.f;
+// The region reaches this far past the floor, side walls, top and back, so
+// the faces lying in those planes are inside it, not split pixel by pixel.
+constexpr float kHallDarkMargin = 0.05f;
 // Its room (tavern_interior.glb): the inside door's opening through the +x
 // wall, its jambs included, and the step outside it.
 constexpr Rect kRoomDoorway{{11.3f, -2.4f}, {14.1f, 0.2f}};
@@ -564,8 +576,8 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
       const pxe::Vertex& v = verts[s][indices[s][i]];
       geo.solids.push_back({v.px, v.py, v.pz});
     }
-  // Over the Sleeping Fox's doorway and the vestibule behind it, what is
-  // above head height is left out of the ground, so the hero can walk in.
+  // Over the Sleeping Fox's doorway and the hall behind it, what is above
+  // head height is left out of the ground, so the hero can walk in.
   pxe::buildSceneMaps(scene, geo.surfaces, [](glm::vec2 xz, float y) {
     const glm::vec2 local = tavernLocal(xz);
     return y > kTavernSpot.y + kDoorHeadroom && (kTavernDoorway.holds(local) || kTavernVestibule.holds(local));
@@ -588,6 +600,20 @@ BuiltScene buildRuins(const BuildOptions& options) {
                  f.sheltered ? "sheltered" : "open to the rain");
 
   pxe::uploadScene(scene, geo.surfaces);
+  // The Sleeping Fox's hall, dark through its open door (kHallDark...).
+  {
+    const glm::vec3 lo{-1.9f - kHallDarkMargin, 0.f - kHallDarkMargin, -6.05f - kHallDarkMargin};
+    const glm::vec3 hi{1.9f + kHallDarkMargin, 4.4f + kHallDarkMargin, -0.25f};
+    pxe::DarkRegion hall;
+    hall.centre = tavernPoint(0.5f * (lo + hi));
+    hall.halfExtents = 0.5f * (hi - lo);
+    hall.yaw = kTavernYaw;
+    hall.openFace = pxe::BoxFace::kPosZ;
+    hall.startStrength = kHallDarkStart;
+    hall.endStrength = kHallDarkEnd;
+    hall.fadeDistance = kHallDarkFade;
+    scene.darkRegions.push_back(hall);
+  }
 
   // One generator feeds the grass and then the leaves, so the lawn and the
   // crowns come out the same every time.
