@@ -66,4 +66,4 @@ None.
 ## Cycle log
 - Cycle 1: 2026-10-28 started, base 4b0c221
 - Cycle 1 review: build clean, byte-identical verified, first-person capture deterministic. ISSUE-001 open.
-- Cycle 2: 2026-10-28 started, base f37cf3f, fixing ISSUE-001
+- Cycle 2: 2026-10-28 started, base 7326d56 (task.md log fix on top), fixing ISSUE-001
