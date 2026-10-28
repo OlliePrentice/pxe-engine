@@ -2,7 +2,7 @@
 
 This guide is for anyone, person or model, starting a new game on the pxe engine. It covers how to add the engine to a project, the order things are created in, what a frame looks like, how to build a scene, and the contracts the engine relies on. It ends with a short reference to every public header.
 
-A complete, small program follows it: [`examples/minimal/main.cpp`](../examples/minimal/main.cpp). It builds a procedural scene (rolling grass, a standing stone, a tree, a campfire on a slab), lights it at a fixed hour, and draws it in a window. With `--capture out.png` it renders a few frames offscreen, writes the view to a PNG and exits. `--first-person` shows the same scene from standing height through the perspective camera, turned by the mouse, and `--hour H` lights it at another hour. The snippets below come from it. It is built with the rest of this repository, so it always compiles against the current headers.
+A complete, small program follows it: [`examples/minimal/main.cpp`](../examples/minimal/main.cpp). It builds a procedural scene (rolling grass, a standing stone, a tree, a campfire on a slab), lights it at a fixed hour, and draws it in a window. With `--capture out.png` it renders a few frames offscreen, writes the view to a PNG and exits. `--first-person` shows the same scene from standing height through the perspective camera, turned by the mouse and walked with WASD, and `--hour H` lights it at another hour. The snippets below come from it. It is built with the rest of this repository, so it always compiles against the current headers.
 
 ## What the engine is and isn't
 pxe is a C++20 engine for pixel-art 3D games in the style of t3ssel8r's videos. Everything is drawn into a low-resolution target (960x540 at 24 pixels per metre, `pxe::RenderConfig`) through an orthographic camera pitched 30° down, or through a perspective first-person camera (see [First-person camera](#first-person-camera)), then scaled up by a whole number to the window. Surfaces are lit with a hard three-step toon ramp per material. Grass and leaves are instanced sprites drawn in the fragment shader. On top of that it provides shadows, water reflections, outlines, god rays, rain, lightning, a day/night palette blend, campfires, a grass fire that spreads on the GPU, fireflies, skinned characters, input, a Dear ImGui overlay and audio output.
@@ -111,7 +111,7 @@ A frame is: poll input, update the game, work out the lighting, render, draw any
 
 ```cpp
 pxe::Input input;
-// Mouse look holds the cursor in the window; Escape still closes it.
+// Mouse look holds the cursor in the window.
 if (firstPerson) window.setCursorCaptured(true);
 double previous = window.time();
 while (!window.shouldClose()) {
@@ -121,15 +121,30 @@ while (!window.shouldClose()) {
 
   window.pollEvents();
   input.update(window);
-  if (input.keyPressed(pxe::Key::kEscape)) window.requestClose();
-  if (input.keyPressed(pxe::Key::kQ)) camera.rotateSteps(-1);
-  if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
-  camera.update(dt);
   if (firstPerson) {
-    // Moving the mouse right turns right (a smaller yaw), down looks down.
-    const glm::vec2 turn = input.mouseDelta() * kLookPerPoint;
-    eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
-    eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
+    // Escape lets the cursor go, and quits once it is free; a click
+    // takes it back. The view looks and walks only while it is held.
+    if (input.keyPressed(pxe::Key::kEscape)) {
+      if (window.cursorCaptured()) {
+        window.setCursorCaptured(false);
+      } else {
+        window.requestClose();
+      }
+    } else if (!window.cursorCaptured() && input.mousePressed(pxe::MouseButton::kLeft)) {
+      window.setCursorCaptured(true);
+    }
+    if (window.cursorCaptured()) {
+      // Moving the mouse right turns right (a smaller yaw), down looks down.
+      const glm::vec2 turn = input.mouseDelta() * kLookPerPoint;
+      eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
+      eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
+      walk(eyeCamera, input, dt);
+    }
+  } else {
+    if (input.keyPressed(pxe::Key::kEscape)) window.requestClose();
+    if (input.keyPressed(pxe::Key::kQ)) camera.rotateSteps(-1);
+    if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
+    camera.update(dt);
   }
 
   // A minimised window can have a 0x0 framebuffer, and render throws when
@@ -171,7 +186,7 @@ pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float t
 Step by step:
 
 - **Input.** `Window::pollEvents()` first, then `Input::update(window)`. `keyDown` is the state now. `keyPressed` is true only on the frame a key goes down. The mouse (`mousePosition` in framebuffer pixels from the top left, `mouseDelta` for how far it moved since the last update, in window points, `mouseDown`, `mousePressed`) and the first connected gamepad (`gamepadDown`, `gamepadPressed`, `gamepadStick` with a dead zone, `gamepadAxis` raw) work the same way. What a key does is the game's decision. If an `Overlay` is up, skip game keys while `Overlay::wantsKeyboard()` is true and clicks while `wantsMouse()` is true.
-- **Game update.** Move your characters, advance your clock and weather, and update the camera (`Camera::update(dt)`).
+- **Game update.** Move your characters, advance your clock and weather, and update the camera (`Camera::update(dt)`, or move and turn a `FirstPersonCamera`).
 - **Lighting.** `pxe::lightingAt(scene, hour, weather)` turns the hour (0-24) and a `pxe::Weather` into a `pxe::Lighting`: the sun or moon direction, the palettes blended for the time of day, clouds, wind, rain, god rays, firefly and firelight colours and any lightning flash. Use this three-argument form for the game's frames. The two-argument `lightingAt(scene, hour)` leaves clouds, wind, rain, firelight and firefly light at zero, so fires draw flames but light nothing: it suits tests that want the sun and palette alone. `Weather` holds what your game decides: `cloudCover`, `cloudOffset`, `cloudStrength`, `windDir`, `windStrength`, `rain`, `flash` and `flashDir`. A default `Weather{}` is clear and dry, with the wind at its default strength (1) blowing toward +x.
 - **Render.** Fill a `pxe::FrameParams` and call `Renderer::render(scene, camera.frame(renderer.rtW(), renderer.rtH()), params)`. Pass the renderer's padded target size (`rtW()`, `rtH()`) to `Camera::frame` (or `FirstPersonCamera::frame`), not the window's. Set `framebufferW` and `framebufferH` to `Window::framebufferSize()` every frame, as the window may be resized or on a high-DPI display. They default to 0, and `render` throws `std::invalid_argument` if `present` is true and either is not positive. With `present` false they are not used and may stay 0. Set `time` to seconds of game time. It drives grass wind, fire, fireflies and water. Hold it fixed for repeatable captures. With `present` true (the default), `render` ends by scaling the view into the window's framebuffer, centred with black borders.
 - **Overlay.** Between `Overlay::begin()` and `Overlay::end()` the game calls ImGui itself. `end()` draws the UI over the presented frame, so call it after `render` and before `swap`:
@@ -233,11 +248,36 @@ eyeCamera.setPitchRadians(-std::atan2(look.y, std::hypot(look.x, look.z)));
 
 ```cpp
 pxe::Input input;
-// Mouse look holds the cursor in the window; Escape still closes it.
+// Mouse look holds the cursor in the window.
 if (firstPerson) window.setCursorCaptured(true);
 ```
 
-and turns the view by `mouseDelta()` each frame (see [The frame loop](#the-frame-loop)).
+and turns the view by `mouseDelta()` each frame while the cursor is held (see [The frame loop](#the-frame-loop)). Escape releases the cursor, a left click captures it again, and Escape with the cursor free quits. While the cursor is free the view neither turns nor walks.
+
+**Walking.** The camera only holds the eye; moving it is the game's. The example's walker moves it with WASD along the view's flat forward and right (3.5 m/s, 6 m/s with Shift), keeps it 1.7 m above the ground with a short ease so the slopes don't jolt the view, and holds it 2 m inside the ground's edges. It has no collision: it walks through the stone, the slab and the tree. A game writes its own, as the player is game code:
+
+```cpp
+void walk(pxe::FirstPersonCamera& eyeCamera, const pxe::Input& input, float dt) {
+  const float yaw = eyeCamera.yawRadians();
+  const glm::vec2 forward{std::sin(yaw), std::cos(yaw)};  // in x and z
+  const glm::vec2 right{-std::cos(yaw), std::sin(yaw)};
+  glm::vec2 move{0.f};
+  if (input.keyDown(pxe::Key::kW)) move += forward;
+  if (input.keyDown(pxe::Key::kS)) move -= forward;
+  if (input.keyDown(pxe::Key::kD)) move += right;
+  if (input.keyDown(pxe::Key::kA)) move -= right;
+  glm::vec3 eye = eyeCamera.eye();
+  if (glm::dot(move, move) > 0.f) {
+    const bool sprint = input.keyDown(pxe::Key::kLeftShift) || input.keyDown(pxe::Key::kRightShift);
+    const glm::vec2 step = glm::normalize(move) * (sprint ? kSprintSpeed : kWalkSpeed) * dt;
+    eye.x = std::clamp(eye.x + step.x, -kWalkHalf, kWalkHalf);
+    eye.z = std::clamp(eye.z + step.y, -kWalkHalf, kWalkHalf);
+  }
+  const float standing = groundHeight(eye.x, eye.z) + kEyeHeight;
+  eye.y += (standing - eye.y) * (1.f - std::exp(-kEyeEase * dt));
+  eyeCamera.setEye(eye);
+}
+```
 
 ## Building a Scene
 A `pxe::Scene` is plain data plus GPU meshes:

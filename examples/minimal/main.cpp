@@ -2,8 +2,9 @@
 // stone, a tree and a campfire on a stone slab - lit at a fixed hour and drawn
 // in a window until it is closed or Escape is pressed. Q and E turn the view.
 // With --first-person it is seen from standing height through a perspective
-// camera instead, looking at the stone and the tree, and the mouse looks
-// around.
+// camera instead, looking at the stone and the tree: the mouse looks around,
+// WASD walks (Shift sprints), Escape lets the cursor go and a click takes it
+// back, and Escape with the cursor free quits.
 //
 //   pxe_minimal                     open the window
 //   pxe_minimal --capture out.png   draw a few frames offscreen, write the
@@ -52,11 +53,16 @@ constexpr float kGroundHalf = 40.f;         // the ground runs -40..40 m in x an
 constexpr float kGroundCell = 0.5f;
 constexpr int kCaptureFrames = 4;
 // The first-person view: an eye at standing height, reaching just past the
-// ground's far edges so they fade into the sky, turned by the mouse.
+// ground's far edges so they fade into the sky, turned by the mouse and
+// walked by the keys.
 constexpr float kEyeHeight = 1.7f;
 constexpr float kFirstPersonFar = 50.f;
 constexpr float kLookPerPoint = 0.0015f;        // radians per window point of mouse motion
 constexpr float kMaxPitch = 85.f * kPi / 180.f;  // up or down
+constexpr float kWalkSpeed = 3.5f;              // metres a second
+constexpr float kSprintSpeed = 6.f;             // with Shift held
+constexpr float kWalkHalf = kGroundHalf - 2.f;  // the walk stays 2 m inside the ground's edges
+constexpr float kEyeEase = 10.f;                // how fast the eye settles to standing height, per second
 
 // Rolling ground, about a metre from crest to trough.
 float groundHeight(float x, float z) { return 0.5f * std::sin(0.21f * x + 0.4f) * std::cos(0.17f * z - 0.3f); }
@@ -184,6 +190,31 @@ World buildWorld() {
   return world;
 }
 
+// The example's own walker: WASD along the view's flat forward and right,
+// Shift to sprint, held inside the ground's edges, the eye eased to standing
+// height over the rolling ground so its slopes don't jolt the view. Nothing
+// stops it walking through the stone, the slab or the tree.
+void walk(pxe::FirstPersonCamera& eyeCamera, const pxe::Input& input, float dt) {
+  const float yaw = eyeCamera.yawRadians();
+  const glm::vec2 forward{std::sin(yaw), std::cos(yaw)};  // in x and z
+  const glm::vec2 right{-std::cos(yaw), std::sin(yaw)};
+  glm::vec2 move{0.f};
+  if (input.keyDown(pxe::Key::kW)) move += forward;
+  if (input.keyDown(pxe::Key::kS)) move -= forward;
+  if (input.keyDown(pxe::Key::kD)) move += right;
+  if (input.keyDown(pxe::Key::kA)) move -= right;
+  glm::vec3 eye = eyeCamera.eye();
+  if (glm::dot(move, move) > 0.f) {
+    const bool sprint = input.keyDown(pxe::Key::kLeftShift) || input.keyDown(pxe::Key::kRightShift);
+    const glm::vec2 step = glm::normalize(move) * (sprint ? kSprintSpeed : kWalkSpeed) * dt;
+    eye.x = std::clamp(eye.x + step.x, -kWalkHalf, kWalkHalf);
+    eye.z = std::clamp(eye.z + step.y, -kWalkHalf, kWalkHalf);
+  }
+  const float standing = groundHeight(eye.x, eye.z) + kEyeHeight;
+  eye.y += (standing - eye.y) * (1.f - std::exp(-kEyeEase * dt));
+  eyeCamera.setEye(eye);
+}
+
 // One frame's draw list: everything the renderer needs, built fresh.
 pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float time, float hour) {
   pxe::FrameParams params;
@@ -268,7 +299,7 @@ int main(int argc, char** argv) {
     }
 
     pxe::Input input;
-    // Mouse look holds the cursor in the window; Escape still closes it.
+    // Mouse look holds the cursor in the window.
     if (firstPerson) window.setCursorCaptured(true);
     double previous = window.time();
     while (!window.shouldClose()) {
@@ -278,15 +309,30 @@ int main(int argc, char** argv) {
 
       window.pollEvents();
       input.update(window);
-      if (input.keyPressed(pxe::Key::kEscape)) window.requestClose();
-      if (input.keyPressed(pxe::Key::kQ)) camera.rotateSteps(-1);
-      if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
-      camera.update(dt);
       if (firstPerson) {
-        // Moving the mouse right turns right (a smaller yaw), down looks down.
-        const glm::vec2 turn = input.mouseDelta() * kLookPerPoint;
-        eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
-        eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
+        // Escape lets the cursor go, and quits once it is free; a click
+        // takes it back. The view looks and walks only while it is held.
+        if (input.keyPressed(pxe::Key::kEscape)) {
+          if (window.cursorCaptured()) {
+            window.setCursorCaptured(false);
+          } else {
+            window.requestClose();
+          }
+        } else if (!window.cursorCaptured() && input.mousePressed(pxe::MouseButton::kLeft)) {
+          window.setCursorCaptured(true);
+        }
+        if (window.cursorCaptured()) {
+          // Moving the mouse right turns right (a smaller yaw), down looks down.
+          const glm::vec2 turn = input.mouseDelta() * kLookPerPoint;
+          eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
+          eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
+          walk(eyeCamera, input, dt);
+        }
+      } else {
+        if (input.keyPressed(pxe::Key::kEscape)) window.requestClose();
+        if (input.keyPressed(pxe::Key::kQ)) camera.rotateSteps(-1);
+        if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
+        camera.update(dt);
       }
 
       // A minimised window can have a 0x0 framebuffer, and render throws when

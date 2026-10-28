@@ -128,3 +128,46 @@ Build: pass
 ### Known limitations
 - **Look speed is untuned.** `kLookPerPoint` kept the value 0.0015. On a 2x display this halves the cycle 1 look speed (it would take 0.003 to keep it). Nobody had playtested cycle 1, so no tuned feel was lost. The value can be set at the look gate.
 - Everything else from cycle 1's known limitations still applies, except the mouse delta units limitation, which this cycle fixes.
+
+## Cycle 3
+Build: pass
+
+### Changes
+- `examples/minimal/main.cpp`: `--first-person` now walks. New `walk()` moves the eye with WASD along the view's flat forward and right: 3.5 m/s (`kWalkSpeed`), or 6 m/s with either Shift (`kSprintSpeed`). Diagonals are normalised. The eye is held within ±38 m in x and z (`kWalkHalf`, 2 m inside the ground's edges), and is eased toward `groundHeight + 1.7` at rate `kEyeEase` = 10/s (a 0.1 s time constant). The frame loop splits by mode. First person: Escape releases the cursor, Escape with the cursor free quits, and a left click recaptures it. Mouse look and walking run only while the cursor is captured. Orthographic: Escape, Q, E and `camera.update(dt)` are exactly as before. The file header comment describes the new controls.
+- `docs/engine-guide.md`: the frame-loop and cursor-capture snippets are re-copied from main.cpp. There is a new **Walking** paragraph with the `walk()` snippet, and the Mouse look paragraph describes the Escape/click handling. The intro and the "Game update" bullet mention walking and the first-person eye.
+- `README.md`: the example's first-person controls (look, WASD, Shift, no collision, edge clamp, Escape/click).
+
+### Issues addressed
+- None open. This cycle adds the "Walking in the example" decision and its acceptance criterion.
+
+### Layering
+- Engine: none. It uses the existing `Window::setCursorCaptured`/`cursorCaptured`, `Input::mouseDelta`/`mousePressed`/`keyDown` and `FirstPersonCamera::eye`/`setEye`.
+- Game: none. `game/` is unchanged.
+- Example: the walker is the example's own free function `walk()` in `examples/minimal/main.cpp`, acting on the `FirstPersonCamera` that `main` owns.
+- Misplaced code touched: none.
+
+### Verification
+- Release build, no warnings.
+- Orthographic outputs are byte-identical (`cmp`) to the 4b0c221 base build: the game's default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`, `pxe_minimal --capture`. The `--self-test` logs are identical.
+- `pxe_minimal --first-person --capture` (default hour, `--hour 16.5`, `--hour 21`) is byte-identical to a build of cf02b7b (cycle 3 base). The capture path returns before any input is read.
+- Every guide cpp snippet that matched main.cpp at the base still matches, and so does the new `walk()` snippet. The same five general-usage snippets as before don't come from the example.
+
+### How to playtest
+Run `./build/release/examples/minimal/pxe_minimal --first-person`:
+- The cursor is hidden on start. The mouse looks around as in cycle 2.
+- W walks toward where you look, S backs away, A strafes left and D strafes right. Looking up or down doesn't change walking speed, because movement uses the flat forward.
+- W+A (any diagonal) should be no faster than W alone.
+- Hold Shift (left or right) while walking: it is clearly faster (6 vs 3.5 m/s).
+- Walk over the rolling ground: the eye rises and falls with it smoothly, with no jolts, and stays at standing height.
+- Walk through the stone, the slab and the tree: there is no collision, by design.
+- Walk to each ground edge and corner: you stop 2 m short of the edge and can slide along it.
+- Watch edge crawl on the stone, slab and trunk outlines and on the ground facets while walking and strafing. This is the point of this cycle's look-gate check.
+- Press Escape: the cursor reappears, and the mouse and WASD do nothing. Click in the window: the cursor is captured again, and the view doesn't jump. Press Escape twice: the window closes.
+- Run `pxe_minimal` without `--first-person`: Q and E turn the view, Escape quits at once, and the cursor stays visible.
+
+### Known limitations
+- Look and walk pause while the cursor is released. The spec says the cursor is captured while walking. I read that as walking only while it is captured.
+- In first-person mode Q and E no longer turn the unused orthographic camera. Before, they turned it with no visible effect, so nothing on screen changes.
+- A long frame stall (dragging the window, for example) moves the eye by speed × the stall time in one step. The edge clamp still holds.
+- Keyboard and mouse play isn't exercised by any automated check. It needs the playtest above.
+- Everything from cycles 1 and 2's known limitations still applies.
