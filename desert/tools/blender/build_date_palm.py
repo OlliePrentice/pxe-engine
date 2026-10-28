@@ -19,7 +19,7 @@ vertical so the collision cylinder fits it. The trunk is a stack of short
 from the one below, so the cut frond stubs read as stepped, scaly rings.
 A faceted knob caps it, and 18 fronds (3-4 m) leave the knob in three
 tiers: upright inner ones, spreading middle ones, and drooping outer ones.
-Each frond is a thin closed rib (a three-sided prism) with a row of flat
+Each frond is a thin closed rib (a three-sided prism) with six broad, flat
 triangular blades either side. Meshes are drawn back-face culled, so every
 blade is two-sided: a triangle and a reversed copy on its own vertices.
 Three blocky date clusters (stacked boxes on a stalk) hang below the crown.
@@ -65,7 +65,7 @@ def srgb_hex(h):
 MATERIALS = {"Bark": srgb_hex(0x8a8684), "Leaf": srgb_hex(0x68905a)}
 OBJECTS = {"Palm_Trunk": "Bark", "Palm_Fronds": "Leaf", "Palm_Dates": "Bark"}
 
-TRI_BUDGET = (2600, 3300)  # the task: about 3,000
+TRI_BUDGET = (1900, 2300)  # the task: about 3,000 or below; revision 2 (6 blades a side) is 2,080
 
 # Trunk
 SIDES = 7
@@ -91,7 +91,10 @@ TIERS = [
 RIB_SEGS = 6
 RIB_W0, RIB_W1 = 0.06, 0.015   # rib half-width at the base and the tip
 RIB_H0, RIB_H1 = 0.05, 0.012   # rib half-height
-BLADES = 15                    # per side
+BLADES = 6                     # per side: broad enough to stay solid (3+ px wide) at 25 m
+# Revision 1 drew one random number per blade, 15 a side. Each frond still
+# draws that many, so the fronds' and dates' placement stays as it was.
+BLADE_DRAWS = 30
 BLADE_FROM, BLADE_TO = 0.17, 0.98   # the blades run over this fraction of the frond
 BLADE_FWD = math.radians(38.0)  # blade angle from the rib, toward the tip
 BLADE_V = math.radians(22.0)    # blades rise out of the frond plane: a V
@@ -297,13 +300,14 @@ class Builder:
         # Blades: flat triangles either side, each with a reversed copy.
         s0, s1 = BLADE_FROM * length, BLADE_TO * length
         slot = (s1 - s0) / BLADES
-        for sgn in (-1.0, 1.0):
+        jitter = [self.rng.random() for _ in range(BLADE_DRAWS)]
+        for side_i, sgn in enumerate((-1.0, 1.0)):
             for j in range(BLADES):
                 sa = s0 + slot * j
                 sb = sa + slot * BLADE_FOOT
                 u = (j + 0.5) / BLADES
                 blen = (0.28 + 0.62 * math.sin(math.pi * (0.12 + 0.82 * u))) * (length / 3.6)
-                blen *= 1.0 + 0.12 * (self.rng.random() - 0.5)
+                blen *= 1.0 + 0.12 * (jitter[side_i * BLADE_DRAWS // 2 + j] - 0.5)
                 sm = 0.5 * (sa + sb)
                 t, n, sd = tangent(sm), normal(sm), sidev(sm)
                 w = lerp(RIB_W0, RIB_W1, sm / length) * 0.7
