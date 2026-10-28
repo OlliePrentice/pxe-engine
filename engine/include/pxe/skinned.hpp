@@ -28,7 +28,7 @@ struct ActorMaterial {
   glm::vec3 colour{0.f};  // base colour, display (sRGB) values
   bool glow = false;      // drawn at full colour, unlit
   // Inked along its sharp creases in the edge pass, as slate is outdoors
-  // (a moving prop's carved wood: the tavern door's planks and grain).
+  // (a moving prop's carved wood: a door's planks and grain).
   // Outlined and rimmed as every actor is, either way.
   bool crease = false;
 };

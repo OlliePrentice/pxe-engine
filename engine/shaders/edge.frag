@@ -12,8 +12,8 @@
 // creases too, so a bar top reads against its front; wood is not, so the
 // floor's plank grooves stay unlined. Outdoors the roof's slates are inked
 // the same way, so each course and tile joint reads. A character's creased
-// materials (the tavern door's planks and grain) are inked so too, indoors
-// and out; otherwise they are stone, as every character is.
+// materials (a door's planks and grain) are inked so too, indoors and out;
+// otherwise they are stone, as every character is.
 //
 // Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
 // grade, all drawn here from hashes. Splashes are hashed on cells of the
