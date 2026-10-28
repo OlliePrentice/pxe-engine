@@ -25,7 +25,7 @@ You are the only one who can talk to the user. The agents can't ask questions, s
 Every new feature or fix starts with an interview. Don't write a spec from the opening request alone.
 
 1. Read enough of the codebase to ask informed questions: the systems the request touches and the existing behaviour. Read `docs/architecture.md` too.
-2. Run the interview using the **grill** skill. Follow its process until it is complete.
+2. Run the interview using the **grill** skill. Follow its process until the frontier is empty: every open question has been put to the user and answered. Skip the grill's closing request to confirm shared understanding: the written spec replaces it (see step 2).
 3. Keep going until you can write every acceptance criterion as a concrete statement you can check by reading the code, and you know what is out of scope. For a fix, you also need the reproduction steps and the expected behaviour.
 4. When the user's answer conflicts with the codebase or with an earlier answer, say so and resolve it before moving on.
 5. **Existing content stays put.** A feature must not move, remove, resize or restyle anything already in the game unless the user explicitly says so. This covers placed objects, props, trees, characters and their beds or spawn points, existing assets, and tuned constants. If the feature might need such a change, ask the user, naming each thing that would change, and record their answer in `## Decisions`. Never decide it yourself, even when the user has said to proceed as you see fit: that covers choices within the feature, not changes to what was already there.
@@ -76,7 +76,7 @@ Cycle: 1
 
 For a fix, add a `## Reproduction` section with the exact steps and the observed versus expected behaviour.
 
-Nobody runs the game during this workflow, so you verify the criteria yourself by reviewing the code. Write them so that's possible. Show the user the specification and get their confirmation before starting the cycle. The exception is an alignment task created by the alignment review in `CLAUDE.md`: it starts without confirmation. Change it if they correct anything.
+Nobody runs the game during this workflow, so you verify the criteria yourself by reviewing the code. Write them so that's possible. Once the user has answered every open question and the spec records those answers, commit it and start the cycle without asking them to confirm it. Tell them where the spec is and summarise it briefly. If they correct anything later, change the spec and carry the correction into the next cycle.
 
 ## 3. Run the cycle
 Every change is committed, so any cycle can be undone with `git revert`. The designer and developer each commit their own work and report the hash. You commit `task.md` and `issues.md` yourself. Before cycle 1, make sure you're on a branch for the task, not `main`, and that the working tree is clean. If it isn't, ask the user. At the start of each cycle, record the current `HEAD` hash in the cycle log line: it is the cycle's base.
@@ -117,7 +117,7 @@ Reopened: <count>
 ```
 
 ## Several tasks in one run
-A request can cover more than one task, for example a list of refactors. Interview and specify each task as above, one task folder each, and get the user's confirmation of every spec before starting.
+A request can cover more than one task, for example a list of refactors. Interview and specify each task as above, one task folder each. Start once every task's open questions are answered and its spec is written.
 
 Then decide which tasks run in parallel. Run tasks in parallel when they are independent: none needs another's result, and they are expected to change different files. Run them in sequence when one depends on another, or when they would edit the same files, since the merge back would conflict. When in doubt, run in sequence. Tell the user the plan: which tasks run together and which wait.
 
