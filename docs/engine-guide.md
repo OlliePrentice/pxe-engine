@@ -178,7 +178,7 @@ To find what the player clicks, `Renderer::rayThrough(camera, fbW, fbH, px)` giv
 ## Building a Scene
 A `pxe::Scene` is plain data plus GPU meshes:
 
-- `meshes`: opaque meshes, which all cast shadows. `water`: water sheets, with `waterLevel`, `waterMin` and `waterMax`.
+- `meshes`: opaque meshes, which all cast shadows. `shadowOnly`: meshes drawn only into the sun, moon and lightning shadow maps, never seen (a cutaway room's roof and near walls, so it is lit as if closed). `water`: water sheets, with `waterLevel`, `waterMin` and `waterMax`.
 - `grass`: every grass and leaf sprite (`GrassInstance`).
 - `ground`, `waterTop` (`HeightMap`) and `shelter` (`ShelterMap`): the maps the game queries.
 - `fireflyHomes`: points the fireflies wander round.
@@ -187,8 +187,9 @@ A `pxe::Scene` is plain data plus GPU meshes:
 - `sunEast`, `sunSouth`, `sunPeakDegrees`: the sun's path.
 - `horizonCentre`, `horizonRadius`, `horizonHeight`, `horizonRelief`: an optional ridge round the scene that the rising sun must clear.
 - `boundsMin`, `boundsMax`: the scene's extent. Shadow maps are fitted to these.
+- `indoors`, `fillDir`, `windows`, `skyTint[kPhaseCount]`, `skyColour[kPhaseCount]`: a room under a roof. Indoors no rain is drawn, no cloud shadows drift and no god rays shine; sun, moon and lightning still light it through the shadow map. A fill light from `fillDir` lifts faces by how far they turn toward it (`Lighting::fill`, full by day, gone at night). Each `SkyWindow{centre, inward, width, height, depth}` lets the sky's light onto the floor and walls in front of it (`Lighting::skyLight`, tinted by `skyTint`) and shows `skyColour` through the opening.
 
-Every vertex names its surface: `kSurfGrass`, `kSurfDirt`, `kSurfStone`, `kSurfBark`, `kSurfLeaf`, `kSurfWater` or `kSurfFoam`. Each surface has its own ramp: `band`, `detail` and `tip`, each shadow, mid and lit. A default-constructed `Scene` already has every ramp of every surface in all four phases, and `rim` and `ink` per phase: the engine's reference style, sampled from t3ssel8r's videos (day from his scene video; golden hour, twilight and night from his day/night video). `lightingAt` cross-fades the phases by sun elevation. The example keeps them all.
+Every vertex names its surface: `kSurfGrass`, `kSurfDirt`, `kSurfStone`, `kSurfBark`, `kSurfLeaf`, `kSurfWater`, `kSurfFoam`, `kSurfWood`, `kSurfPlaster`, `kSurfRoof` (slate) or `kSurfOak` (furniture). `loadGltf` picks it from the material name. Each surface has its own ramp: `band`, `detail` and `tip`, each shadow, mid and lit. A default-constructed `Scene` already has every ramp of every surface in all four phases, and `rim` and `ink` per phase: the engine's reference style, sampled from t3ssel8r's videos (day from his scene video; golden hour, twilight and night from his day/night video). `lightingAt` cross-fades the phases by sun elevation. The example keeps them all.
 
 To change the look, overwrite only the ramps you want different, after constructing the scene. For a brighter lit band on day grass, set `scene.palette[pxe::kPhaseDay][pxe::kSurfGrass].band[2]` (a linear 0..1 `glm::vec3`); for a different outline at night, `scene.ink[pxe::kPhaseNight]`. The phases cross-fade, so a ramp changed in one phase only gives way to the default colours as the time of day moves on. Change it in every phase to keep the new look all day.
 
@@ -209,7 +210,7 @@ pxe::buildSceneMaps(scene, geometry);
 pxe::uploadScene(scene, geometry);
 ```
 
-`buildSceneMaps` builds `scene.shelter` from the stone, `scene.ground` from grass, dirt, stone, bark and foam, and `scene.waterTop` from the water. `uploadScene` makes one `Mesh` per non-empty surface (water into `scene.water`), sets the water level and extent, and grows the scene's bounds. It needs the GL context.
+`buildSceneMaps` builds `scene.shelter` from the stone and roofs, `scene.ground` from grass, dirt, stone, bark, foam, wood, plaster and oak (not roofs, which are overhead), and `scene.waterTop` from the water. Its optional third argument, `overhead(xz, y)`, leaves out of the ground what things on it pass under, such as a doorway's head (as `HeightMap::build`'s does). `uploadScene` makes one `Mesh` per non-empty surface (water into `scene.water`), sets the water level and extent, and grows the scene's bounds. It needs the GL context.
 
 The example's ground is a height grid appended as grass, followed by boxes and a sphere:
 
@@ -282,7 +283,7 @@ The renderer keeps each fire's particles from frame to frame by `id`, so keep a 
 - `gridStrokes`: brush strokes this frame, as `FireGrid::Stroke{from, to, radius, kind}` with `kind` one of `FireGrid::Stroke::kFire`, `kWater` or `kRegrow`.
 - `grassFireLife`: seconds a fire set alight keeps spreading (`FireGrid::setLifetime`). 0 means until there is nothing left to burn.
 
-Rain (`Lighting::rain`) wets cells open to the sky, and wind (`Lighting::windDir`, `windStrength`) pushes the spread. `Renderer::upload` resets the grid.
+Rain (`Lighting::rain`) wets cells open to the sky, and wind (`Lighting::windDir`, `windStrength`) pushes the spread. `Renderer::upload` resets the grid, unless called as `upload(scene, true)`: then the grid and its burnt grass are kept, for coming back to the scene it was built for from one drawn with `grassFire` off throughout. `Renderer::quenchGrassFire()` puts every flame and ember out at once and leaves burnt grass burnt.
 
 **Fireflies.** Fill `scene.fireflyHomes` with points (knee to head height over open ground) when building the scene, and set `FrameParams::fireflies = true` on the frames they are out. `pxe::firefliesAt(homes, time)` places them as a pure function of time, so captures repeat. Their light (`Lighting::fireflyLight`) comes from the three-argument `lightingAt` and shows mainly at night.
 
@@ -309,7 +310,7 @@ params.actors.push_back({&model.mesh(), joints});
 - `skin(pose, model, joints)` gives the joint matrices for drawing, with `model` the character's world transform. `jointPoint(joints, joint, restPoint)` finds where a point carried by a joint is now (a sword tip, a paw). `restJoint(joint)` is the joint at rest. `vertexPoints` is for measuring clearances, not drawing.
 - `FrameParams::actors` holds `ActorDraw{mesh, joints}`. The `std::span` points into your vector, so it must stay alive and unchanged until `render` returns.
 
-**Materials.** Characters draw as surface `kActorSurface` plus a slot in `FrameParams::actorMaterials` (`kActorMaterials` slots of `ActorMaterial{colour, glow}`, colour in sRGB). A model's material *i* takes slot `firstMaterial() + i`, so give each kind of model its own range when loading. Each frame, copy every drawn model's `materials()` into those slots:
+**Materials.** Characters draw as surface `kActorSurface` plus a slot in `FrameParams::actorMaterials` (`kActorMaterials` slots of `ActorMaterial{colour, glow, crease}`, colour in sRGB; `crease` inks the material along its sharp creases, as for a door's planks and grain). A model's material *i* takes slot `firstMaterial() + i`, so give each kind of model its own range when loading. Each frame, copy every drawn model's `materials()` into those slots:
 
 ```cpp
 const auto& mats = model.materials();
@@ -357,7 +358,7 @@ Use a hidden window (`WindowOptions::visible = false`, `vsync = false`) for capt
 
 ## Contracts
 - **GL context first, last.** `Window` before anything that touches the GPU, and destroyed after all of it. `Mesh`, `SkinnedMesh`, `Scene` (it holds meshes), `SkinnedModel`, `Renderer` and `Overlay` all free GPU objects in their destructors.
-- **Upload, then render.** Call `Renderer::upload(scene)` after building a scene and before rendering it, and again whenever you build or swap in a different scene. `render(scene, ...)` must be given the scene last uploaded. The renderer keeps shadow maps, fire state and the grass fire drawn from that scene and redraws them only when the light changes or `upload` is called. It never checks which scene it is given. If you change `scene.grass` afterwards (clearing blades under something placed later), call `Renderer::uploadGrass(scene)`. Don't change a scene's meshes without uploading again.
+- **Upload, then render.** Call `Renderer::upload(scene)` after building a scene and before rendering it, and again whenever you build or swap in a different scene. `render(scene, ...)` must be given the scene last uploaded. The renderer keeps shadow maps, fire state and the grass fire drawn from that scene and redraws them only when the light changes or `upload` is called. It never checks which scene it is given. If you change `scene.grass` afterwards (clearing blades under something placed later), call `Renderer::uploadGrass(scene)`. Don't change a scene's meshes without uploading again. To swap back to a scene whose grass fire should survive the visit, pass `keepGrassFire` (see Grass fire): the grid must only ever advance in the scene it was built for.
 - **Scene build order.** Geometry into `SurfaceGeometry`, then `buildSceneMaps` and `uploadScene`, then scattering (`dropGrassUnder` reads the bounds `uploadScene` sets), then `Renderer::upload` (which sends the grass to the GPU).
 - **The game owns every object.** The engine never creates a game object and keeps no pointer to one between calls. Everything per-frame (fires, actors and their joints, lights, ignitions, strokes) is passed in `FrameParams` and read during `render`. Joint matrices and effect meshes must stay alive until `render` returns. Fire ids must stay stable while a fire lives.
 - **RNG order when scattering.** Every scatter function draws from the `std::mt19937` it is given, in a fixed order. Seed one generator and pass it to each call in a fixed sequence to get the same scene every run. Any change to an earlier call (another scatter, different spacing, a different ground) changes everything after it. To add something without disturbing an existing scene, scatter it from its own generator, or remove sprites after scattering (as `dropGrassUnder` does) rather than before.
@@ -376,15 +377,15 @@ Every public header, in `engine/include/pxe/`, namespace `pxe`.
 - **`firegrid.hpp`.** `FireGrid`: the GPU grass and crown fire. `FireGrid::Stroke`: a fire, water or regrowth brush stroke. The renderer owns the grid. Games drive it through `FrameParams`.
 - **`gl_loader.hpp`.** `loadGl(getProc)`: loads the GL entry points. `Window` calls it. A game only needs it if it makes its own context.
 - **`gltf.hpp`.** `loadGltf(path)` and `GltfPrimitive`: static glTF geometry in world space, with a surface per material name.
-- **`heightmap.hpp`.** `HeightMap`: highest surface per grid cell (`build`, `heightAt`, `cellTop`, `raycast`, `min`, `max`, `kNone`).
+- **`heightmap.hpp`.** `HeightMap`: highest surface per grid cell (`build`, with an optional `overhead` filter, `heightAt`, `cellTop`, `raycast`, `min`, `max`, `kNone`).
 - **`image.hpp`.** `writePng(path, width, height, bottomUpRgba)`.
 - **`input.hpp`.** `Input`: keyboard, mouse and first gamepad, read once a frame (`update`, `keyDown`, `keyPressed`, `mousePosition`, `mouseDown`, `mousePressed`, `gamepadConnected`, `gamepadName`, `gamepadDown`, `gamepadPressed`, `gamepadStick`, `gamepadAxis`). The enums are `Key`, `MouseButton`, `GamepadButton`, `GamepadStick` and `GamepadAxis`.
-- **`lighting.hpp`.** `Lighting`: everything that lights one frame. `Weather`: the game's weather. `lightingAt(scene, hour)` and `lightingAt(scene, hour, weather)`, `sunDirection`, `moonDirection`.
-- **`mesh.hpp`.** `Surface` (`kSurfGrass` .. `kSurfFoam`, `kSurfCount`), `Vertex`, `Mesh`. Also `SkinVertex` and `SkinnedMesh`, a skinned mesh uploaded once at rest.
+- **`lighting.hpp`.** `Lighting`: everything that lights one frame, including a room's `fill`, `skyLight`, `skyTint` and `skyColour`. `Weather`: the game's weather. `lightingAt(scene, hour)` and `lightingAt(scene, hour, weather)`, `sunDirection`, `moonDirection`.
+- **`mesh.hpp`.** `Surface` (`kSurfGrass` .. `kSurfOak`, `kSurfCount`), `Vertex`, `Mesh`. Also `SkinVertex` and `SkinnedMesh`, a skinned mesh uploaded once at rest.
 - **`overlay.hpp`.** `Overlay`: Dear ImGui over the window (`begin`, `end`, `wantsKeyboard`, `wantsMouse`).
-- **`renderer.hpp`.** `Renderer` (`init`, `upload`, `uploadGrass`, `render`, `readView`, `readPresented`, `rayThrough`, `windowPoint`, `viewW`, `viewH`, `rtW`, `rtH`, `setProfiling`, `passTimes`). Also `FrameParams`, `FireDraw`, `PointLight`, `ActorDraw` and `PassTimes`.
+- **`renderer.hpp`.** `Renderer` (`init`, `upload`, `uploadGrass`, `quenchGrassFire`, `render`, `readView`, `readPresented`, `rayThrough`, `windowPoint`, `viewW`, `viewH`, `rtW`, `rtH`, `setProfiling`, `passTimes`). Also `FrameParams`, `FireDraw`, `PointLight`, `ActorDraw` and `PassTimes`.
 - **`scatter.hpp`.** `scatterGrass` with `GrassScatter`, `dropGrassUnder`, `scatterLeaves` with `kDefaultLeafDensity`, `poissonDisk` and `grassPatchiness`.
-- **`scene.hpp`.** `Scene` (constructed with the default palettes), `GrassInstance`, `Palette` and `Phase` (`kPhaseDay` .. `kPhaseNight`, `kPhaseCount`).
+- **`scene.hpp`.** `Scene` (constructed with the default palettes), `SkyWindow`, `GrassInstance`, `Palette` and `Phase` (`kPhaseDay` .. `kPhaseNight`, `kPhaseCount`).
 - **`scene_geometry.hpp`.** `SurfaceGeometry` (`append`, `corners`), `buildSceneMaps`, `uploadScene`.
 - **`shelter.hpp`.** `ShelterMap`: roofing over the ground (`build`, `sheltered`, `coveredLines`).
 - **`skinned.hpp`.** `SkinnedModel`: skinned glTF characters with clips, poses, blending and skinning. Also `ActorMaterial`, `kActorSurface`, `kActorMaterials` and `kMaxJoints`.

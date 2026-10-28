@@ -1,6 +1,6 @@
 # Engine comments: no tavern door
 Type: fix
-Status: in progress
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -18,10 +18,10 @@ Reword both so they explain the capability with generic nouns ("a door's planks 
 - Game: none.
 
 ## Acceptance criteria
-- [ ] Neither comment names the tavern or any other game content.
-- [ ] `grep -rniE "tavern|sleeping fox|\bhero\b|\bfox\b|ruins" engine/include engine/src engine/shaders` finds nothing new against f48dadc (fireflies aside).
-- [ ] No change outside comments: `git diff f48dadc -- engine` touches comment lines only.
-- [ ] Project builds cleanly with the `check` preset.
+- [x] Neither comment names the tavern or any other game content. (b80a1f7: "a door's planks and grain" in both)
+- [x] `grep -rniE "tavern|sleeping fox|\bhero\b|\bfox\b|ruins" engine/include engine/src engine/shaders` finds nothing new against f48dadc (fireflies aside). (grep over engine/ finds nothing)
+- [x] No change outside comments: `git diff f48dadc -- engine` touches comment lines only. (skinned.hpp:31, edge.frag:15-16)
+- [x] Project builds cleanly with the `check` preset. (handoff; only stb's sprintf warning)
 
 ## Assets
 None
@@ -30,4 +30,5 @@ None
 - Any other engine or game change.
 
 ## Cycle log
-- Cycle 1: 2026-10-28 started, base f48dadc
+- Cycle 1: 2026-10-28 started, base 9b002a6
+- Cycle 1: review passed, no issues; complete. Docs brought up to date with the merge: engine-guide (surfaces, indoor Scene and Lighting fields, buildSceneMaps overhead, upload keepGrassFire, quenchGrassFire, ActorMaterial::crease), architecture (indoor rooms rows)
