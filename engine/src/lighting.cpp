@@ -26,6 +26,10 @@ constexpr float kDayAt = 24.f;
 constexpr float kMoonrise = 19.f;
 constexpr float kMoonset = 5.f;
 
+// A room's sky light at night, against 1 by day: faint moonlight through
+// its windows once the sky is fully dark.
+constexpr float kMoonlight = 0.15f;
+
 }  // namespace
 
 glm::vec3 moonDirection(const Scene& scene, float hour) {
@@ -83,9 +87,12 @@ Lighting lightingAt(const Scene& scene, float hour) {
     }
   }
   out.rim = out.ink = glm::vec3{0.f};
+  out.skyTint = out.skyColour = glm::vec3{0.f};
   for (int ph = 0; ph < kPhaseCount; ++ph) {
     out.rim += w[ph] * scene.rim[ph];
     out.ink += w[ph] * scene.ink[ph];
+    out.skyTint += w[ph] * scene.skyTint[ph];
+    out.skyColour += w[ph] * scene.skyColour[ph];
   }
 
   const glm::vec3 moon = moonDirection(scene, hour);
@@ -98,6 +105,11 @@ Lighting lightingAt(const Scene& scene, float hour) {
   out.horizonRelief = scene.horizonRelief;
   out.tLit = scene.tLit * flat;
   out.tMid = scene.tMid * flat;
+  // Full from golden hour up, gone once night is fully in.
+  out.fill = fade(elev, kNightAt, kGoldenAt);
+  // The sky through a room's windows: full until sunset, then fading
+  // through twilight until the sky is dark, leaving only the moonlight.
+  out.skyLight = kMoonlight + (1.f - kMoonlight) * fade(elev, kNightAt, 0.f);
   return out;
 }
 

@@ -3,9 +3,17 @@
 // Post pass over the low-res target.
 //
 // Edges, after David Holland's write-up of t3ssel8r's look: only stone and
-// bark take them. A pixel on an upward face whose neighbour turns away (a
-// crease) or drops behind (a silhouette) catches a light rim; any other
-// silhouette pixel darkens into an outline.
+// bark take them, and a building's wood, plaster, roof and oak. A pixel on an
+// upward face whose neighbour turns away (a crease) or drops behind (a
+// silhouette) catches a light rim; any other silhouette pixel darkens into
+// an outline. Wood, plaster, roof and oak take no rims, only the outline, on
+// every silhouette: indoors they are seen in shade, where a light line on
+// every plank groove would be noise. Indoors, oak is inked along its sharp
+// creases too, so a bar top reads against its front; wood is not, so the
+// floor's plank grooves stay unlined. Outdoors the roof's slates are inked
+// the same way, so each course and tile joint reads. A character's creased
+// materials (a door's planks and grain) are inked so too, indoors and out;
+// otherwise they are stone, as every character is.
 //
 // Rain, after t3ssel8r's rain shader: streaks, splashes and a cool, murky
 // grade, all drawn here from hashes. Splashes are hashed on cells of the
@@ -15,22 +23,75 @@
 // it hung that far behind or in front of the focus.
 
 uniform sampler2D uColor;
-uniform sampler2D uNormal;  // xyz normal * 0.5 + 0.5, a = (surface + 1) / 8; 0 grass sprites, 1 leaf sprites
+uniform sampler2D uNormal;  // xyz normal * 0.5 + 0.5, a = (surface + 1) / kSurfaceScale; 0 grass sprites, 1 leaf sprites
 uniform sampler2D uDepth;
 uniform float uDepthMetres;  // far - near: the ortho depth buffer is linear
 uniform int uEnabled;
 
+const int kSurfaces = 11;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
 const int kSurfWater = 5;
-const int kLeafSprite = 7;
+const int kSurfWood = 7;
+const int kSurfRoof = 9;
+const int kSurfOak = 10;
+// A building's wood, plaster, roof and oak: outlined, never rimmed (edges()).
+bool timbered(int surface) { return (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak; }
+const float kSurfaceScale = 16.0;  // as common.glsl
+const int kSurfActorCrease = 11;   // an actor's creased material (mesh.frag), stone otherwise
+const int kLeafSprite = 15;        // a leaf sprite's alpha of 1, read as a surface
+
+// Cut stone and a building's wood, plaster, roof and oak: hard, flat-faced
+// structure, rimmed and outlined alike and splashed hard by the rain.
+bool built(int surface) {
+    return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak;
+}
 const float kSilhouette = 0.35;  // metres of depth step that count as an outline
+// Indoors oak, and outdoors a roof's slates, take an ink line where the
+// surface turns sharply with no depth step: neighbouring normals more than
+// 40 degrees apart. Only those pixels are inked; where oak meets wood,
+// plaster or stone, or slate meets the chimney or a gable, the line falls
+// on the oak or slate side. An actor's creased material is inked the same
+// way, against its own kind (the door's wood against its grain) or, against
+// anything else (its iron, the wall), on its side.
+uniform int uIndoors;  // 1 in a room (pxe::Scene::indoors)
+bool creased(int surface) { return surface == (uIndoors != 0 ? kSurfOak : kSurfRoof); }
+const float kCreaseCos = 0.766;  // cos 40 degrees
 uniform vec3 uLight;  // toward the sun or moon
 uniform vec3 uRim;  // blended with the time of day
 uniform vec3 uInk;
+// Dark regions (pxe::Scene::darkRegions), as common.glsl has them: a light
+// rim inside one takes the region's share of the rim colour, and no point
+// light reaches into one.
+const int kDarkRegions = 8;  // Renderer: regions past this are left out
+uniform int uDarkCount;
+uniform vec3 uDarkCentre[kDarkRegions];
+uniform vec3 uDarkAxisX[kDarkRegions];
+uniform vec3 uDarkAxisZ[kDarkRegions];
+uniform vec3 uDarkHalf[kDarkRegions];
+uniform vec3 uDarkOpen[kDarkRegions];
+uniform vec3 uDarkFade[kDarkRegions];
 
-uniform float uRain;        // 0 dry .. 1 downpour
+// As common.glsl's darkAt: the share a point in a dark region takes, -1
+// outside every region.
+float darkAt(vec3 wpos) {
+    float k = -1.0;
+    for (int i = 0; i < uDarkCount; ++i) {
+        vec3 d = wpos - uDarkCentre[i];
+        vec3 l = vec3(dot(d, uDarkAxisX[i]), d.y, dot(d, uDarkAxisZ[i]));
+        if (any(greaterThan(abs(l), uDarkHalf[i]))) continue;
+        vec3 o = uDarkOpen[i];
+        float depth = dot(uDarkHalf[i], abs(o)) - dot(l, o);
+        vec3 f = uDarkFade[i];
+        float s = f.z > 0.0 ? mix(f.x, f.y, clamp(depth / f.z, 0.0, 1.0)) : f.y;
+        k = k < 0.0 ? max(s, 0.0) : min(k, max(s, 0.0));
+    }
+    return k;
+}
+
+uniform float uRain;        // 0 dry .. 1 downpour (0 indoors: no rain is drawn there)
+uniform float uSunRain;     // the rain as it is, indoors too: how far it has put out direct sun
 uniform float uFlash;       // lightning, 0 none .. 1 peak
 uniform float uTime;        // seconds
 uniform vec2 uCamTexel;     // camera position in whole low-res texels
@@ -59,9 +120,9 @@ uniform int uTileSize;           // pixels
 uniform int uTilesX;
 uniform float uFlyLight;         // firefly light: strength
 uniform float uFlyDim;           // how far direct sun or moon light drowns it out
-uniform vec3 uFlyBand[7];        // each surface's colour in full firefly light
+uniform vec3 uFlyBand[kSurfaces];  // each surface's colour in full firefly light
 uniform float uFireDim;          // firelight, likewise
-uniform vec3 uFireBand[7];
+uniform vec3 uFireBand[kSurfaces];
 uniform sampler2D uHeat;    // fire: flame heat (r), ember glow (g), smoke (b)
 uniform int uFire;
 #ifdef FIRE_GRID
@@ -77,14 +138,20 @@ uniform vec4 uGridDomain;      // xz of the grid's corner, 1 / its size in metre
 
 out vec4 oColor;
 
-vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
-    if (uEnabled == 0 || (surface != kSurfStone && surface != kSurfBark)) return col;
+// The world position under a pixel, from depth (below).
+vec3 worldAt(ivec2 p);
+
+// `actorCrease`: a pixel of an actor's creased material, its surface stone.
+vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
+    if (uEnabled == 0 || (!built(surface) && surface != kSurfBark)) return col;
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
     float d = texelFetch(uDepth, p, 0).r * uDepthMetres;
 
     bool rim = false;
     bool ink = false;
     bool stroke = false;
+    bool creaseInk = false;
+    bool creases = actorCrease || creased(surface);
     // Diagonal neighbours count for rims, so a seam that rasterises as a
     // 2:1 staircase joins into one line instead of a row of dots.
     const ivec2 kOffsets[8] = ivec2[8](ivec2(0, 1), ivec2(0, -1), ivec2(1, 0), ivec2(-1, 0),
@@ -98,20 +165,47 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface) {
         bool behind = dq - d > kSilhouette;
         bool meshNeighbour = nq4.a > 0.0 && nq4.a < 0.99;  // not a grass or leaf sprite
         bool crease = !behind && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < 0.8;
-        if (n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
+        if (!timbered(surface) && n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
         else if (behind && !diagonal) ink = true;
         // Bark is smooth-shaded except along a few seams marked sharp in
         // Blender; there the normal jumps a little, and one light stroke is
         // drawn on the side that faces the light more.
         if (surface == kSurfBark && !behind && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour &&
             dot(n, nq) < 0.97 && dot(n, uLight) > dot(nq, uLight)) stroke = true;
+        // A crease inked once, one pixel wide: where oak meets oak (or
+        // slate slate), on the side turned further from the camera (the
+        // narrower face on screen), or, where they turn from it alike - the
+        // two near sides of a table at the room's 45 degree yaw - on the
+        // side facing more toward +x. Against anything else (wood, plaster,
+        // stone), on this oak or slate side.
+        if (creases && !diagonal && abs(dq - d) < kSilhouette && meshNeighbour && dot(n, nq) < kCreaseCos) {
+            int sq = int(nq4.a * kSurfaceScale + 0.5) - 1;
+            bool partner = actorCrease ? sq == kSurfActorCrease : creased(sq);
+            float toCam = dot(nq, uFwd) - dot(n, uFwd);  // < 0: this side faces the camera less
+            if (!partner || toCam < -1e-3 || (abs(toCam) <= 1e-3 && n.x > nq.x)) creaseInk = true;
+        }
     }
     // Bark is painted, not carved: no rims, a faint outline, and its few
     // seam strokes are soft.
     if (surface == kSurfBark) rim = false;
+    // In a dark region a light line takes the region's share of the rim.
+    if (uDarkCount > 0 && (stroke || rim)) {
+        float dark = darkAt(worldAt(p));
+        if (dark >= 0.0) return mix(col, uRim * dark, stroke ? 0.15 : 0.4);
+    }
     if (stroke) return mix(col, uRim, 0.15);
     if (rim) return mix(col, uRim, 0.4);
     if (ink) return mix(col, uInk, surface == kSurfBark ? 0.15 : 0.35);
+    // A crease on oak is inked as an outline is. Slate is close to the ink
+    // in colour, so its creases take a heavier mix to read as dark lines
+    // along every course and tile joint; and slate in its shadow tone is
+    // darker than the ink itself, so a slate crease is also kept at least a
+    // step darker than the slate it is drawn on. The door's dark wood takes
+    // the slate's treatment, indoors and out: at oak's mix it barely shows.
+    if (creaseInk) {
+        if (uIndoors != 0 && !actorCrease) return mix(col, uInk, 0.35);
+        return min(mix(col, uInk, 0.65), col * 0.8);
+    }
     return col;
 }
 
@@ -298,8 +392,10 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
     if (count == 0) return col;
 #endif
     vec3 s = worldAt(p);
+    // No point light, nor the grass fire's glow, reaches into a dark region.
+    if (uDarkCount > 0 && darkAt(s) >= 0.0) return col;
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
-    int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, 6));
+    int surf = surface < 0 ? 0 : (surface == kLeafSprite ? kSurfLeaf : min(surface, kSurfaces - 1));
     float k = 0.0;     // fireflies
     float fire = 0.0;  // fires
     for (int j = 0; j < count; ++j) {
@@ -349,7 +445,7 @@ vec3 pointLights(ivec2 p, vec3 col, vec4 np, int surface) {
         float ndl = clamp(dot(n, uLight) * 3.0, 0.0, 1.0);
         vec4 ls = uLightViewProj * vec4(s + n * 0.08, 1.0);
         vec3 l = ls.xyz / ls.w * 0.5 + 0.5;
-        sun = ndl * texture(uShadowMap, vec3(l.xy, l.z - 0.002)) * (1.0 - cloudShadow(s)) * (1.0 - uRain);
+        sun = ndl * texture(uShadowMap, vec3(l.xy, l.z - 0.002)) * (1.0 - cloudShadow(s)) * (1.0 - uSunRain);
     }
     if (k > 0.0) {
         k *= uFlyLight * (1.0 - uFlyDim * sun);
@@ -387,7 +483,7 @@ vec3 rain(ivec2 p, vec3 col, vec4 np, int surface) {
     // Wet stone and trunks pick up a soft light line along their upper
     // outlines, a two-pixel haze where they meet what is behind them.
     vec3 n = normalize(np.xyz * 2.0 - 1.0);
-    bool hard = surface == kSurfStone || surface == kSurfBark;
+    bool hard = built(surface) || surface == kSurfBark;
     bool crown = surface == kSurfLeaf || surface == kLeafSprite;
     if (hard) {
         float d = texelFetch(uDepth, p, 0).r * uDepthMetres;
@@ -441,8 +537,11 @@ void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec3 col = texelFetch(uColor, p, 0).rgb;
     vec4 np = texelFetch(uNormal, p, 0);
-    int surface = int(np.a * 8.0 + 0.5) - 1;
-    col = edges(p, col, np, surface);
+    int surface = int(np.a * kSurfaceScale + 0.5) - 1;
+    // An actor's creased material is stone to everything but its crease ink.
+    bool actorCrease = surface == kSurfActorCrease;
+    if (actorCrease) surface = kSurfStone;
+    col = edges(p, col, np, surface, actorCrease);
     col = godRays(p, col);
     col = pointLights(p, col, np, surface);
     col = rain(p, col, np, surface);

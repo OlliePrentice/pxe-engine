@@ -22,7 +22,13 @@ layout(location = 1) out vec4 oNormal;
 const int kActorSurface = 16;
 const int kActorMaterials = 64;  // pxe::kActorMaterials
 uniform vec3 uActorColour[kActorMaterials];
-uniform int uActorGlow[kActorMaterials];
+// Per slot: 1 glows (pxe::ActorMaterial::glow), 2 creases (::crease).
+uniform int uActorFlags[kActorMaterials];
+const int kActorGlows = 1;
+const int kActorCreases = 2;
+// The normal target's surface for an actor's creased material, past the
+// scene's surfaces: edge.frag treats it as stone, and inks its creases too.
+const int kSurfActorCrease = 11;
 uniform vec3 uActorTint[3];
 uniform vec3 uActorFire;  // a base colour's tint in full firelight
 
@@ -44,7 +50,12 @@ float actorTone(vec3 wpos, vec3 n) {
 
 vec3 actorColour(int m, vec3 n) {
     vec3 a = uActorColour[m];
-    if (uActorGlow[m] == 1) return a;
+    if ((uActorFlags[m] & kActorGlows) != 0) return a;
+    // In a dark region, a share of its mid colour, unlit.
+    if (uDarkCount > 0) {
+        float dark = darkAt(vWorld);
+        if (dark >= 0.0) return a * uActorTint[1] * dark;
+    }
     float tone = actorTone(vWorld, n);
     vec3 col = rampColour(a * uActorTint[0], a * uActorTint[1], a * uActorTint[2], tone);
     float shade = cloudShade(vWorld);
@@ -66,23 +77,28 @@ vec3 actorColour(int m, vec3 n) {
 void main() {
     vec3 n = normalize(vNormal);
     if (vSurface >= kActorSurface) {
-        // Outlined and rimmed in the edge pass as stone is.
-        oNormal = vec4(n * 0.5 + 0.5, float(kSurfStone + 1) / 8.0);
-        oColor = vec4(actorColour(clamp(vSurface - kActorSurface, 0, kActorMaterials - 1), n), 1.0);
+        // Outlined and rimmed in the edge pass as stone is; a creased
+        // material is inked along its creases as well.
+        int m = clamp(vSurface - kActorSurface, 0, kActorMaterials - 1);
+        int surface = (uActorFlags[m] & kActorCreases) != 0 ? kSurfActorCrease : kSurfStone;
+        oNormal = vec4(n * 0.5 + 0.5, float(surface + 1) / kSurfaceScale);
+        oColor = vec4(actorColour(m, n), 1.0);
         return;
     }
-    oNormal = vec4(n * 0.5 + 0.5, float(vSurface + 1) / 8.0);
+    oNormal = vec4(n * 0.5 + 0.5, float(vSurface + 1) / kSurfaceScale);
     if (uShowNdl == 1) {
         oColor = vec4(vec3(clamp(dot(n, uSunDir) * 0.5 + 0.5, 0.0, 1.0)), 1.0);
         return;
     }
     // A crown's body sits a band darker than its leaves, so gaps between
     // leaves read as depth inside the foliage.
-    float tone = (vSurface == kSurfStone) ? toonToneFlat(vWorld, n)
+    float tone = flatFaced(vSurface)       ? toonToneFlat(vWorld, n)
                : (vSurface == kSurfBark)  ? barkTone(vWorld, n)
                : (vSurface == kSurfLeaf)  ? max(floor(toonTone(vWorld, n) + 0.5) - 1.0, 0.0)
                                           : toonTone(vWorld, n);
-    vec3 col = toneColour(vSurface, tone);
+    // The direct light alone, which drowns out firelight by day (fireLit).
+    float sunTone = tone;
+    vec3 col = uIndoors != 0 ? indoorColour(vSurface, tone, vWorld, n, flatFaced(vSurface)) : toneColour(vSurface, tone);
 #ifdef FIRE_GRID
     // The lawn under burnt grass is scorched, then charred. A burning crown
     // chars and burns away in holes, and the trunk under it blackens.
@@ -99,10 +115,16 @@ void main() {
     }
     float shade = cloudShade(vWorld);
     col = clouded(col, vSurface, shade);
-    oColor = vec4(charLit(col, fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), charred), 1.0);
+    oColor = vec4(charLit(col, fireLit(col, vSurface, vWorld, n, 0.5 * sunTone * (1.0 - shade)), charred), 1.0);
 #else
     float shade = cloudShade(vWorld);
     col = clouded(col, vSurface, shade);
-    oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * tone * (1.0 - shade)), 1.0);
+    oColor = vec4(fireLit(col, vSurface, vWorld, n, 0.5 * sunTone * (1.0 - shade)), 1.0);
 #endif
+    // In a dark region, none of the above light reaches: a share of the
+    // surface's mid colour for the time of day, by depth from its opening.
+    if (uDarkCount > 0) {
+        float dark = darkAt(vWorld);
+        if (dark >= 0.0) oColor = vec4(bandColour(vSurface, 1) * dark, 1.0);
+    }
 }

@@ -133,10 +133,18 @@ class Renderer {
   // Take a scene to draw: its grass goes to the GPU, and every cache drawn
   // from the scene (sun, lightning and firelight shadow maps) and the fire
   // state are dropped. Call again whenever the game builds or swaps a scene.
-  void upload(const Scene& scene);
+  // With `keepGrassFire`, the grass fire's grid (its burnt grass) is kept
+  // rather than dropped: for coming back to the scene it was built for from
+  // one drawn without a grass fire (FrameParams::grassFire never set), so
+  // the grass burnt before stays burnt. The grid must only ever advance in
+  // the scene it was built for.
+  void upload(const Scene& scene, bool keepGrassFire = false);
   // Just the grass, after the game has changed scene.grass (say, cleared
   // some blades); everything else upload() set stays.
   void uploadGrass(const Scene& scene);
+  // Put out the grass fire - every flame, ember and burning crown - leaving
+  // the grass it burnt burnt (FireGrid::quench).
+  void quenchGrassFire() { grid_.quench(); }
   // A point of the window (framebuffer pixels from its top left, `fbW` x
   // `fbH`) as presented for `camera`: the view ray through it starts at the
   // returned point on the camera's plane and runs along camera.forward.
@@ -292,6 +300,14 @@ class Renderer {
 
   unsigned presentVao_ = 0;
   unsigned presentVbo_ = 0;
+
+  // The sky seen through a room's windows: a pane just outside each one
+  // (Scene::windows), built on upload, drawn after the meshes and nowhere
+  // else - not into any shadow map.
+  unsigned progSky_ = 0;
+  unsigned skyVao_ = 0;
+  unsigned skyVbo_ = 0;
+  int skyVertices_ = 0;
 
 
   bool ready_ = false;

@@ -1,11 +1,26 @@
 // Shared toon ramp. Spliced into the mesh fragment shader and the grass
 // vertex shader so both run the same function on the same kind of inputs.
-const int kSurfaces = 7;
+const int kSurfaces = 11;  // pxe::kSurfCount
 const int kSurfStone = 2;
 const int kSurfBark = 3;
 const int kSurfLeaf = 4;
 const int kSurfWater = 5;
 const int kSurfFoam = 6;
+const int kSurfWood = 7;
+const int kSurfPlaster = 8;
+const int kSurfRoof = 9;
+const int kSurfOak = 10;
+// Each pixel's surface goes to the edge pass in the normal target's alpha,
+// as (surface + 1) / kSurfaceScale; 0 marks a grass sprite and 1 a leaf
+// sprite (edge.frag). Past the scene's surfaces, 11 marks an actor's
+// creased material (mesh.frag's kSurfActorCrease).
+const float kSurfaceScale = 16.0;
+
+// Built structure - cut stone, and a building's wood, plaster, roof and
+// oak - is flat-faced: one colour per side.
+bool flatFaced(int surface) {
+    return surface == kSurfStone || (surface >= kSurfWood && surface <= kSurfRoof) || surface == kSurfOak;
+}
 
 uniform vec3 uSunDir;
 uniform float uTLit;
@@ -23,6 +38,18 @@ uniform vec2 uCloudOffset;   // drift, in cloud-noise units
 uniform float uCloudStrength;  // 0..1, how dark a thick cloud's shadow gets
 uniform float uOvercast;       // 0..1, rain: everything pulled toward shadow
 uniform float uRain;           // 0 dry .. 1 downpour
+uniform int uIndoors;          // 1 in a room (pxe::Scene::indoors): rain never lifts its shade
+uniform float uFill;           // indoors: the room's fill light, 0 (night) .. 1 (day, golden hour)
+uniform vec3 uFillDir;         // toward it (pxe::Scene::fillDir)
+// Indoors: the sky's light through the room's windows (pxe::Scene::windows),
+// how strong it is now, and the tint it and the fill light take.
+const int kSkyWindows = 8;     // Renderer: windows past this are left out
+uniform int uWindowCount;
+uniform vec3 uWindowCentre[kSkyWindows];  // the middle of each opening, in the wall's inner face
+uniform vec3 uWindowInward[kSkyWindows];  // level, into the room
+uniform vec2 uWindowHalf[kSkyWindows];    // half its width and height
+uniform float uSkyLight;       // 1 by day .. a faint moonlight at night
+uniform vec3 uSkyTint;         // warm white, amber, violet-blue, cool moonlight
 uniform float uFlash;          // lightning, 0 none .. 1 peak
 uniform vec3 uFlashDir;        // toward the flash
 uniform mat4 uFlashViewProj;
@@ -37,6 +64,38 @@ uniform float uFireReach;       // metres the light carries
 uniform float uFireDim;         // how far direct sun or moon light drowns it out, 0..1
 uniform vec3 uFireBand[kSurfaces];  // each surface's colour in full firelight
 uniform samplerCubeArray uFireShadow;  // per cube, distance from its fire to the nearest surface, per direction
+
+// Dark regions (pxe::Scene::darkRegions): boxes the scene's light does not
+// reach, each open on one face. Per region its centre, its own +x and +z in
+// the world, its half extents, the open face's outward normal in its own
+// frame, and (start strength, end strength, fade distance).
+const int kDarkRegions = 8;    // Renderer: regions past this are left out
+uniform int uDarkCount;
+uniform vec3 uDarkCentre[kDarkRegions];
+uniform vec3 uDarkAxisX[kDarkRegions];
+uniform vec3 uDarkAxisZ[kDarkRegions];
+uniform vec3 uDarkHalf[kDarkRegions];
+uniform vec3 uDarkOpen[kDarkRegions];
+uniform vec3 uDarkFade[kDarkRegions];
+
+// The share of its mid colour a point inside a dark region takes: the start
+// strength at the open face, moving linearly to the end strength at the
+// fade distance in from it and held there; the darkest where regions
+// overlap. -1 outside every region.
+float darkAt(vec3 wpos) {
+    float k = -1.0;
+    for (int i = 0; i < uDarkCount; ++i) {
+        vec3 d = wpos - uDarkCentre[i];
+        vec3 l = vec3(dot(d, uDarkAxisX[i]), d.y, dot(d, uDarkAxisZ[i]));
+        if (any(greaterThan(abs(l), uDarkHalf[i]))) continue;
+        vec3 o = uDarkOpen[i];
+        float depth = dot(uDarkHalf[i], abs(o)) - dot(l, o);
+        vec3 f = uDarkFade[i];
+        float s = f.z > 0.0 ? mix(f.x, f.y, clamp(depth / f.z, 0.0, 1.0)) : f.y;
+        k = k < 0.0 ? max(s, 0.0) : min(k, max(s, 0.0));
+    }
+    return k;
+}
 
 vec3 bandColour(int surface, int band) {
     return uBand[surface * 3 + band];
@@ -88,10 +147,14 @@ float sunVisible(vec3 wpos, vec3 n) { return sunVisibleSpread(wpos, n, 1.25, 1.0
 // rather than a single tap keeps the edge from crawling as the sun turns.
 // Under rain cloud there is no direct light to cast them, so cast shadows
 // fade as rain sets in: full in a drizzle, lighter as it gets heavier, and
-// gone in a downpour, leaving only each face's own side shading.
+// gone in a downpour, leaving only each face's own side shading. Indoors
+// the shade is the room's own walls and roof, not the sun's shadow, so it
+// stays; what fades instead is the direct sun falling in through the
+// windows, toward the shade round it, gone in a downpour.
 float sunLit(vec3 wpos, vec3 n, float biasScale) {
     float lit = step(0.5, sunVisibleSpread(wpos, n, 1.25, biasScale));
-    return mix(lit, 1.0, smoothstep(0.15, 0.95, uRain));
+    float fade = smoothstep(0.15, 0.95, uRain);
+    return uIndoors != 0 ? lit * (1.0 - fade) : mix(lit, 1.0, fade);
 }
 
 // A lightning flash has its own shadow map, and its shadows stay hard
@@ -243,6 +306,57 @@ float litTone(vec3 wpos, vec3 n, float biasScale) {
 }
 
 float quantiseTone(float t) { return floor(t * kToneSteps + 0.5) / kToneSteps; }
+
+// Indoors, the sky lights the room through each window: a soft light that
+// falls from the nearest point of the opening onto what is in front of it,
+// by how squarely it is in front (none along the window's own wall), how
+// far the face turns toward the opening, and fading with distance to
+// nothing at kSkyReach. No shadows: it is the open sky's light, not a beam.
+// Returns its share of the tone, 0 .. about 1 right in front of a window.
+const float kSkyReach = 7.0;  // metres
+const float kSkyGain = 2.6;
+float skyLit(vec3 wpos, vec3 n) {
+    if (uSkyLight <= 0.0) return 0.0;
+    float k = 0.0;
+    for (int i = 0; i < uWindowCount; ++i) {
+        vec3 inward = uWindowInward[i];
+        vec3 across = vec3(-inward.z, 0.0, inward.x);
+        vec3 d = wpos - uWindowCentre[i];
+        vec2 h = uWindowHalf[i];
+        vec3 q = uWindowCentre[i] + across * clamp(dot(d, across), -h.x, h.x) + vec3(0.0, clamp(d.y, -h.y, h.y), 0.0);
+        vec3 v = wpos - q;
+        float dist = length(v);
+        if (dist >= kSkyReach || dist < 1e-3) continue;
+        vec3 l = v / dist;
+        float ahead = dot(l, inward);
+        if (ahead <= 0.0) continue;
+        float fall = 1.0 - dist / kSkyReach;
+        k += ahead * clamp(dot(n, -l), 0.0, 1.0) * fall * fall;
+    }
+    return uSkyLight * kSkyGain * k;
+}
+
+// Indoors, a fill light from a fixed direction lifts every face by how far
+// it turns toward it, up to the mid tone, so the top, front and side of a
+// table each take their own tone instead of one flat shadow tone; and the
+// sky's light through the windows lifts what is in front of them. Direct
+// light (sun or moon through a window, a flash) goes on over both: the
+// tone is `lit` laid over that light as a screen, never past the lit tone,
+// so a patch of daylight is always brighter than the room round it. What
+// the fill and sky light add takes the sky's tint for the time of day
+// (uSkyTint); the direct light keeps the palette's own colours. Flat faces
+// keep the tone unquantised (toonToneFlat); the rest step through the
+// ramp as toonTone does.
+const float kMaxAmbient = 1.5;  // the fill and sky light together, in tone
+vec3 indoorColour(int surface, float lit, vec3 wpos, vec3 n, bool flatFace) {
+    vec3 nn = normalize(n);
+    float fill = uFill * clamp(dot(nn, uFillDir), 0.0, 1.0);
+    float ambient = min(fill + skyLit(wpos, nn), kMaxAmbient);
+    float t = ambient + lit * (1.0 - 0.5 * ambient);
+    if (!flatFace) t = quantiseTone(t);
+    vec3 direct = toneColour(surface, lit);
+    return direct + (toneColour(surface, t) - direct) * uSkyTint;
+}
 
 float barkHash(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));

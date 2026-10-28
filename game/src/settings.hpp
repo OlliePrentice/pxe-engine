@@ -8,6 +8,7 @@
 #include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -47,6 +48,14 @@ struct WorldClock {
     float smoke = 0.f;
     float size = 1.f;
     bool doused = false;  // put out with water: it dies in moments, not seconds
+    // Lit only at night (FireSite::nightOnly): `night` eases between
+    // out by day (0) and burning (1), and scales `level` as drawn; < 0
+    // until followSun first places it.
+    bool nightOnly = false;
+    float night = -1.f;
+    // How well it burns as drawn: its level, and for a night-only fire by
+    // how far night has brought it in.
+    float drawnLevel() const { return nightOnly ? level * std::max(night, 0.f) : level; }
   };
   std::vector<Fire> fires;
   std::uint32_t nextFireId = 0;
@@ -74,6 +83,12 @@ struct WorldClock {
   void kindle(glm::vec2 from, glm::vec2 to, float radius);
   // Advance by `dt` real seconds.
   void advance(float dt);
+  // Bring the night-only fires toward lit while the sun is below the
+  // horizon and out while it is above, over kNightFireFade seconds; `dt`
+  // real seconds since the last call, or < 0 to settle them at once.
+  // Fires not yet placed (just added by placeFires) settle at once too.
+  void followSun(float sunElevationDegrees, float dt);
+  static constexpr float kNightFireFade = 2.f;
   // A lightning flash now, lighting the scene from a random direction.
   void strike();
   // Rain at or above this puts open campfires out (and stops them relighting).
@@ -111,6 +126,15 @@ struct BrushSettings {
   float radius = 1.f;  // metres
 };
 
+// A loading screen over the whole window: a dark plate with a title and a
+// passage under it, `opacity` 1 fully up .. 0 gone, as it fades into the
+// scene behind it.
+struct LoadingScreen {
+  const char* title = "";
+  const char* passage = "";
+  float opacity = 1.f;
+};
+
 // Dear ImGui panel toggled with Tab, built on the engine's overlay. Drawn at
 // window resolution on top of the upscaled pixel art.
 class SettingsMenu {
@@ -129,10 +153,11 @@ class SettingsMenu {
 
   // Build and draw the panel, and round the cursor the brush's (or the fox
   // tool's) outline on the ground (window points) if any, and `note` (if
-  // any) by `notePoint` (window points). Call after the scene is presented,
-  // before swap.
+  // any) by `notePoint` (window points); and over everything, `loading` if
+  // it is up. Call after the scene is presented, before swap.
   void draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
-            const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint, float fps);
+            const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint, float fps,
+            const LoadingScreen* loading = nullptr);
 
  private:
   pxe::Overlay* overlay_ = nullptr;

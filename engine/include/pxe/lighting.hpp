@@ -34,6 +34,18 @@ struct Lighting {
   // sun or moon by its strength.
   float flash = 0.f;
   glm::vec3 flashDir{0.f, 1.f, 0.f};
+  // A room's fill light (Scene::fillDir), used only indoors: 1 by day and in
+  // golden hour, fading through twilight to 0 at night, when a room is lit
+  // only by its fires.
+  float fill = 0.f;
+  // Indoors, the sky's light through the room's windows (Scene::windows):
+  // how strong (1 until sunset, fading through twilight until the sky is
+  // dark at -14 degrees, then a faint moonlight), the tint it
+  // and the fill light take (warm white, amber, violet-blue, cool
+  // moonlight), and the colour of the sky seen through the openings.
+  float skyLight = 0.f;
+  glm::vec3 skyTint{1.f};
+  glm::vec3 skyColour{0.f};
   // God rays: how strong the sunbeams are (0 none; the renderer adds the
   // camera angle) and their colour.
   float rays = 0.f;

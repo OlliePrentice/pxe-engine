@@ -37,6 +37,10 @@ constexpr float kFireLightHeight = 0.62f;
 constexpr int kFireShadow = 512;  // per cube face
 // How far a firefly's light carries, metres.
 constexpr float kFireflyReach = 2.3f;
+// Windows a room's sky light comes through, at most (kSkyWindows in common.glsl).
+constexpr int kSkyWindows = 8;
+// Dark regions drawn, at most (kDarkRegions in common.glsl and edge.frag).
+constexpr int kDarkRegions = 8;
 
 int uloc(unsigned prog, const char* name) { return glGetUniformLocation(prog, name); }
 
@@ -115,6 +119,37 @@ std::vector<float> ramp(const Lighting& lighting, glm::vec3 (Palette::*field)[3]
   return out;
 }
 
+// The scene's dark regions (Scene::darkRegions), in the toon shaders or the
+// edge pass: per region its centre, its own +x and +z in the world, its half
+// extents, the open face's outward normal in its own frame, and its start
+// and end strengths and fade distance.
+void bindDarkRegions(unsigned prog, const Scene& scene) {
+  std::vector<float> centre, axisX, axisZ, half, open, fade;
+  for (const DarkRegion& r : scene.darkRegions) {
+    if (centre.size() / 3 >= static_cast<std::size_t>(kDarkRegions)) break;
+    const float c = std::cos(r.yaw), s = std::sin(r.yaw);
+    const int face = static_cast<int>(r.openFace);
+    glm::vec3 out{0.f};
+    out[face / 2] = face % 2 == 0 ? 1.f : -1.f;
+    centre.insert(centre.end(), {r.centre.x, r.centre.y, r.centre.z});
+    axisX.insert(axisX.end(), {c, 0.f, -s});
+    axisZ.insert(axisZ.end(), {s, 0.f, c});
+    half.insert(half.end(), {r.halfExtents.x, r.halfExtents.y, r.halfExtents.z});
+    open.insert(open.end(), {out.x, out.y, out.z});
+    fade.insert(fade.end(), {r.startStrength, r.endStrength, r.fadeDistance});
+  }
+  const int count = static_cast<int>(centre.size() / 3);
+  u1i(prog, "uDarkCount", count);
+  if (count > 0) {
+    u3fv(prog, "uDarkCentre", count, centre.data());
+    u3fv(prog, "uDarkAxisX", count, axisX.data());
+    u3fv(prog, "uDarkAxisZ", count, axisZ.data());
+    u3fv(prog, "uDarkHalf", count, half.data());
+    u3fv(prog, "uDarkOpen", count, open.data());
+    u3fv(prog, "uDarkFade", count, fade.data());
+  }
+}
+
 // This frame's firelights, flattened for the toon shaders.
 struct FireUniforms {
   int count = 0;
@@ -125,8 +160,9 @@ struct FireUniforms {
 };
 
 // The firelights' shadow cubes are on unit 7.
-void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP, const glm::mat4& flashVP,
-              const FireUniforms& fire, float normalBias, bool testColours) {
+void bindToon(unsigned prog, const Lighting& lighting, const Scene& scene, const glm::mat4& lightVP,
+              const glm::mat4& flashVP, const FireUniforms& fire, float normalBias, bool testColours) {
+  const bool indoors = scene.indoors;
   u1f(prog, "uTLit", lighting.tLit);
   u1f(prog, "uTMid", lighting.tMid);
   const glm::vec3 light = glm::normalize(lighting.lightDir);
@@ -142,6 +178,33 @@ void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP,
   u1f(prog, "uCloudStrength", lighting.cloudStrength);
   u1f(prog, "uOvercast", lighting.overcast);
   u1f(prog, "uRain", lighting.rain);
+  u1i(prog, "uIndoors", indoors ? 1 : 0);
+  // The room's fill light, indoors only.
+  u1f(prog, "uFill", indoors ? lighting.fill : 0.f);
+  const glm::vec3 fill = glm::length(scene.fillDir) > 1e-4f ? glm::normalize(scene.fillDir) : glm::vec3{0.f, 1.f, 0.f};
+  u3f(prog, "uFillDir", fill.x, fill.y, fill.z);
+  // The sky's light through the room's windows, indoors only; its tint
+  // goes on the fill light too.
+  {
+    std::vector<float> centre, inward, half;
+    for (const SkyWindow& w : scene.windows) {
+      if (!indoors || centre.size() / 3 >= static_cast<std::size_t>(kSkyWindows)) break;
+      const glm::vec3 in = glm::normalize(glm::vec3{w.inward.x, 0.f, w.inward.z});
+      centre.insert(centre.end(), {w.centre.x, w.centre.y, w.centre.z});
+      inward.insert(inward.end(), {in.x, in.y, in.z});
+      half.insert(half.end(), {0.5f * w.width, 0.5f * w.height});
+    }
+    const int count = static_cast<int>(centre.size() / 3);
+    u1i(prog, "uWindowCount", count);
+    if (count > 0) {
+      u3fv(prog, "uWindowCentre", count, centre.data());
+      u3fv(prog, "uWindowInward", count, inward.data());
+      glUniform2fv(uloc(prog, "uWindowHalf"), count, half.data());
+    }
+    u1f(prog, "uSkyLight", indoors && count > 0 ? lighting.skyLight : 0.f);
+    const glm::vec3 tint = indoors ? lighting.skyTint : glm::vec3{1.f};
+    u3f(prog, "uSkyTint", tint.x, tint.y, tint.z);
+  }
   u1f(prog, "uFlash", lighting.flash);
   const glm::vec3 flash = glm::normalize(lighting.flashDir);
   u3f(prog, "uFlashDir", flash.x, flash.y, flash.z);
@@ -162,6 +225,7 @@ void bindToon(unsigned prog, const Lighting& lighting, const glm::mat4& lightVP,
   u3fv(prog, "uFireBand", kSurfCount, fireBand.data());
   glUniform4f(uloc(prog, "uHorizon"), lighting.horizon.x, lighting.horizon.y, lighting.horizon.z, lighting.horizon.w);
   u1f(prog, "uHorizonRelief", lighting.horizonRelief);
+  bindDarkRegions(prog, scene);
 }
 
 }  // namespace
@@ -173,6 +237,9 @@ Renderer::~Renderer() {
   if (grassInst_) glDeleteBuffers(1, &grassInst_);
   if (presentVao_) glDeleteVertexArrays(1, &presentVao_);
   if (presentVbo_) glDeleteBuffers(1, &presentVbo_);
+  if (skyVao_) glDeleteVertexArrays(1, &skyVao_);
+  if (skyVbo_) glDeleteBuffers(1, &skyVbo_);
+  if (progSky_) glDeleteProgram(progSky_);
   for (const auto& row : toon_)
     for (const ToonPrograms& t : row)
       for (unsigned prog : {t.mesh, t.grass, t.water})
@@ -450,6 +517,15 @@ void Renderer::createQuads() {
                         reinterpret_cast<void*>(sizeof(float) * 2));
   glBindVertexArray(0);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+  glGenVertexArrays(1, &skyVao_);
+  glGenBuffers(1, &skyVbo_);
+  glBindVertexArray(skyVao_);
+  glBindBuffer(GL_ARRAY_BUFFER, skyVbo_);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 3, reinterpret_cast<void*>(0));
+  glBindVertexArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void Renderer::init() {
@@ -469,6 +545,7 @@ void Renderer::init() {
   edge_[1] = linkProgram("edge.vert", "edge.frag", {}, "#define FIRE_GRID\n");
   progFire_ = linkProgram("fire.vert", "fire.frag");
   progFireShadow_ = linkProgram("fireshadow.vert", "fireshadow.frag");
+  progSky_ = linkProgram("sky.vert", "sky.frag");
   createTargets();
   createQuads();
 
@@ -487,17 +564,37 @@ void Renderer::init() {
                RenderConfig::kPad, RenderConfig::kShadow);
 }
 
-void Renderer::upload(const Scene& scene) {
+void Renderer::upload(const Scene& scene, bool keepGrassFire) {
   shadowValid_ = false;
   shadowStaticValid_ = false;
   flashValid_ = false;
-  grid_.reset();
+  if (!keepGrassFire) grid_.reset();
   fires_.clear();
   for (ShadowCube& cube : cubes_) cube = ShadowCube{};
   for (LightSlot& slot : slots_) slot = LightSlot{};
   fireLights_.clear();
   fireTime_ = -1.f;
   uploadGrass(scene);
+
+  // A pane of sky behind each window, in a plane a little outside the
+  // wall's outer face and a little bigger than the opening, so the wall
+  // round the opening hides its edges and only the opening shows it.
+  std::vector<float> sky;
+  if (scene.indoors)
+    for (const SkyWindow& w : scene.windows) {
+      const glm::vec3 in = glm::normalize(glm::vec3{w.inward.x, 0.f, w.inward.z});
+      const glm::vec3 across{-in.z, 0.f, in.x};
+      const glm::vec3 mid = w.centre - in * (w.depth + 0.02f);
+      const glm::vec3 a = across * (0.5f * w.width + 0.05f);
+      const glm::vec3 b{0.f, 0.5f * w.height + 0.05f, 0.f};
+      const glm::vec3 c[4] = {mid - a - b, mid + a - b, mid + a + b, mid - a + b};
+      for (int i : {0, 1, 2, 0, 2, 3}) sky.insert(sky.end(), {c[i].x, c[i].y, c[i].z});
+    }
+  skyVertices_ = static_cast<int>(sky.size() / 3);
+  glBindBuffer(GL_ARRAY_BUFFER, skyVbo_);
+  glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(sky.size() * sizeof(float)), sky.empty() ? nullptr : sky.data(),
+               GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void Renderer::uploadGrass(const Scene& scene) {
@@ -885,7 +982,13 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     throw std::invalid_argument("Renderer::render: present is set but FrameParams::framebufferW/H is " +
                                 std::to_string(params.framebufferW) + "x" + std::to_string(params.framebufferH) +
                                 "; set it to Window::framebufferSize(), or clear present");
-  const Lighting& lighting = params.lighting;
+  // Indoors there is no sky in view: no cloud shadows and no god rays (and
+  // the edge pass draws no rain, below).
+  Lighting lighting = params.lighting;
+  if (scene.indoors) {
+    lighting.cloudStrength = 0.f;
+    lighting.rays = 0.f;
+  }
   const LightFit light = fitLight(scene, lighting.lightDir);
   const LightFit flash = fitLight(scene, lighting.flashDir);
   const float normalBias = 3.f * light.texel;
@@ -930,6 +1033,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glUseProgram(progShadow);
     umat(progShadow, "uLightViewProj", light.viewProj);
     for (const Mesh& m : scene.meshes) m.draw();
+    for (const Mesh& m : scene.shadowOnly) m.draw();
     shadowValid_ = true;
     shadowLight_ = lighting.lightDir;
     shadowStaticValid_ = actors;
@@ -962,6 +1066,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glUseProgram(progShadow);
     umat(progShadow, "uLightViewProj", flash.viewProj);
     for (const Mesh& m : scene.meshes) m.draw();
+    for (const Mesh& m : scene.shadowOnly) m.draw();
     flashValid_ = true;
     flashLight_ = lighting.flashDir;
   }
@@ -1026,24 +1131,25 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
   u1f(progMesh_, "uTime", params.time);
-  bindToon(progMesh_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+  bindToon(progMesh_, lighting, scene, light.viewProj, flash.viewProj, fireLight, normalBias,
+           params.testColours);
   bindBurn(progMesh_);
   if (!params.actors.empty() || !params.actorEffects.empty()) {
     // The stone's ramp now, over its mid colour by day: the light a character stands in.
     const glm::vec3 day = glm::max(scene.palette[kPhaseDay][kSurfStone].band[1], glm::vec3{0.02f});
     std::vector<float> tint, colour;
-    std::vector<int> glow;
+    std::vector<int> flags;  // per slot: 1 glows, 2 creases (mesh.frag)
     for (int b = 0; b < 3; ++b) {
       const glm::vec3 t = params.testColours ? glm::vec3(b == 2, b == 1, b == 0) : lighting.palette[kSurfStone].band[b] / day;
       tint.insert(tint.end(), {t.x, t.y, t.z});
     }
     for (const ActorMaterial& m : params.actorMaterials) {
       colour.insert(colour.end(), {m.colour.x, m.colour.y, m.colour.z});
-      glow.push_back(m.glow ? 1 : 0);
+      flags.push_back((m.glow ? 1 : 0) | (m.crease ? 2 : 0));
     }
     u3fv(progMesh_, "uActorTint", 3, tint.data());
     u3fv(progMesh_, "uActorColour", kActorMaterials, colour.data());
-    glUniform1iv(uloc(progMesh_, "uActorGlow"), kActorMaterials, glow.data());
+    glUniform1iv(uloc(progMesh_, "uActorFlags"), kActorMaterials, flags.data());
     const glm::vec3 fire = lighting.fireBand[kSurfStone] / day;
     u3f(progMesh_, "uActorFire", fire.x, fire.y, fire.z);
   }
@@ -1058,7 +1164,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
       // screen and sits h sin(pitch) nearer: tan(pitch) metres per metre.
       u1f(progGrass_, "uUprightNdcPerPx", std::tan(camera.pitchRadians) * camera.texelWorld * metresToNdc);
     }
-    bindToon(progGrass_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+    bindToon(progGrass_, lighting, scene, light.viewProj, flash.viewProj, fireLight, normalBias,
+             params.testColours);
     bindBurn(progGrass_);
     u3fv(progGrass_, "uTip", kSurfCount * 3, ramp(lighting, &Palette::tip, params.testColours).data());
     u1i(progGrass_, "uGround", 2);
@@ -1127,6 +1234,28 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glViewport(0, 0, rtW(), rtH());
   drawMeshes(scene, params, viewProj, identity, -1e9f);
+  // Indoors, the sky through the windows, where the openings show only the
+  // empty background. The normal target is left as the background's.
+  if (scene.indoors && skyVertices_ > 0) {
+    // Greyed under rain cloud, as the overcast greys the room.
+    const glm::vec3 sky = glm::mix(lighting.skyColour,
+                                   glm::vec3{0.85f * glm::dot(lighting.skyColour, glm::vec3{0.299f, 0.587f, 0.114f})},
+                                   lighting.overcast);
+    glDisable(GL_CULL_FACE);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glUseProgram(progSky_);
+    umat(progSky_, "uViewProj", viewProj);
+    u3f(progSky_, "uSky", sky.x, sky.y, sky.z);
+    glBindVertexArray(skyVao_);
+    glDrawArrays(GL_TRIANGLES, 0, skyVertices_);
+    glBindVertexArray(0);
+    glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_CULL_FACE);
+  }
   endPass();
   beginPass(PassTimes::kWater);
 
@@ -1142,7 +1271,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     glBindTexture(GL_TEXTURE_2D, refl_);
     glUseProgram(progWater_);
     umat(progWater_, "uViewProj", viewProj);
-    bindToon(progWater_, lighting, light.viewProj, flash.viewProj, fireLight, normalBias, params.testColours);
+    bindToon(progWater_, lighting, scene, light.viewProj, flash.viewProj, fireLight, normalBias,
+             params.testColours);
     u1i(progWater_, "uBed", 3);
     u1i(progWater_, "uBedDepth", 4);
     u1i(progWater_, "uReflection", 5);
@@ -1321,7 +1451,11 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   const glm::vec3 edgeLight = glm::normalize(lighting.lightDir);
   u3f(progEdge_, "uLight", edgeLight.x, edgeLight.y, edgeLight.z);
   u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
-  u1f(progEdge_, "uRain", lighting.rain);
+  // Light rims and point lights stay out of the dark regions.
+  bindDarkRegions(progEdge_, scene);
+  u1f(progEdge_, "uRain", scene.indoors ? 0.f : lighting.rain);
+  u1i(progEdge_, "uIndoors", scene.indoors ? 1 : 0);
+  u1f(progEdge_, "uSunRain", lighting.rain);
   u1f(progEdge_, "uFlash", lighting.flash);
   u1f(progEdge_, "uTime", params.time);
   // The camera's snapped position in whole texels anchors the rain's pixel

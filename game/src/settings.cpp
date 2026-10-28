@@ -7,6 +7,7 @@
 #include <glm/geometric.hpp>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 
@@ -112,6 +113,16 @@ void WorldClock::advance(float dt) {
   cloudOffset -= windDir() * kCloudDrift * dt * cloudSpeed;
 }
 
+void WorldClock::followSun(float sunElevationDegrees, float dt) {
+  const float target = sunElevationDegrees < 0.f ? 1.f : 0.f;
+  for (Fire& f : fires) {
+    if (!f.nightOnly) continue;
+    if (dt < 0.f || f.night < 0.f) f.night = target;
+    else if (f.night < target) f.night = std::min(target, f.night + dt / kNightFireFade);
+    else f.night = std::max(target, f.night - dt / kNightFireFade);
+  }
+}
+
 void WorldClock::placeFires(const std::vector<FireSite>& sites) {
   fires.clear();
   nextFireId = 0;
@@ -121,6 +132,7 @@ void WorldClock::placeFires(const std::vector<FireSite>& sites) {
     f.base = site.base;
     f.sheltered = site.sheltered;
     f.size = site.size;
+    f.nightOnly = site.nightOnly;
     fires.push_back(f);
   }
 }
@@ -206,7 +218,7 @@ bool SettingsMenu::wantsMouse() const { return overlay_ && open_ && overlay_->wa
 
 void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sound, BrushSettings& brush,
                         const std::vector<glm::vec2>& brushOutline, const char* note, glm::vec2 notePoint,
-                        float fps) {
+                        float fps, const LoadingScreen* loading) {
   if (!overlay_) return;
   overlay_->begin();
 
@@ -366,6 +378,30 @@ void SettingsMenu::draw(WorldClock& clock, ViewToggles& view, SoundSettings& sou
     list->AddRectFilled(ImVec2(at.x - 6.f, at.y - 4.f), ImVec2(at.x + size.x + 6.f, at.y + size.y + 4.f),
                         IM_COL32(20, 18, 24, 210), 4.f);
     list->AddText(at, IM_COL32(255, 235, 220, 255), note);
+  }
+
+  // The loading screen, over everything (the menu too): a near-black plate
+  // the colour of the night palette's shadows, the title large and warm in
+  // the middle, the passage wrapped under it in a muted cream. All of it
+  // fades together.
+  if (loading && loading->opacity > 0.f) {
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    const ImVec2 size = ImGui::GetIO().DisplaySize;
+    const float a = std::clamp(loading->opacity, 0.f, 1.f);
+    auto alpha = [&](int full) { return static_cast<int>(static_cast<float>(full) * a + 0.5f); };
+    list->AddRectFilled(ImVec2(0.f, 0.f), size, IM_COL32(14, 12, 22, alpha(255)));
+    ImFont* font = ImGui::GetFont();
+    const float body = ImGui::GetFontSize() * 1.25f;
+    const float heading = ImGui::GetFontSize() * 2.6f;
+    const float wrap = std::min(size.x * 0.6f, body * 32.f);
+    const ImVec2 titleSize = font->CalcTextSizeA(heading, FLT_MAX, 0.f, loading->title);
+    const ImVec2 passageSize = font->CalcTextSizeA(body, FLT_MAX, wrap, loading->passage);
+    const float gap = body * 1.6f;
+    const float top = 0.5f * (size.y - (titleSize.y + gap + passageSize.y));
+    list->AddText(font, heading, ImVec2(0.5f * (size.x - titleSize.x), top), IM_COL32(240, 196, 120, alpha(255)),
+                  loading->title);
+    list->AddText(font, body, ImVec2(0.5f * (size.x - passageSize.x), top + titleSize.y + gap),
+                  IM_COL32(214, 204, 186, alpha(255)), loading->passage, nullptr, wrap);
   }
 
   overlay_->end();

@@ -3,6 +3,7 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <functional>
 #include <vector>
 
 namespace pxe {
@@ -15,8 +16,12 @@ class HeightMap {
   static constexpr float kNone = -1e9f;
 
   // `triangles` holds three corners per triangle. Walls seen edge-on from
-  // above add nothing.
-  void build(const std::vector<glm::vec3>& triangles, float cell = 0.2f);
+  // above add nothing. `overhead`, if given, picks out surfaces that things
+  // on the ground pass under - the head of a doorway, a roof over a porch -
+  // so that they add nothing either: a surface at height y over the cell
+  // whose middle is xz is left out where overhead(xz, y) is true.
+  void build(const std::vector<glm::vec3>& triangles, float cell = 0.2f,
+             const std::function<bool(glm::vec2, float)>& overhead = {});
   bool empty() const { return heights_.empty(); }
   // The grid's corners (xz).
   glm::vec2 min() const { return min_; }

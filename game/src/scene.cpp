@@ -26,6 +26,45 @@ constexpr float kPi = 3.14159265358979323846f;
 constexpr float kShelterTestX = -8.5f;
 constexpr float kShelterTestZ = -9.f;
 
+// `v` turned `yaw` radians about +y, as a model is placed at that yaw: its
+// +z goes to (sin yaw, 0, cos yaw).
+glm::vec3 turned(glm::vec3 v, float yaw) {
+  const float c = std::cos(yaw), s = std::sin(yaw);
+  return {c * v.x + s * v.z, v.y, -s * v.x + c * v.z};
+}
+
+// What is higher than this over a doorway's floor, over the doorway itself
+// and the floor just through it, the hero (and a rolling fireball) passes
+// under: the head of the doorway, which is 3.4 m tall, and the wall, rails
+// and roof above it. Left out of the scene's ground there, or the highest
+// surface over those cells would be the head and the doorway a wall.
+constexpr float kDoorHeadroom = 3.3f;
+// A rectangle on the ground (xz), lo to hi.
+struct Rect {
+  glm::vec2 lo, hi;
+  bool holds(glm::vec2 p) const { return p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y; }
+};
+// The Sleeping Fox's exterior (its own coordinates, assets.md): its doorway's
+// clear opening, from the wall's inside face out to the eaves' edge, and the
+// hall behind it (the `Vestibule` node), out to its side walls and back to
+// the rear wall's inside face.
+constexpr Rect kTavernDoorway{{-1.1f, -0.25f}, {1.1f, 0.85f}};
+constexpr Rect kTavernVestibule{{-1.9f, -6.05f}, {1.9f, -0.25f}};
+// The hall seen through the open door is a dark region (pxe::DarkRegion):
+// open on the front wall's inside face (z -0.25), back to the rear wall's
+// (z -6.05), across to the side walls' inner faces (x +-1.9) and from the
+// floor (y 0) to the walls' top (y 4.4). Its floor shows at 35% of its mid
+// colour at the threshold, falling to 5% by 4 m in and held to the back.
+constexpr float kHallDarkStart = 0.35f;
+constexpr float kHallDarkEnd = 0.05f;
+constexpr float kHallDarkFade = 4.f;
+// The region reaches this far past the floor, side walls, top and back, so
+// the faces lying in those planes are inside it, not split pixel by pixel.
+constexpr float kHallDarkMargin = 0.05f;
+// Its room (tavern_interior.glb): the inside door's opening through the +x
+// wall, its jambs included, and the step outside it.
+constexpr Rect kRoomDoorway{{11.3f, -2.4f}, {14.1f, 0.2f}};
+
 glm::vec3 hex(std::uint32_t rgb) {
   return glm::vec3{static_cast<float>((rgb >> 16) & 0xff), static_cast<float>((rgb >> 8) & 0xff),
                    static_cast<float>(rgb & 0xff)} /
@@ -387,6 +426,7 @@ struct RuinsGeometry {
   std::vector<glm::vec3> lawnCorners;
   std::vector<pxe::Triangle> leaves;
   std::size_t prims = 0;
+  std::size_t tavernTriangles = 0;
   std::size_t candles = 0;
   int candlesOnStone = 0, candlesOnLawn = 0;
   std::vector<glm::vec2> campfires;
@@ -449,7 +489,7 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
     for (float z = built.focus.z - 12.f; z <= built.focus.z + 10.f; z += 0.5f)
       for (float x = built.focus.x - 14.f; x <= built.focus.x + 14.f; x += 0.5f) {
         const auto hit = ground.at(x, z);
-        if (!hit) continue;
+        if (!hit || inTavernFootprint({x, z})) continue;
         const float d = glm::length(glm::vec2{x, z} - glm::vec2{built.focus.x, built.focus.z});
         if (d >= best) continue;
         bool clear = true;
@@ -502,7 +542,8 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
         if (!flat || !clear(at.x, at.y, 1.6f)) continue;
         feet.push_back({at.x, top->first, at.y});
         ++onStone;
-      } else if (lawnHit && (!top || top->first < lawnY + 0.03f) && lawnHit->normal.y > 0.9f) {
+      } else if (lawnHit && (!top || top->first < lawnY + 0.03f) && lawnHit->normal.y > 0.9f &&
+                 !inTavernFootprint(at)) {
         if (onLawn >= 3 || !clear(at.x, at.y, 2.5f)) continue;
         feet.push_back(lawnHit->pos);
         ++onLawn;
@@ -516,12 +557,31 @@ void layOutRuins(const BuildOptions& options, BuiltScene& built, RuinsGeometry& 
     for (const glm::vec3& foot : feet) built.fires.push_back({addCandle(verts, indices, foot), false, kCandleSize});
     geo.candles = feet.size();
   }
+  // The Sleeping Fox on its lawn (kTavernSpot), added after the shelter
+  // test and the candles, which keep off its footprint, so they are laid
+  // out as they were before it stood there.
+  for (const pxe::GltfPrimitive& prim : pxe::loadGltf(std::string(PXE_ASSET_DIR) + "/scenes/tavern_exterior.glb")) {
+    std::vector<pxe::Vertex> placed;
+    placed.reserve(prim.vertices.size());
+    for (const pxe::Vertex& pv : prim.vertices) {
+      const glm::vec3 p = tavernPoint({pv.px, pv.py, pv.pz});
+      const glm::vec3 n = turned({pv.nx, pv.ny, pv.nz}, kTavernYaw);
+      placed.push_back({p.x, p.y, p.z, n.x, n.y, n.z, pv.surface});
+    }
+    geo.surfaces.append(prim.surface, placed, prim.indices);
+    geo.tavernTriangles += prim.indices.size() / 3;
+  }
   for (int s = 0; s < pxe::kSurfCount; ++s)
     for (std::size_t i = added[s]; i < indices[s].size(); ++i) {
       const pxe::Vertex& v = verts[s][indices[s][i]];
       geo.solids.push_back({v.px, v.py, v.pz});
     }
-  pxe::buildSceneMaps(scene, geo.surfaces);
+  // Over the Sleeping Fox's doorway and the hall behind it, what is above
+  // head height is left out of the ground, so the hero can walk in.
+  pxe::buildSceneMaps(scene, geo.surfaces, [](glm::vec2 xz, float y) {
+    const glm::vec2 local = tavernLocal(xz);
+    return y > kTavernSpot.y + kDoorHeadroom && (kTavernDoorway.holds(local) || kTavernVestibule.holds(local));
+  });
   for (FireSite& f : built.fires) f.sheltered = scene.shelter.sheltered(f.base);
 }
 
@@ -540,6 +600,20 @@ BuiltScene buildRuins(const BuildOptions& options) {
                  f.sheltered ? "sheltered" : "open to the rain");
 
   pxe::uploadScene(scene, geo.surfaces);
+  // The Sleeping Fox's hall, dark through its open door (kHallDark...).
+  {
+    const glm::vec3 lo{-1.9f - kHallDarkMargin, 0.f - kHallDarkMargin, -6.05f - kHallDarkMargin};
+    const glm::vec3 hi{1.9f + kHallDarkMargin, 4.4f + kHallDarkMargin, -0.25f};
+    pxe::DarkRegion hall;
+    hall.centre = tavernPoint(0.5f * (lo + hi));
+    hall.halfExtents = 0.5f * (hi - lo);
+    hall.yaw = kTavernYaw;
+    hall.openFace = pxe::BoxFace::kPosZ;
+    hall.startStrength = kHallDarkStart;
+    hall.endStrength = kHallDarkEnd;
+    hall.fadeDistance = kHallDarkFade;
+    scene.darkRegions.push_back(hall);
+  }
 
   // One generator feeds the grass and then the leaves, so the lawn and the
   // crowns come out the same every time.
@@ -561,6 +635,8 @@ BuiltScene buildRuins(const BuildOptions& options) {
       if (!hit) continue;
       scene.fireflyHomes.push_back(hit->pos + glm::vec3{0.f, 0.5f + 1.2f * u(flyRng), 0.f});
     }
+    // None inside the Sleeping Fox (dropped after, so the rest are where they were).
+    std::erase_if(scene.fireflyHomes, [](const glm::vec3& p) { return inTavernFootprint({p.x, p.z}); });
   }
 
   // No grass in the fire pits.
@@ -582,6 +658,14 @@ BuiltScene buildRuins(const BuildOptions& options) {
     std::fprintf(stderr, "pxe: %zu grass sprites under %zu fox%s dropped\n", before - scene.grass.size(),
                  options.beds.size(), options.beds.size() == 1 ? "" : "es");
   }
+  // Nor inside the Sleeping Fox's footprint (its plinth's stone already
+  // hid most of it), so none shows through its floor or walls and a grass
+  // fire stops at it. Dropped after scattering too.
+  {
+    const std::size_t before = scene.grass.size();
+    std::erase_if(scene.grass, [&](const pxe::GrassInstance& g) { return g.kind < 1.5f && inTavernFootprint({g.px, g.pz}); });
+    std::fprintf(stderr, "pxe: %zu grass sprites under the tavern dropped\n", before - scene.grass.size());
+  }
 
   // Leaves grow in clumps over every crown, as in the video.
   const int leafCount = pxe::scatterLeaves(scene, geo.leaves, options.leafDensity, rng);
@@ -595,7 +679,7 @@ BuiltScene buildRuins(const BuildOptions& options) {
       const float x = built.focus.x - 12.f + 24.f * u(extraRng);
       const float z = built.focus.z - 9.f + 16.f * u(extraRng);
       const auto hit = ground.at(x, z);
-      if (!hit) continue;
+      if (!hit || inTavernFootprint({x, z})) continue;
       bool apart = true;
       for (const FireSite& f : built.fires) apart = apart && glm::length(glm::vec2{x - f.base.x, z - f.base.z}) > 1.5f;
       if (!apart) continue;
@@ -604,21 +688,210 @@ BuiltScene buildRuins(const BuildOptions& options) {
     }
     std::fprintf(stderr, "pxe: %d extra fires\n", options.extraFires);
   }
-  std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters\n", geo.prims, leafCount);
+  std::fprintf(stderr, "pxe: ruins %zu primitives, %d leaf clusters; tavern %zu triangles at %.2f, %.2f, %.2f\n", geo.prims,
+               leafCount, geo.tavernTriangles, kTavernSpot.x, kTavernSpot.y, kTavernSpot.z);
+  std::fprintf(stderr, "pxe: bounds %.2f %.2f %.2f .. %.2f %.2f %.2f\n", scene.boundsMin.x, scene.boundsMin.y,
+               scene.boundsMin.z, scene.boundsMax.x, scene.boundsMax.y, scene.boundsMax.z);
+  return built;
+}
+
+// ---------------------------------------------------------------------------
+// The tavern: the Sleeping Fox's one room, inside (tools/blender/
+// build_tavern_interior.py), 22.6 x 17 m, a cutaway seen from yaw 45 with
+// its roof and its two walls nearest that camera drawn only into the shadow
+// map. Its hearth and a brazier burn, a candle on every table and on the
+// bar, and a sconce on four wall posts. Everything here is as assets.md gives it, in the room's own
+// coordinates: the origin is the middle of its floor.
+
+// The hearth's fire, where the flames rise from: 0.08 m over its ash bed, as
+// addCampfire's.
+constexpr glm::vec3 kHearthFire{-4.2f, 0.41f, 7.75f};
+// The brazier's fire, 0.08 m over its coal bed, and its size.
+constexpr glm::vec3 kBrazierFire{8.6f, 1.16f, -4.4f};
+constexpr float kBrazierSize = 0.5f;
+// The candles' flames, each from the top of its wax stub: on tables A-F,
+// then on the bar. The candles themselves are in the glb.
+constexpr glm::vec3 kRoomCandles[] = {{-7.3f, 1.45f, 1.9f},  {-2.2f, 1.45f, 1.9f},  {2.55f, 1.45f, 1.9f},
+                                      {-7.3f, 1.45f, -4.1f}, {-1.6f, 1.45f, -4.1f}, {4.2f, 1.45f, -4.1f},
+                                      {8.f, 1.95f, 5.55f}};
+// Their size: a little bigger than the ruins' test candles (kCandleSize),
+// so each lights its table.
+constexpr float kRoomCandleSize = 0.3f;
+// The wall sconces' flames, each from its dish: on the +z (hearth) wall over
+// the stage and over the bar's far end, then on the +x (door) wall between
+// the door and its window and in the corner by the -z cutaway. The sconces
+// themselves are in the glb.
+// The four windows, open holes in the drawn walls (assets.md): three in the
+// +z (hearth) wall, one in the +x (door) wall, each 1.4 m wide from a sill
+// at 1.5 m to a head at 3.2 m, through walls 0.4 m thick whose inner faces
+// are at z 8.5 and x 11.3.
+constexpr pxe::SkyWindow kRoomWindows[] = {
+    {{-9.9f, 2.35f, 8.5f}, {0.f, 0.f, -1.f}, 1.4f, 1.7f, 0.4f},
+    {{1.65f, 2.35f, 8.5f}, {0.f, 0.f, -1.f}, 1.4f, 1.7f, 0.4f},
+    {{4.7f, 2.35f, 8.5f}, {0.f, 0.f, -1.f}, 1.4f, 1.7f, 0.4f},
+    {{11.3f, 2.35f, -6.6f}, {-1.f, 0.f, 0.f}, 1.4f, 1.7f, 0.4f}};
+constexpr glm::vec3 kRoomSconces[] = {
+    {-11.175f, 2.6f, 8.f}, {7.408f, 2.6f, 8.f}, {10.8f, 2.6f, -4.15f}, {10.8f, 2.6f, -8.375f}};
+constexpr float kSconceSize = 0.35f;
+// What the hero is kept off by a Blocker (tavernBlockers) rather than by the
+// ground: the seats and the brazier; and the stubs drawn at the foot of the
+// two cutaway walls, which are lower than a step, so in the ground they
+// would only lift the hero onto them as it comes up against those walls.
+bool blockedNotGround(const std::string& node) {
+  return node.starts_with("Chair_") || node.starts_with("Stool_") || node.starts_with("Bench_") || node == "Brazier" ||
+         node.starts_with("WallStub_");
+}
+
+BuiltScene buildTavern(const BuildOptions&) {
+  BuiltScene built;
+  pxe::Scene& scene = built.scene;
+  // The room's stone - the hearth, the sconces' irons - is seen by its own
+  // fires once the sun is down, so at twilight and night it is a warm grey
+  // rather than the moonlit blue outside (no tone bluer than it is red).
+  // Only here: the ruins' stone keeps its palette.
+  {
+    using namespace pxe;
+    auto warm = [&](Phase ph, std::uint32_t shadow, std::uint32_t mid, std::uint32_t lit) {
+      setRamp(scene.palette[ph][kSurfStone].band, shadow, mid, lit);
+      setRamp(scene.palette[ph][kSurfStone].detail, shadow, mid, lit);
+      setRamp(scene.palette[ph][kSurfStone].tip, shadow, mid, lit);
+    };
+    warm(kPhaseTwilight, 0x524a46, 0x625850, 0x74685c);
+    warm(kPhaseNight, 0x342e2c, 0x3e3734, 0x4a423c);
+  }
+  // The sky through the windows: it lights the room in front of each one,
+  // and the fill light takes its tint - a warm white by day, amber in
+  // golden hour, a violet-blue through twilight and a cool moonlight at
+  // night (pxe::Lighting::skyTint) - and the openings show it: a pale
+  // blue, a gold, a violet dusk and a night navy.
+  scene.windows.assign(std::begin(kRoomWindows), std::end(kRoomWindows));
+  scene.skyTint[pxe::kPhaseDay] = {1.02f, 0.98f, 0.9f};
+  scene.skyTint[pxe::kPhaseGolden] = {1.12f, 0.82f, 0.52f};
+  scene.skyTint[pxe::kPhaseTwilight] = {0.8f, 0.7f, 1.12f};
+  scene.skyTint[pxe::kPhaseNight] = {0.6f, 0.74f, 1.1f};
+  scene.skyColour[pxe::kPhaseDay] = hex(0xc4dcec);
+  scene.skyColour[pxe::kPhaseGolden] = hex(0xecb874);
+  scene.skyColour[pxe::kPhaseTwilight] = hex(0x5c4c84);
+  scene.skyColour[pxe::kPhaseNight] = hex(0x1a2050);
+  // Lit as the ruins outside are, by the same sun and moon.
+  scene.tLit = 0.6f;
+  scene.tMid = 0.18f;
+  scene.indoors = true;
+  // The room is designed for this yaw, its cutaway walls toward the camera.
+  built.yawDegrees = 45.f;
+  built.focus = glm::vec3{0.f, 1.f, 0.f};
+  // The fill light falls from a little above and from the camera's right at
+  // the design yaw (the -x side), so the tops, the -x sides and the -z sides
+  // the camera sees each take their own tone: the -x sides most, then the
+  // -z sides, then the tops. Kept low so the floor, all top, stays dark and
+  // the daylight falling on it through the windows still stands out.
+  scene.fillDir = glm::normalize(glm::vec3{-0.8f, 0.35f, -0.45f});
+  // The sun crosses the sky as it does over the ruins, so daylight falls in
+  // through the windows from the side it would outside: the room's +x is the
+  // way the inside door faces, which is the way the exterior's door faces,
+  // so the room is the exterior turned a quarter-turn (yaw kTavernYaw - 90
+  // degrees in the world), and the ruins' east and south are turned back by
+  // as much. No ridge rings it: nothing outside is seen.
+  {
+    const float roomYaw = kTavernYaw - 0.5f * kPi;
+    scene.sunEast = turned({1.f, 0.f, 0.f}, -roomYaw);
+    scene.sunSouth = turned({0.f, 0.f, -1.f}, -roomYaw);
+  }
+
+  const auto prims = pxe::loadGltf(std::string(PXE_ASSET_DIR) + "/scenes/tavern_interior.glb");
+  // One mesh per surface for what is seen, and one per surface for what only
+  // casts shadows (nodes named "..._ShadowOnly").
+  pxe::SurfaceGeometry seen, unseen;
+  std::size_t shadowOnly = 0;
+  std::vector<glm::vec3> groundCorners;
+  for (const pxe::GltfPrimitive& prim : prims) {
+    const bool isUnseen = prim.node.ends_with("_ShadowOnly");
+    if (!isUnseen && !blockedNotGround(prim.node))
+      for (std::uint32_t i : prim.indices) {
+        const pxe::Vertex& pv = prim.vertices[i];
+        groundCorners.push_back({pv.px, pv.py, pv.pz});
+      }
+    (isUnseen ? unseen : seen).append(prim);
+    if (isUnseen) shadowOnly += prim.indices.size() / 3;
+  }
+  // What keeps the rain off: the stone (the hearth's chimney breast over its
+  // fire), and the roof and walls the camera does not see.
+  {
+    std::vector<glm::vec3> roofs = seen.corners(pxe::kSurfStone);
+    for (int s = 0; s < pxe::kSurfCount; ++s) {
+      const std::vector<glm::vec3> c = unseen.corners(static_cast<pxe::Surface>(s));
+      roofs.insert(roofs.end(), c.begin(), c.end());
+    }
+    scene.shelter.build(roofs);
+  }
+  // The ground is everything seen - the floor, and the walls, bar, tables,
+  // barrels, shelves, hearth and stage standing on it, all taller than a
+  // step - but not what only casts shadows, nor the seats, the brazier and
+  // the near walls' stubs (blockedNotGround), nor the head of the inside
+  // door and what is over it. The game keeps the hero off those and inside
+  // the near walls with Blockers (tavernBlockers).
+  scene.ground.build(groundCorners, 0.2f,
+                     [](glm::vec2 xz, float y) { return y > kDoorHeadroom && kRoomDoorway.holds(xz); });
+  pxe::uploadScene(scene, seen);
+  for (int s = 0; s < pxe::kSurfCount; ++s)
+    if (!unseen.indices[s].empty()) {
+      scene.shadowOnly.emplace_back();
+      scene.shadowOnly.back().upload(unseen.vertices[s], unseen.indices[s]);
+    }
+  scene.boundsMin = glm::min(scene.boundsMin, unseen.boundsMin);
+  scene.boundsMax = glm::max(scene.boundsMax, unseen.boundsMax);
+  // The hearth, a campfire's size, the brazier, the candles and the
+  // sconces, each roofed over. The hearth and candles burn at every hour.
+  built.fires.push_back({kHearthFire, false, 1.f});
+  // The brazier burns only at night (the game lights it at dusk).
+  built.fires.push_back({kBrazierFire, false, kBrazierSize, true});
+  for (const glm::vec3& c : kRoomCandles) built.fires.push_back({c, false, kRoomCandleSize});
+  // The sconces too burn only at night, as the brazier does.
+  for (const glm::vec3& c : kRoomSconces) built.fires.push_back({c, false, kSconceSize, true});
+  for (FireSite& f : built.fires) {
+    f.sheltered = scene.shelter.sheltered(f.base);
+    const char* what = f.size >= 1.f            ? "hearth"
+                       : f.size >= kBrazierSize ? "brazier"
+                       : f.size >= kSconceSize  ? "sconce"
+                                                : "candle";
+    std::fprintf(stderr, "pxe: %s at %.1f, %.1f %s\n", what, f.base.x, f.base.z,
+                 f.sheltered ? "sheltered" : "open to the rain");
+  }
+  std::fprintf(stderr, "pxe: tavern %zu primitives, %zu shadow-only triangles\n", prims.size(), shadowOnly);
   return built;
 }
 
 }  // namespace
 
+glm::vec3 tavernPoint(glm::vec3 local) { return kTavernSpot + turned(local, kTavernYaw); }
+
+glm::vec2 tavernLocal(glm::vec2 world) {
+  const glm::vec3 local = turned({world.x - kTavernSpot.x, 0.f, world.y - kTavernSpot.z}, -kTavernYaw);
+  return {local.x, local.z};
+}
+
+bool inTavernFootprint(glm::vec2 world) {
+  const glm::vec2 p = tavernLocal(world);
+  bool inside = false;
+  const std::size_t n = std::size(kTavernFootprint);
+  for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
+    const glm::vec2 a = kTavernFootprint[i], b = kTavernFootprint[j];
+    if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 BuiltScene buildScene(const BuildOptions& options) {
-  BuiltScene built = (options.scene == "hills") ? buildHills(options) : buildRuins(options);
+  BuiltScene built = options.scene == "hills"    ? buildHills(options)
+                     : options.scene == "tavern" ? buildTavern(options)
+                                                 : buildRuins(options);
   std::fprintf(stderr, "pxe: scene %s, %zu sprites\n", options.scene.c_str(), built.scene.grass.size());
   return built;
 }
 
 SceneLayout laidOut(const BuildOptions& options) {
   SceneLayout layout;
-  if (options.scene == "hills") return layout;
+  if (options.scene == "hills" || options.scene == "tavern") return layout;
   BuiltScene built;
   setUpRuins(built);
   RuinsGeometry geo;

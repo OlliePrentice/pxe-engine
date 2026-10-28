@@ -41,12 +41,68 @@ enum Phase : int {
   kPhaseCount = 4,
 };
 
+// A window in a room's wall, open to the sky (indoors only). The sky lights
+// the room through it - a soft light on the floor and walls in front of it,
+// besides the sun or moon falling in through the shadow map - and is seen
+// through it from inside.
+struct SkyWindow {
+  glm::vec3 centre{0.f};               // the middle of the opening, in the wall's inner face
+  glm::vec3 inward{0.f, 0.f, -1.f};    // level, unit, into the room
+  float width = 1.f;                   // the opening, metres
+  float height = 1.f;
+  float depth = 0.4f;                  // the wall's thickness
+};
+
+// A face of a box, in the box's own frame.
+enum class BoxFace : int {
+  kPosX = 0,
+  kNegX = 1,
+  kPosY = 2,
+  kNegY = 3,
+  kPosZ = 4,
+  kNegZ = 5,
+};
+
+// A dark region: an oriented box that the scene's light does not reach,
+// open on one face, such as a deep room or passage seen through an opening.
+// Every surface and character inside it, and the edge pass's light rims on
+// them, take a fixed share of their surface's mid colour for the time of day
+// instead of being lit: no sun, moon, fill, sky light, lightning, cloud
+// shade, firelight or point lights. The share is `startStrength` at the open
+// face and moves linearly to `endStrength` at `fadeDistance` in from it
+// (measured straight in, along the face's normal), holding there beyond it,
+// so the region fades from dim at its opening to dark at its back. A
+// character's glowing materials (ActorMaterial::glow) still glow, and the
+// edge pass's dark outlines are unchanged.
+//
+// Inside means within the box or on its faces. A surface lying exactly in a
+// face's plane may fall either side of it pixel by pixel, so make the box a
+// little larger than the floor and walls it darkens, on every face but the
+// open one.
+struct DarkRegion {
+  glm::vec3 centre{0.f};
+  glm::vec3 halfExtents{0.5f};
+  // Radians about +y. The box's own +x goes to (cos yaw, 0, -sin yaw) and
+  // its +z to (sin yaw, 0, cos yaw).
+  float yaw = 0.f;
+  BoxFace openFace = BoxFace::kPosZ;
+  float startStrength = 1.f;  // the share of the mid colour at the open face, 0 black .. 1
+  float endStrength = 0.f;    // and from fadeDistance in
+  float fadeDistance = 1.f;   // metres; 0 or less is endStrength throughout
+};
+
 struct Scene {
   // Starts with the reference palettes, rim and ink (see `palette`), and an
   // empty scene.
   Scene();
 
   std::vector<Mesh> meshes;  // opaque; all cast shadows
+  // Drawn only into the sun and moon's shadow map (and lightning's), never
+  // seen: a cutaway room's roof and the walls nearest the camera, so the
+  // room is lit as if it were closed while the camera sees in. Built from
+  // glTF nodes named "..._ShadowOnly". They are not part of `ground`, but
+  // are of `shelter`, and of the bounds the shadow map is fitted to.
+  std::vector<Mesh> shadowOnly;
   // Water sheets, drawn after the opaque meshes with reflections. They do
   // not cast shadows. waterLevel is the height of the (flat) water plane,
   // and waterMin/Max bound the sheets for the reflection pass's scissor.
@@ -93,6 +149,28 @@ struct Scene {
 
   glm::vec3 boundsMin{0.f};
   glm::vec3 boundsMax{0.f};
+
+  // A room under a roof, with no sky in view: no rain is drawn over the
+  // frame (the edge pass's streaks, splashes and murk), no cloud shadows
+  // drift over it and no god rays shine in. The rain's overcast still dims
+  // the colours, and sun, moon and lightning still light it through its
+  // windows by the shadow map.
+  bool indoors = false;
+  // Indoors only: toward the room's fill light, a fixed light from above
+  // that lifts each face out of shadow by how far it turns toward it, so
+  // the sides of furniture read apart (Lighting::fill says how strong).
+  glm::vec3 fillDir{0.f, 1.f, 0.f};
+  // Indoors only: the room's windows, and per phase the colour of the
+  // sky's light through them (a tint about 1, which the fill light takes
+  // too; see Lighting::skyTint) and of the sky seen through them.
+  std::vector<SkyWindow> windows;
+  glm::vec3 skyTint[kPhaseCount]{};
+  glm::vec3 skyColour[kPhaseCount]{};
+
+  // Boxes the scene's light does not reach (see DarkRegion), indoors or
+  // out. Read each frame; regions past the renderer's limit of 8 are left
+  // out. Empty by default, which leaves every pixel as it was.
+  std::vector<DarkRegion> darkRegions;
 };
 
 }  // namespace pxe

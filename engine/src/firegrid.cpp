@@ -305,6 +305,46 @@ void FireGrid::build(const Scene& scene, float rain) {
   strokes_.clear();
 }
 
+void FireGrid::quench() {
+  if (!running()) return;
+  // Fire (r) and embers (a) in the grass, and in the crowns their fire (r),
+  // warmth (b) and embers (a), in both of the ping-pong pair; and the fire's
+  // life left. Fuel and leaves left (g) and wetness (grass b) stay.
+  const float none[4] = {0.f, 0.f, 0.f, 0.f};
+  for (int i = 0; i < 2; ++i) {
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_[i]);
+    glColorMaski(0, GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glClearBufferfv(GL_COLOR, 0, none);
+    glColorMaski(1, GL_TRUE, GL_FALSE, GL_TRUE, GL_TRUE);
+    glClearBufferfv(GL_COLOR, 1, none);
+    glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glClearBufferfv(GL_COLOR, 2, none);
+    glBindFramebuffer(GL_FRAMEBUFFER, fboGlow_[i]);
+    glClearBufferfv(GL_COLOR, 0, none);
+    glowBox_[i][0] = pw_;
+    glowBox_[i][1] = ph_;
+    glowBox_[i][2] = glowBox_[i][3] = -1;
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, fboPatches_);
+  glClearBufferfv(GL_COLOR, 0, none);
+  glClearBufferfv(GL_COLOR, 1, none);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  // Nothing burns now: no lights or flames, and the next readback waits on
+  // the GPU again rather than reading one queued while the fire burned.
+  std::fill(patchPrev_.begin(), patchPrev_.end(), 0.f);
+  std::fill(patchCur_.begin(), patchCur_.end(), 0.f);
+  std::fill(crownPrev_.begin(), crownPrev_.end(), 0.f);
+  std::fill(crownCur_.begin(), crownCur_.end(), 0.f);
+  reads_ = 0;
+  active_.clear();
+  ignite_.clear();
+  recentIgnite_.clear();
+  strokes_.clear();
+  recentStrokes_.clear();
+  lastTime_ = -1.f;
+}
+
 void FireGrid::advance(const Scene& scene, float time, const std::vector<glm::vec2>& ignite,
                        const std::vector<Stroke>& strokes, float rain, glm::vec2 wind) {
   if (!built_) build(scene, rain);

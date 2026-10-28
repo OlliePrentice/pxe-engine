@@ -80,6 +80,8 @@ set(PXE_SHADERS
   present.vert
   shadow.frag
   shadow.vert
+  sky.frag
+  sky.vert
   water.frag
   water.vert
 )

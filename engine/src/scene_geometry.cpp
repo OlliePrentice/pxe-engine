@@ -30,14 +30,20 @@ std::vector<glm::vec3> SurfaceGeometry::corners(Surface surface) const {
   return out;
 }
 
-void buildSceneMaps(Scene& scene, const SurfaceGeometry& geometry) {
-  scene.shelter.build(geometry.corners(kSurfStone));
+void buildSceneMaps(Scene& scene, const SurfaceGeometry& geometry,
+                    const std::function<bool(glm::vec2, float)>& overhead) {
+  {
+    std::vector<glm::vec3> roofs = geometry.corners(kSurfStone);
+    const std::vector<glm::vec3> slates = geometry.corners(kSurfRoof);
+    roofs.insert(roofs.end(), slates.begin(), slates.end());
+    scene.shelter.build(roofs);
+  }
   std::vector<glm::vec3> solid;
-  for (Surface s : {kSurfGrass, kSurfDirt, kSurfStone, kSurfBark, kSurfFoam}) {
+  for (Surface s : {kSurfGrass, kSurfDirt, kSurfStone, kSurfBark, kSurfFoam, kSurfWood, kSurfPlaster, kSurfOak}) {
     const std::vector<glm::vec3> c = geometry.corners(s);
     solid.insert(solid.end(), c.begin(), c.end());
   }
-  scene.ground.build(solid);
+  scene.ground.build(solid, 0.2f, overhead);
   scene.waterTop.build(geometry.corners(kSurfWater));
 }
 

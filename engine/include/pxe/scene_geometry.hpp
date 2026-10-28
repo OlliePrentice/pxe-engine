@@ -4,9 +4,11 @@
 #include "pxe/mesh.hpp"
 #include "pxe/scene.hpp"
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace pxe {
@@ -33,10 +35,13 @@ struct SurfaceGeometry {
 };
 
 // Gives the scene the maps it is queried through: `shelter` from the stone
-// (built structure keeps the rain off; tree crowns let it through),
-// `ground` from the grass, dirt, stone, bark and foam, and `waterTop` from
-// the water.
-void buildSceneMaps(Scene& scene, const SurfaceGeometry& geometry);
+// and roofs (built structure keeps the rain off; tree crowns let it
+// through), `ground` from the grass, dirt, stone, bark, foam, wood, plaster
+// and oak (not the roofs, which are all overhead), and `waterTop` from the
+// water. `overhead`, if given, leaves out of the ground what things on it
+// pass under, as HeightMap::build's does.
+void buildSceneMaps(Scene& scene, const SurfaceGeometry& geometry,
+                    const std::function<bool(glm::vec2, float)>& overhead = {});
 
 // Uploads the geometry: a mesh per non-empty surface, the water's going to
 // `scene.water`, and the water's level (half-way up its sheets) and extent.
