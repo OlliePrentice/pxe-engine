@@ -90,3 +90,4 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
 - Look gate approved by the user 2026-10-28.
 - Cycle 1: 2026-10-28 started, base 4030291 (art style docs split first, by the orchestrator)
 - Cycle 1 review: fresh build clean; existing game and example byte-identical and desert capture deterministic (rerun by the orchestrator). REQ-001 (broader frond blades) done in e1e3506 and checked in an engine capture. ISSUE-001, ISSUE-002 open from user look decisions. The gamepad has no release or quit: out of scope.
+- Cycle 2: 2026-10-28 started, base b19bc75, fixing ISSUE-001, ISSUE-002
