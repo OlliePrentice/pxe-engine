@@ -16,6 +16,8 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
   - Gamepad: left stick moves, right stick looks, and pressing the left stick sprints while held.
   - Look: pitch clamped to ±85°, Y not inverted, sensitivity a constant (no settings menu).
   - The eye height follows the terrain with light smoothing, so walking over dunes doesn't jolt.
+  - Movement uses the frame time clamped to at most 0.05 s, so a stall (a dragged window) never jumps the player.
+  - Looking and walking pause while the cursor is released, as in the example.
 - **Terrain.** Dunes are generated in the desert game's code from a height function, as `examples/minimal` builds its ground. They are long, smooth, wind-aligned ridges: a few layered sine-like ridges, each with a sharper crest on the downwind face, 2–6 m from crest to trough. They are faceted by a 1 m grid so the toon ramp bands the slopes. There are no ripples, rocks or scrub. The ground runs 300 × 300 m, centred on the origin, so it reaches the haze. The player is held inside the middle 160 × 160 m. Walking reads the same height function.
 - **Sand surface.** A new engine surface, `Sand` (a glTF material name too), with default palettes. The day mid tone is a warm ochre, about sRGB (214, 176, 118). Golden hour pushes it orange, twilight pink-mauve, and night cool blue-grey, following how the existing surfaces' palettes shift. No grass is scattered on it.
 - **Date palm.** One static Blender asset at real scale:
