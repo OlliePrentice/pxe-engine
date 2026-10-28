@@ -55,7 +55,7 @@ constexpr int kCaptureFrames = 4;
 // ground's far edges so they fade into the sky, turned by the mouse.
 constexpr float kEyeHeight = 1.7f;
 constexpr float kFirstPersonFar = 50.f;
-constexpr float kLookPerPixel = 0.0015f;        // radians per framebuffer pixel of mouse motion
+constexpr float kLookPerPoint = 0.0015f;        // radians per window point of mouse motion
 constexpr float kMaxPitch = 85.f * kPi / 180.f;  // up or down
 
 // Rolling ground, about a metre from crest to trough.
@@ -284,7 +284,7 @@ int main(int argc, char** argv) {
       camera.update(dt);
       if (firstPerson) {
         // Moving the mouse right turns right (a smaller yaw), down looks down.
-        const glm::vec2 turn = input.mouseDelta() * kLookPerPixel;
+        const glm::vec2 turn = input.mouseDelta() * kLookPerPoint;
         eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
         eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
       }

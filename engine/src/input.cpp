@@ -68,17 +68,20 @@ void Input::update(const Window& window) {
   std::copy(std::begin(buttons_), std::end(buttons_), std::begin(prevButtons_));
   for (int b = 0; b < index(MouseButton::kCount); ++b)
     buttons_[b] = glfwGetMouseButton(win, kGlfwMouseButtons[b]) == GLFW_PRESS;
-  // The cursor comes in window points; scale it to framebuffer pixels.
+  // The cursor comes in window points. The motion stays in points, so the
+  // same mouse movement gives the same delta on any display density; the
+  // position is scaled to framebuffer pixels.
   double cx = 0.0, cy = 0.0;
   glfwGetCursorPos(win, &cx, &cy);
   int fbW = 0, fbH = 0, winW = 0, winH = 0;
   glfwGetFramebufferSize(win, &fbW, &fbH);
   glfwGetWindowSize(win, &winW, &winH);
   const float pointScale = winW > 0 ? static_cast<float>(fbW) / static_cast<float>(winW) : 1.f;
-  const glm::vec2 mouse = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
+  const glm::vec2 points{static_cast<float>(cx), static_cast<float>(cy)};
   const bool captured = glfwGetInputMode(win, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
-  mouseDelta_ = mouseRead_ && captured == mouseCaptured_ ? mouse - mouse_ : glm::vec2{0.f};
-  mouse_ = mouse;
+  mouseDelta_ = mouseRead_ && captured == mouseCaptured_ ? points - mousePoints_ : glm::vec2{0.f};
+  mousePoints_ = points;
+  mouse_ = points * pointScale;
   mouseRead_ = true;
   mouseCaptured_ = captured;
 

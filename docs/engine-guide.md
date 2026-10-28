@@ -127,7 +127,7 @@ while (!window.shouldClose()) {
   camera.update(dt);
   if (firstPerson) {
     // Moving the mouse right turns right (a smaller yaw), down looks down.
-    const glm::vec2 turn = input.mouseDelta() * kLookPerPixel;
+    const glm::vec2 turn = input.mouseDelta() * kLookPerPoint;
     eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
     eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
   }
@@ -170,7 +170,7 @@ pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float t
 
 Step by step:
 
-- **Input.** `Window::pollEvents()` first, then `Input::update(window)`. `keyDown` is the state now. `keyPressed` is true only on the frame a key goes down. The mouse (`mousePosition` in framebuffer pixels from the top left, `mouseDelta` for how far it moved since the last update, `mouseDown`, `mousePressed`) and the first connected gamepad (`gamepadDown`, `gamepadPressed`, `gamepadStick` with a dead zone, `gamepadAxis` raw) work the same way. What a key does is the game's decision. If an `Overlay` is up, skip game keys while `Overlay::wantsKeyboard()` is true and clicks while `wantsMouse()` is true.
+- **Input.** `Window::pollEvents()` first, then `Input::update(window)`. `keyDown` is the state now. `keyPressed` is true only on the frame a key goes down. The mouse (`mousePosition` in framebuffer pixels from the top left, `mouseDelta` for how far it moved since the last update, in window points, `mouseDown`, `mousePressed`) and the first connected gamepad (`gamepadDown`, `gamepadPressed`, `gamepadStick` with a dead zone, `gamepadAxis` raw) work the same way. What a key does is the game's decision. If an `Overlay` is up, skip game keys while `Overlay::wantsKeyboard()` is true and clicks while `wantsMouse()` is true.
 - **Game update.** Move your characters, advance your clock and weather, and update the camera (`Camera::update(dt)`).
 - **Lighting.** `pxe::lightingAt(scene, hour, weather)` turns the hour (0-24) and a `pxe::Weather` into a `pxe::Lighting`: the sun or moon direction, the palettes blended for the time of day, clouds, wind, rain, god rays, firefly and firelight colours and any lightning flash. Use this three-argument form for the game's frames. The two-argument `lightingAt(scene, hour)` leaves clouds, wind, rain, firelight and firefly light at zero, so fires draw flames but light nothing: it suits tests that want the sun and palette alone. `Weather` holds what your game decides: `cloudCover`, `cloudOffset`, `cloudStrength`, `windDir`, `windStrength`, `rain`, `flash` and `flashDir`. A default `Weather{}` is clear and dry, with the wind at its default strength (1) blowing toward +x.
 - **Render.** Fill a `pxe::FrameParams` and call `Renderer::render(scene, camera.frame(renderer.rtW(), renderer.rtH()), params)`. Pass the renderer's padded target size (`rtW()`, `rtH()`) to `Camera::frame` (or `FirstPersonCamera::frame`), not the window's. Set `framebufferW` and `framebufferH` to `Window::framebufferSize()` every frame, as the window may be resized or on a high-DPI display. They default to 0, and `render` throws `std::invalid_argument` if `present` is true and either is not positive. With `present` false they are not used and may stay 0. Set `time` to seconds of game time. It drives grass wind, fire, fireflies and water. Hold it fixed for repeatable captures. With `present` true (the default), `render` ends by scaling the view into the window's framebuffer, centred with black borders.
@@ -229,7 +229,7 @@ eyeCamera.setPitchRadians(-std::atan2(look.y, std::hypot(look.x, look.z)));
 - fireflies (`fireflies`) and point lights (`lights`);
 - `Renderer::rayThrough` and `windowPoint`.
 
-**Mouse look.** `Window::setCursorCaptured(true)` hides the cursor and holds it in the window with unbounded motion (raw, unaccelerated motion where the system supports it); `setCursorCaptured(false)` gives it back, and `cursorCaptured()` says which. `Input::mouseDelta()` is how far the mouse moved since the previous update, in framebuffer pixels, +x right and +y down. It is zero on the first update and on the update after the cursor is captured or released, when the position jumps. The example captures the cursor before its loop:
+**Mouse look.** `Window::setCursorCaptured(true)` hides the cursor and holds it in the window with unbounded motion (raw, unaccelerated motion where the system supports it); `setCursorCaptured(false)` gives it back, and `cursorCaptured()` says which. `Input::mouseDelta()` is how far the mouse moved since the previous update, in window points (the cursor's own units, not framebuffer pixels, so the same motion gives the same delta on any display density), +x right and +y down. It is zero on the first update and on the update after the cursor is captured or released, when the position jumps. The example captures the cursor before its loop:
 
 ```cpp
 pxe::Input input;

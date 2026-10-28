@@ -98,3 +98,33 @@ Run `./build/release/examples/minimal/pxe_minimal --first-person` (window mode):
 - **Mouse delta units.** `Input::mouseDelta` is in framebuffer pixels, the same units as `mousePosition`. On a high-DPI display one point of mouse motion is two pixels, so look sensitivity per inch differs between displays unless the game scales it.
 - **Indoors.** Under perspective, an indoor scene also gets the sky backdrop and haze wherever nothing is drawn. Window panes still draw over it in their own sky colour, as the spec requires. No indoor scene has been tested under perspective.
 - **Mouse look is untested here.** Keyboard and mouse play isn't exercised by any check. It needs the playtest above.
+
+## Cycle 2
+Build: pass
+
+### Changes
+- `engine/src/input.cpp`: `Input::update` takes the mouse delta from the cursor position in window points, before the framebuffer scale. `mousePosition` is still scaled to framebuffer pixels.
+- `engine/include/pxe/input.hpp`: new private `mousePoints_` (cursor in window points). The `mouseDelta()` comment now says window points and why.
+- `examples/minimal/main.cpp`: `kLookPerPixel` renamed to `kLookPerPoint`, with the comment "radians per window point of mouse motion". The value is unchanged at 0.0015.
+- `docs/engine-guide.md`: the frame-loop snippet uses `kLookPerPoint`. The Input bullet and the Mouse look paragraph say `mouseDelta` is in window points.
+
+### Issues addressed
+- ISSUE-001: `mouseDelta` is now in window points, so the same mouse motion gives the same delta on any display density.
+
+### Layering
+- Engine: `pxe::Input::mouseDelta` units changed (framebuffer pixels to window points). There is no API change.
+- Game: none. `game/` is unchanged.
+- Misplaced code touched: none.
+
+### Verification
+- Release build has no new warnings.
+- Byte-identical to the base 4b0c221 build: default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`, `--self-test` and `pxe_minimal --capture`. The logs match apart from the line that names the output file.
+- `pxe_minimal --first-person --capture` is byte-identical to the cycle 1 build (9625a04), and two runs are identical.
+- The guide's cpp snippets that matched `examples/minimal/main.cpp` at 9625a04 still match. The same snippets that didn't match then still don't: they are general usage snippets, not taken from the example.
+
+### How to playtest
+- Run `pxe_minimal --first-person` in the window and use the cycle 1 checklist. Also check the look speed. On a Retina (2x) display it is now half the cycle 1 speed for the same mouse motion, because 0.0015 rad is now per point instead of per pixel. If you can, compare it on a 1x external display: the speed per physical mouse movement should be the same on both.
+
+### Known limitations
+- **Look speed is untuned.** `kLookPerPoint` kept the value 0.0015. On a 2x display this halves the cycle 1 look speed (it would take 0.003 to keep it). Nobody had playtested cycle 1, so no tuned feel was lost. The value can be set at the look gate.
+- Everything else from cycle 1's known limitations still applies, except the mouse delta units limitation, which this cycle fixes.

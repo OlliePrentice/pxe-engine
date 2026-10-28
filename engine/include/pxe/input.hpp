@@ -54,8 +54,10 @@ class Input {
 
   // The cursor in framebuffer pixels from the window's top left.
   glm::vec2 mousePosition() const { return mouse_; }
-  // How far the cursor moved since the previous update, in framebuffer
-  // pixels, +x right and +y down. With the cursor captured
+  // How far the cursor moved since the previous update, in window points
+  // (the cursor's own units, not framebuffer pixels, so the same mouse
+  // motion gives the same delta on any display density), +x right and +y
+  // down. With the cursor captured
   // (Window::setCursorCaptured) it keeps counting however far the mouse
   // goes, for mouse look. Zero on the first update, and on the update after
   // the cursor is captured or released, when its position jumps.
@@ -86,8 +88,9 @@ class Input {
   bool keys_[static_cast<int>(Key::kCount)] = {};
   bool prevKeys_[static_cast<int>(Key::kCount)] = {};
   glm::vec2 mouse_{0.f};
+  glm::vec2 mousePoints_{0.f};  // the cursor in window points, for mouseDelta_
   glm::vec2 mouseDelta_{0.f};
-  bool mouseRead_ = false;      // mouse_ holds a position from an earlier update
+  bool mouseRead_ = false;      // mousePoints_ holds a position from an earlier update
   bool mouseCaptured_ = false;  // whether the cursor was captured at that update
   bool buttons_[static_cast<int>(MouseButton::kCount)] = {};
   bool prevButtons_[static_cast<int>(MouseButton::kCount)] = {};
