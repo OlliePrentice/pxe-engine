@@ -57,4 +57,12 @@ double Window::time() const { return glfwGetTime(); }
 
 void Window::setTitle(const std::string& title) { glfwSetWindowTitle(impl_->window, title.c_str()); }
 
+void Window::setCursorCaptured(bool captured) {
+  glfwSetInputMode(impl_->window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+  if (glfwRawMouseMotionSupported())
+    glfwSetInputMode(impl_->window, GLFW_RAW_MOUSE_MOTION, captured ? GLFW_TRUE : GLFW_FALSE);
+}
+
+bool Window::cursorCaptured() const { return glfwGetInputMode(impl_->window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED; }
+
 }  // namespace pxe

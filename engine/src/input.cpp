@@ -75,7 +75,12 @@ void Input::update(const Window& window) {
   glfwGetFramebufferSize(win, &fbW, &fbH);
   glfwGetWindowSize(win, &winW, &winH);
   const float pointScale = winW > 0 ? static_cast<float>(fbW) / static_cast<float>(winW) : 1.f;
-  mouse_ = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
+  const glm::vec2 mouse = glm::vec2{static_cast<float>(cx), static_cast<float>(cy)} * pointScale;
+  const bool captured = glfwGetInputMode(win, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
+  mouseDelta_ = mouseRead_ && captured == mouseCaptured_ ? mouse - mouse_ : glm::vec2{0.f};
+  mouse_ = mouse;
+  mouseRead_ = true;
+  mouseCaptured_ = captured;
 
   if (!mappingsAdded_) {
     glfwUpdateGamepadMappings(kExtraMappings);

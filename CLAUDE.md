@@ -36,7 +36,7 @@ Nothing tests rendering automatically. `./build/game/pxe --help` lists every fla
 - `--window-png <png>`, `--audio-wav <wav>`, `--self-test`, `--bench`.
 - Scene and state: `--scene hills`, `--hour <0-24>`, `--foxes <n>`, `--candles`, `--shelter-test`, `--extra-fires <n>`, `--rain <0-1>`.
 
-A refactor that should not change output must be **byte-identical**. Build the base commit from `git archive <base> | tar -x -C <dir>` in a scratch directory, run both binaries with the same flags, and compare with `cmp`. Standard cases: default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`, and `--self-test`. Logs match apart from the line naming the output file. In zsh, pass multi-word arguments through `"$@"` or an array.
+A refactor that should not change output must be **byte-identical**. Build the base commit from `git archive <base> | tar -x -C <dir>` in a scratch directory, run both binaries with the same flags, and compare with `cmp`. Standard cases: the game's default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6` and `--self-test`, and the example's `--capture` and `--first-person --capture`. Logs match apart from the line naming the output file. In zsh, pass multi-word arguments through `"$@"` or an array.
 
 Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
 

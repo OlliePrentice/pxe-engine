@@ -148,8 +148,10 @@ class Renderer {
   // A point of the window (framebuffer pixels from its top left, `fbW` x
   // `fbH`) as presented for `camera`: the view ray through it starts at the
   // returned point on the camera's plane and runs along camera.forward.
+  // Orthographic cameras only.
   glm::vec3 rayThrough(const CameraFrame& camera, int fbW, int fbH, glm::vec2 px) const;
-  // And back: where a world point shows in the window.
+  // And back: where a world point shows in the window. Orthographic
+  // cameras only.
   glm::vec2 windowPoint(const CameraFrame& camera, int fbW, int fbH, glm::vec3 world) const;
   // Draw a frame. `scene` must be the scene last passed to upload(): the
   // renderer keeps shadow maps drawn from it between frames and redraws them
@@ -157,6 +159,14 @@ class Renderer {
   // checking which scene it is given. Throws std::invalid_argument, before
   // drawing anything, if params.present is set without a positive
   // framebuffer size.
+  //
+  // Through a perspective camera (FirstPersonCamera) the sky fills the
+  // background and surfaces fade into its horizon colour toward the far
+  // plane; the sun's shadow map covers 60 m round the eye, pushed ahead
+  // along the view, and nothing beyond it is shadowed. Not yet supported
+  // there, and skipped whatever params says: grass and leaf sprites, water
+  // and its reflections, god rays, rain, fires (their flames and light) and
+  // the grass fire, fireflies and point lights.
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
 
   // Centre RenderConfig::kViewW x kViewH of the low-res target (the view
@@ -167,6 +177,9 @@ class Renderer {
   std::vector<std::uint8_t> readPresented(int width, int height);
 
  private:
+  // render() past its checks, with params already cut down to what the
+  // camera supports.
+  void draw(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
   void destroyTargets();
   void createTargets();
   void createQuads();
@@ -279,6 +292,7 @@ class Renderer {
   // [grass fire]: [1] adds the grid's glow and darkens charred ground in
   // the firelight; [0] is the edge pass as it always was.
   unsigned edge_[2] = {};
+  unsigned edgePerspective_ = 0;  // the edge pass for a perspective camera
   unsigned progWater_ = 0;
   struct ToonPrograms {
     unsigned mesh = 0, grass = 0, water = 0;
@@ -308,6 +322,9 @@ class Renderer {
   unsigned skyVao_ = 0;
   unsigned skyVbo_ = 0;
   int skyVertices_ = 0;
+  // The sky behind a perspective view, over the whole target at the far
+  // plane.
+  unsigned progBackdrop_ = 0;
 
 
   bool ready_ = false;
@@ -316,6 +333,10 @@ class Renderer {
   // invalidated: by upload() or when their textures are recreated.
   glm::vec3 shadowLight_{0.f};
   glm::vec3 flashLight_{0.f};
+  // And when the map's fit changes: under a perspective camera it follows
+  // the eye.
+  glm::mat4 shadowFit_{1.f};
+  glm::mat4 flashFit_{1.f};
   bool shadowValid_ = false;  // the sun's map holds the uploaded scene from shadowLight_
   bool flashValid_ = false;   // flashShadow_ holds the uploaded scene from flashLight_
   unsigned queries_[PassTimes::kCount] = {};

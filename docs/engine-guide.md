@@ -2,10 +2,10 @@
 
 This guide is for anyone, person or model, starting a new game on the pxe engine. It covers how to add the engine to a project, the order things are created in, what a frame looks like, how to build a scene, and the contracts the engine relies on. It ends with a short reference to every public header.
 
-A complete, small program follows it: [`examples/minimal/main.cpp`](../examples/minimal/main.cpp). It builds a procedural scene (rolling grass, a standing stone, a tree, a campfire on a slab), lights it at a fixed hour, and draws it in a window. With `--capture out.png` it renders a few frames offscreen, writes the view to a PNG and exits. The snippets below come from it. It is built with the rest of this repository, so it always compiles against the current headers.
+A complete, small program follows it: [`examples/minimal/main.cpp`](../examples/minimal/main.cpp). It builds a procedural scene (rolling grass, a standing stone, a tree, a campfire on a slab), lights it at a fixed hour, and draws it in a window. With `--capture out.png` it renders a few frames offscreen, writes the view to a PNG and exits. `--first-person` shows the same scene from standing height through the perspective camera, turned by the mouse, and `--hour H` lights it at another hour. The snippets below come from it. It is built with the rest of this repository, so it always compiles against the current headers.
 
 ## What the engine is and isn't
-pxe is a C++20 engine for pixel-art 3D games in the style of t3ssel8r's videos. Everything is drawn into a low-resolution target (960x540 at 24 pixels per metre, `pxe::RenderConfig`) through an orthographic camera pitched 30° down, then scaled up by a whole number to the window. Surfaces are lit with a hard three-step toon ramp per material. Grass and leaves are instanced sprites drawn in the fragment shader. On top of that it provides shadows, water reflections, outlines, god rays, rain, lightning, a day/night palette blend, campfires, a grass fire that spreads on the GPU, fireflies, skinned characters, input, a Dear ImGui overlay and audio output.
+pxe is a C++20 engine for pixel-art 3D games in the style of t3ssel8r's videos. Everything is drawn into a low-resolution target (960x540 at 24 pixels per metre, `pxe::RenderConfig`) through an orthographic camera pitched 30° down, or through a perspective first-person camera (see [First-person camera](#first-person-camera)), then scaled up by a whole number to the window. Surfaces are lit with a hard three-step toon ramp per material. Grass and leaves are instanced sprites drawn in the fragment shader. On top of that it provides shadows, water reflections, outlines, god rays, rain, lightning, a day/night palette blend, campfires, a grass fire that spreads on the GPU, fireflies, skinned characters, input, a Dear ImGui overlay and audio output.
 
 The engine supplies types and systems. It does not own your world. Your game creates, holds and destroys every object in it: the scene, its characters, its fires, its props. Each frame the game hands the renderer a description of what to draw (`pxe::FrameParams`), and the engine keeps no pointer to game objects between calls. The engine has no game loop, no entity system, no asset manager, no scene file format of its own beyond glTF geometry, no physics and no sound content. Your game decides what to load, where things go, what the keys do and what the player hears.
 
@@ -77,7 +77,7 @@ Create things in this order and destroy them in reverse. Declaring them in this 
 3. **Your scene.** Build a `pxe::Scene` (see [Building a Scene](#building-a-scene)), then pass it to `Renderer::upload`.
 4. **`pxe::Overlay`**, if the game has UI. Construct it with the window, after the window and before the first frame. Destroy it before the window. Only one may exist at a time. It throws `std::runtime_error` if an ImGui backend can't start.
 5. **`pxe::AudioDevice`**, if the game makes sound. See [Audio](#audio) for its ownership rule.
-6. **`pxe::Camera`.** A plain value with no GPU state. Set where it looks with `setYawRadians` and `setTarget`.
+6. **`pxe::Camera`** or **`pxe::FirstPersonCamera`.** Plain values with no GPU state. Set where the orthographic `Camera` looks with `setYawRadians` and `setTarget`; place a `FirstPersonCamera` with `setEye`, `setYawRadians` and `setPitchRadians`.
 
 From the example:
 
@@ -111,6 +111,8 @@ A frame is: poll input, update the game, work out the lighting, render, draw any
 
 ```cpp
 pxe::Input input;
+// Mouse look holds the cursor in the window; Escape still closes it.
+if (firstPerson) window.setCursorCaptured(true);
 double previous = window.time();
 while (!window.shouldClose()) {
   const double now = window.time();
@@ -123,6 +125,12 @@ while (!window.shouldClose()) {
   if (input.keyPressed(pxe::Key::kQ)) camera.rotateSteps(-1);
   if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
   camera.update(dt);
+  if (firstPerson) {
+    // Moving the mouse right turns right (a smaller yaw), down looks down.
+    const glm::vec2 turn = input.mouseDelta() * kLookPerPixel;
+    eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
+    eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
+  }
 
   // A minimised window can have a 0x0 framebuffer, and render throws when
   // asked to present at that size: skip drawing, and wait rather than spin.
@@ -131,21 +139,30 @@ while (!window.shouldClose()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(16));
     continue;
   }
-  const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now));
-  renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
+  const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now), hour);
+  renderer.render(world.scene, view(), params);
   window.swap();
 }
+```
+
+where `view()` is the frame of whichever camera the run looks through (see [First-person camera](#first-person-camera)):
+
+```cpp
+auto view = [&] {
+  if (firstPerson) return eyeCamera.frame(renderer.rtW(), renderer.rtH());
+  return camera.frame(renderer.rtW(), renderer.rtH());
+};
 ```
 
 with the frame's draw list built fresh each time:
 
 ```cpp
-pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float time) {
+pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float time, float hour) {
   pxe::FrameParams params;
   params.framebufferW = framebuffer.x;
   params.framebufferH = framebuffer.y;
   params.time = time;
-  params.lighting = pxe::lightingAt(world.scene, kHour, pxe::Weather{});
+  params.lighting = pxe::lightingAt(world.scene, hour, pxe::Weather{});
   params.fires.push_back({1, world.fireBase, 1.f, 0.f, 1.f});
   return params;
 }
@@ -153,10 +170,10 @@ pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float t
 
 Step by step:
 
-- **Input.** `Window::pollEvents()` first, then `Input::update(window)`. `keyDown` is the state now. `keyPressed` is true only on the frame a key goes down. The mouse (`mousePosition` in framebuffer pixels from the top left, `mouseDown`, `mousePressed`) and the first connected gamepad (`gamepadDown`, `gamepadPressed`, `gamepadStick` with a dead zone, `gamepadAxis` raw) work the same way. What a key does is the game's decision. If an `Overlay` is up, skip game keys while `Overlay::wantsKeyboard()` is true and clicks while `wantsMouse()` is true.
+- **Input.** `Window::pollEvents()` first, then `Input::update(window)`. `keyDown` is the state now. `keyPressed` is true only on the frame a key goes down. The mouse (`mousePosition` in framebuffer pixels from the top left, `mouseDelta` for how far it moved since the last update, `mouseDown`, `mousePressed`) and the first connected gamepad (`gamepadDown`, `gamepadPressed`, `gamepadStick` with a dead zone, `gamepadAxis` raw) work the same way. What a key does is the game's decision. If an `Overlay` is up, skip game keys while `Overlay::wantsKeyboard()` is true and clicks while `wantsMouse()` is true.
 - **Game update.** Move your characters, advance your clock and weather, and update the camera (`Camera::update(dt)`).
 - **Lighting.** `pxe::lightingAt(scene, hour, weather)` turns the hour (0-24) and a `pxe::Weather` into a `pxe::Lighting`: the sun or moon direction, the palettes blended for the time of day, clouds, wind, rain, god rays, firefly and firelight colours and any lightning flash. Use this three-argument form for the game's frames. The two-argument `lightingAt(scene, hour)` leaves clouds, wind, rain, firelight and firefly light at zero, so fires draw flames but light nothing: it suits tests that want the sun and palette alone. `Weather` holds what your game decides: `cloudCover`, `cloudOffset`, `cloudStrength`, `windDir`, `windStrength`, `rain`, `flash` and `flashDir`. A default `Weather{}` is clear and dry, with the wind at its default strength (1) blowing toward +x.
-- **Render.** Fill a `pxe::FrameParams` and call `Renderer::render(scene, camera.frame(renderer.rtW(), renderer.rtH()), params)`. Pass the renderer's padded target size (`rtW()`, `rtH()`) to `Camera::frame`, not the window's. Set `framebufferW` and `framebufferH` to `Window::framebufferSize()` every frame, as the window may be resized or on a high-DPI display. They default to 0, and `render` throws `std::invalid_argument` if `present` is true and either is not positive. With `present` false they are not used and may stay 0. Set `time` to seconds of game time. It drives grass wind, fire, fireflies and water. Hold it fixed for repeatable captures. With `present` true (the default), `render` ends by scaling the view into the window's framebuffer, centred with black borders.
+- **Render.** Fill a `pxe::FrameParams` and call `Renderer::render(scene, camera.frame(renderer.rtW(), renderer.rtH()), params)`. Pass the renderer's padded target size (`rtW()`, `rtH()`) to `Camera::frame` (or `FirstPersonCamera::frame`), not the window's. Set `framebufferW` and `framebufferH` to `Window::framebufferSize()` every frame, as the window may be resized or on a high-DPI display. They default to 0, and `render` throws `std::invalid_argument` if `present` is true and either is not positive. With `present` false they are not used and may stay 0. Set `time` to seconds of game time. It drives grass wind, fire, fireflies and water. Hold it fixed for repeatable captures. With `present` true (the default), `render` ends by scaling the view into the window's framebuffer, centred with black borders.
 - **Overlay.** Between `Overlay::begin()` and `Overlay::end()` the game calls ImGui itself. `end()` draws the UI over the presented frame, so call it after `render` and before `swap`:
 
   ```cpp
@@ -173,7 +190,54 @@ Step by step:
 
 `FrameParams` also carries switches: `showGrass`, `edges` (outlines and rims), `fire`, `rays`, `fireflies`, `grassFire`. It carries the frame's lists too: `fires`, `lights` (extra `PointLight`s), `igniteGrass`, `gridStrokes`, `actors`, `actorMaterials` and `actorEffects`. Debug views are `magentaGrass`, `showNdl`, `testColours` and `grassDepthTest`. Build it fresh each frame; nothing in it is kept.
 
-To find what the player clicks, `Renderer::rayThrough(camera, fbW, fbH, px)` gives the start of the view ray through a window pixel. The ray runs along `camera.forward`, and `scene.ground.raycast(origin, camera.forward, maxDist, hit)` finds where it meets the ground. `Renderer::windowPoint` goes the other way, from a world point to window pixels. Pass both the `CameraFrame` that was last rendered.
+To find what the player clicks, `Renderer::rayThrough(camera, fbW, fbH, px)` gives the start of the view ray through a window pixel. The ray runs along `camera.forward`, and `scene.ground.raycast(origin, camera.forward, maxDist, hit)` finds where it meets the ground. `Renderer::windowPoint` goes the other way, from a world point to window pixels. Pass both the `CameraFrame` that was last rendered. Both are for the orthographic `Camera` only.
+
+## First-person camera
+`pxe::FirstPersonCamera` (`pxe/first_person_camera.hpp`) is a perspective camera at an eye position, for a game played from eye height. Its `frame(rtW, rtH)` gives a `CameraFrame` like `Camera::frame`'s, with `projection` set to `CameraFrame::Projection::kPerspective`, and `Renderer::render` takes either. It draws into the same 960x540 target, padding and whole-number upscale.
+
+- `setEye(point)`: where the eye is, in metres. The game moves it; the camera does no smoothing or collision.
+- `setYawRadians` and `setPitchRadians`: free yaw, and pitch with positive looking down, as `Camera`'s 30° does. At yaw 0 it looks along +z, its flat forward is `(sin yaw, 0, cos yaw)` and its right `(-cos yaw, 0, sin yaw)`, so a larger yaw turns left. Pitch is held within ±89° so the view never flips; clamp it tighter yourself for mouse look (the example uses ±85°).
+- `setFovYRadians`: the vertical field of view, 60° by default (`kDefaultFovY`).
+- `setFarPlane`: how far the view reaches, 300 m by default (`kDefaultFar`). The near plane is 0.1 m (`kNear`).
+
+The eye is never snapped to the texel grid (a perspective view can't be), so the frame's `texelError` is zero, and edges crawl a little as the view turns and moves. The frame's `fovY` is the field of view in radians; `texelWorld`, `orthoHalfW` and `orthoHalfH` mean nothing under perspective.
+
+From the example, turned toward a point to start with:
+
+```cpp
+// The first-person camera, turned toward world.lookAt. A positive pitch
+// looks down.
+pxe::FirstPersonCamera eyeCamera;
+eyeCamera.setEye(world.eye);
+eyeCamera.setFarPlane(kFirstPersonFar);
+const glm::vec3 look = world.lookAt - world.eye;
+eyeCamera.setYawRadians(std::atan2(look.x, look.z));
+eyeCamera.setPitchRadians(-std::atan2(look.y, std::hypot(look.x, look.z)));
+```
+
+**Sky and haze.** Under the perspective camera the renderer fills every pixel with no geometry with a sky: a vertical gradient from `Lighting::skyHorizon` at the horizon to `Lighting::skyZenith` overhead, cut into six flat bands, and the horizon colour below the horizon. `lightingAt` blends them from `Scene::skyHorizon[kPhaseCount]` and `skyZenith[kPhaseCount]`, which a new `Scene` fills with the engine's defaults for day, golden hour, twilight and night, like the surface palettes. Rain's overcast greys them as it greys a room's window panes. There is no sun or moon disc, stars or clouds. Surfaces fade into the horizon colour over the last 40% of the far plane's distance from the eye, in eight flat steps, the last of them the horizon colour itself, so the end of the geometry never shows as a hard edge against the sky. Set the far plane to about where your geometry ends (the example's 50 m is just past its ground's far edges). Neither the sky nor the haze is drawn under the orthographic `Camera`. A room's window panes keep their own `skyColour`.
+
+**Outlines.** The edge pass works under perspective: lines stay 1 px, and the depth step that counts as an outline grows with distance and with how steeply a surface runs away from the eye, so far terrain doesn't fill with ink.
+
+**Shadows.** The sun's (and lightning's) shadow map covers a 60 m radius round the eye, pushed 30 m ahead along the view's flat forward, and is redrawn as the eye moves. Anything in the scene between the light and that area still casts into it. Nothing beyond it is shadowed.
+
+**Not yet supported under the perspective camera.** These are skipped under perspective, whatever `FrameParams` says, and will be ported when a game first needs them:
+- grass and leaf sprites (`showGrass`): the ground and crowns show as bare faceted surfaces;
+- water sheets and their reflections (`Scene::water` isn't drawn);
+- god rays (`rays`) and rain (the edge pass's streaks, splashes and murk; `Lighting::rain`'s overcast still dims the colours);
+- fires (`fire`, `fires`): their flames, smoke and firelight, and the grass fire (`grassFire`, `igniteGrass`, `gridStrokes`);
+- fireflies (`fireflies`) and point lights (`lights`);
+- `Renderer::rayThrough` and `windowPoint`.
+
+**Mouse look.** `Window::setCursorCaptured(true)` hides the cursor and holds it in the window with unbounded motion (raw, unaccelerated motion where the system supports it); `setCursorCaptured(false)` gives it back, and `cursorCaptured()` says which. `Input::mouseDelta()` is how far the mouse moved since the previous update, in framebuffer pixels, +x right and +y down. It is zero on the first update and on the update after the cursor is captured or released, when the position jumps. The example captures the cursor before its loop:
+
+```cpp
+pxe::Input input;
+// Mouse look holds the cursor in the window; Escape still closes it.
+if (firstPerson) window.setCursorCaptured(true);
+```
+
+and turns the view by `mouseDelta()` each frame (see [The frame loop](#the-frame-loop)).
 
 ## Building a Scene
 A `pxe::Scene` is plain data plus GPU meshes:
@@ -187,6 +251,7 @@ A `pxe::Scene` is plain data plus GPU meshes:
 - `sunEast`, `sunSouth`, `sunPeakDegrees`: the sun's path.
 - `horizonCentre`, `horizonRadius`, `horizonHeight`, `horizonRelief`: an optional ridge round the scene that the rising sun must clear.
 - `boundsMin`, `boundsMax`: the scene's extent. Shadow maps are fitted to these.
+- `skyHorizon[kPhaseCount]`, `skyZenith[kPhaseCount]`: the sky behind a perspective view, and the colour far surfaces fade into (see [First-person camera](#first-person-camera)). Default to the engine's.
 - `indoors`, `fillDir`, `windows`, `skyTint[kPhaseCount]`, `skyColour[kPhaseCount]`: a room under a roof. Indoors no rain is drawn, no cloud shadows drift and no god rays shine; sun, moon and lightning still light it through the shadow map. A fill light from `fillDir` lifts faces by how far they turn toward it (`Lighting::fill`, full by day, gone at night). Each `SkyWindow{centre, inward, width, height, depth}` lets the sky's light onto the floor and walls in front of it (`Lighting::skyLight`, tinted by `skyTint`) and shows `skyColour` through the opening.
 - `darkRegions`: boxes the scene's light does not reach, indoors or out, such as a deep room seen through an open door. Each `DarkRegion` has a `centre`, `halfExtents` and a `yaw` about +y (its own +z goes to `(sin yaw, 0, cos yaw)`), an `openFace` (`BoxFace::kPosX` .. `kNegZ`, in its own frame), and `startStrength`, `endStrength` and `fadeDistance`. Every surface and character inside the box is drawn unlit, as a share of its surface's mid colour for the time of day: `startStrength` at the open face, moving linearly to `endStrength` at `fadeDistance` metres in, then held. Sun, moon, fill, sky light, lightning, cloud shade, firelight and point lights add nothing there, and the edge pass's light rims take the same share; dark outlines and a character's glowing materials are unchanged. Where regions overlap the darker share wins. The renderer reads the list each frame and draws up to 8. A surface lying exactly in a face's plane may fall either side of it pixel by pixel, so make the box a little larger than the floor and walls it darkens on every face but the open one. Empty by default, which changes no pixel.
 
@@ -344,8 +409,9 @@ To write the view to an image, render with a fixed `time`, then read back:
 ```cpp
 // A few frames at fixed times, so a capture is the same on every run.
 for (int f = 0; f < kCaptureFrames; ++f) {
-  const pxe::FrameParams params = frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f);
-  renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
+  const pxe::FrameParams params =
+      frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f, hour);
+  renderer.render(world.scene, view(), params);
 }
 const bool ok = pxe::writePng(capture, renderer.viewW(), renderer.viewH(), renderer.readView());
 ```
@@ -371,24 +437,25 @@ Every public header, in `engine/include/pxe/`, namespace `pxe`.
 
 - **`audio_device.hpp`.** `AudioDevice`: the default audio output, interleaved stereo float, filled by a `Render` callback on the audio thread. `open(sampleRate, render)`.
 - **`audio_file.hpp`.** `writeWav(path, sampleRate, interleavedStereo)`: 16-bit stereo WAV.
-- **`camera.hpp`.** `Camera`: the orthographic camera, pitched 30°, yaw in 45° steps, smoothed and snapped to the texel grid (`setTarget`, `follow`, `setYawRadians`, `rotateSteps`, `setPanVelocity`, `nudgeImmediate`, `update`, `frame`). `CameraFrame`: one frame's matrices, eye, basis and snap error.
+- **`camera.hpp`.** `Camera`: the orthographic camera, pitched 30°, yaw in 45° steps, smoothed and snapped to the texel grid (`setTarget`, `follow`, `setYawRadians`, `rotateSteps`, `setPanVelocity`, `nudgeImmediate`, `update`, `frame`). `CameraFrame`: one frame's projection kind (`CameraFrame::Projection`), matrices, eye, basis, snap error and, under perspective, `fovY`.
 - **`config.hpp`.** `RenderConfig`: the fixed low-res target (`kViewW` 960, `kViewH` 540), `kPixelsPerUnit` (24), `kPad`, and the shadow map size `kShadow`.
 - **`fire.hpp`.** `Fire`: one campfire's particle system (core, flames, embers, smoke). `FireParticle`: a particle as drawn. The renderer runs these for each `FireDraw`.
 - **`fireflies.hpp`.** `Firefly` and `firefliesAt(homes, time)`: the swarm as a pure function of time.
+- **`first_person_camera.hpp`.** `FirstPersonCamera`: the perspective camera at an eye position (`setEye`, `setYawRadians`, `setPitchRadians`, `setFovYRadians`, `setFarPlane`, their getters, `frame`), with `kDefaultFovY`, `kDefaultFar` and `kNear`.
 - **`firegrid.hpp`.** `FireGrid`: the GPU grass and crown fire. `FireGrid::Stroke`: a fire, water or regrowth brush stroke. The renderer owns the grid. Games drive it through `FrameParams`.
 - **`gl_loader.hpp`.** `loadGl(getProc)`: loads the GL entry points. `Window` calls it. A game only needs it if it makes its own context.
 - **`gltf.hpp`.** `loadGltf(path)` and `GltfPrimitive`: static glTF geometry in world space, with a surface per material name.
 - **`heightmap.hpp`.** `HeightMap`: highest surface per grid cell (`build`, with an optional `overhead` filter, `heightAt`, `cellTop`, `raycast`, `min`, `max`, `kNone`).
 - **`image.hpp`.** `writePng(path, width, height, bottomUpRgba)`.
-- **`input.hpp`.** `Input`: keyboard, mouse and first gamepad, read once a frame (`update`, `keyDown`, `keyPressed`, `mousePosition`, `mouseDown`, `mousePressed`, `gamepadConnected`, `gamepadName`, `gamepadDown`, `gamepadPressed`, `gamepadStick`, `gamepadAxis`). The enums are `Key`, `MouseButton`, `GamepadButton`, `GamepadStick` and `GamepadAxis`.
-- **`lighting.hpp`.** `Lighting`: everything that lights one frame, including a room's `fill`, `skyLight`, `skyTint` and `skyColour`. `Weather`: the game's weather. `lightingAt(scene, hour)` and `lightingAt(scene, hour, weather)`, `sunDirection`, `moonDirection`.
+- **`input.hpp`.** `Input`: keyboard, mouse and first gamepad, read once a frame (`update`, `keyDown`, `keyPressed`, `mousePosition`, `mouseDelta`, `mouseDown`, `mousePressed`, `gamepadConnected`, `gamepadName`, `gamepadDown`, `gamepadPressed`, `gamepadStick`, `gamepadAxis`). The enums are `Key`, `MouseButton`, `GamepadButton`, `GamepadStick` and `GamepadAxis`.
+- **`lighting.hpp`.** `Lighting`: everything that lights one frame, including a room's `fill`, `skyLight`, `skyTint` and `skyColour`, and the perspective sky's `skyHorizon` and `skyZenith`. `Weather`: the game's weather. `lightingAt(scene, hour)` and `lightingAt(scene, hour, weather)`, `sunDirection`, `moonDirection`.
 - **`mesh.hpp`.** `Surface` (`kSurfGrass` .. `kSurfOak`, `kSurfCount`), `Vertex`, `Mesh`. Also `SkinVertex` and `SkinnedMesh`, a skinned mesh uploaded once at rest.
 - **`overlay.hpp`.** `Overlay`: Dear ImGui over the window (`begin`, `end`, `wantsKeyboard`, `wantsMouse`).
 - **`renderer.hpp`.** `Renderer` (`init`, `upload`, `uploadGrass`, `quenchGrassFire`, `render`, `readView`, `readPresented`, `rayThrough`, `windowPoint`, `viewW`, `viewH`, `rtW`, `rtH`, `setProfiling`, `passTimes`). Also `FrameParams`, `FireDraw`, `PointLight`, `ActorDraw` and `PassTimes`.
 - **`scatter.hpp`.** `scatterGrass` with `GrassScatter`, `dropGrassUnder`, `scatterLeaves` with `kDefaultLeafDensity`, `poissonDisk` and `grassPatchiness`.
-- **`scene.hpp`.** `Scene` (constructed with the default palettes), `SkyWindow`, `DarkRegion` and `BoxFace`, `GrassInstance`, `Palette` and `Phase` (`kPhaseDay` .. `kPhaseNight`, `kPhaseCount`).
+- **`scene.hpp`.** `Scene` (constructed with the default palettes and sky colours), `SkyWindow`, `DarkRegion` and `BoxFace`, `GrassInstance`, `Palette` and `Phase` (`kPhaseDay` .. `kPhaseNight`, `kPhaseCount`).
 - **`scene_geometry.hpp`.** `SurfaceGeometry` (`append`, `corners`), `buildSceneMaps`, `uploadScene`.
 - **`shelter.hpp`.** `ShelterMap`: roofing over the ground (`build`, `sheltered`, `coveredLines`).
 - **`skinned.hpp`.** `SkinnedModel`: skinned glTF characters with clips, poses, blending and skinning. Also `ActorMaterial`, `kActorSurface`, `kActorMaterials` and `kMaxJoints`.
 - **`triangle_grid.hpp`.** `Triangle`, `trianglesOf(vertices, indices)`, and `TriangleGrid`, which finds the triangle under an xz point (`at`).
-- **`window.hpp`.** `Window`: the window and its GL context (`shouldClose`, `requestClose`, `pollEvents`, `swap`, `framebufferSize`, `windowSize`, `time`, `setTitle`). `WindowOptions` sets its size, title, visibility and vsync.
+- **`window.hpp`.** `Window`: the window and its GL context (`shouldClose`, `requestClose`, `pollEvents`, `swap`, `framebufferSize`, `windowSize`, `time`, `setTitle`, `setCursorCaptured`, `cursorCaptured`). `WindowOptions` sets its size, title, visibility and vsync.

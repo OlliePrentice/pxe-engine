@@ -46,6 +46,12 @@ class Window {
   // Seconds since the window system started.
   double time() const;
   void setTitle(const std::string& title);
+  // Capture the cursor, for mouse look: hidden and held in the window, its
+  // motion unbounded (Input::mouseDelta keeps reporting it however far it
+  // goes), and raw, unaccelerated where the system supports that. Release
+  // it to show the cursor again where it was. Released to start with.
+  void setCursorCaptured(bool captured);
+  bool cursorCaptured() const;
 
  private:
   friend class Input;

@@ -88,11 +88,14 @@ Lighting lightingAt(const Scene& scene, float hour) {
   }
   out.rim = out.ink = glm::vec3{0.f};
   out.skyTint = out.skyColour = glm::vec3{0.f};
+  out.skyHorizon = out.skyZenith = glm::vec3{0.f};
   for (int ph = 0; ph < kPhaseCount; ++ph) {
     out.rim += w[ph] * scene.rim[ph];
     out.ink += w[ph] * scene.ink[ph];
     out.skyTint += w[ph] * scene.skyTint[ph];
     out.skyColour += w[ph] * scene.skyColour[ph];
+    out.skyHorizon += w[ph] * scene.skyHorizon[ph];
+    out.skyZenith += w[ph] * scene.skyZenith[ph];
   }
 
   const glm::vec3 moon = moonDirection(scene, hour);

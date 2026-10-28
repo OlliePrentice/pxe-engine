@@ -103,6 +103,44 @@ LightFit fitLight(const Scene& scene, glm::vec3 lightDir) {
   return fit;
 }
 
+// Under a perspective camera: how far round the eye the sun's map reaches,
+// metres. Nothing beyond it is shadowed.
+constexpr float kShadowReach = 60.f;
+
+// The same fixed-size square for a perspective camera, kShadowReach round
+// the eye pushed half that ahead along the view's flat forward (not at all
+// looking straight down), so most of the map lies where the view looks.
+// The centre is snapped to the map's texels in the light's own plane, so
+// shadow edges hold still as the eye moves rather than crawling. The map
+// reaches back toward the light past everything in the scene, so anything
+// standing between the light and the square still casts into it.
+LightFit fitLightAhead(const Scene& scene, glm::vec3 lightDir, const CameraFrame& camera) {
+  LightFit fit;
+  const glm::vec3 L = glm::normalize(lightDir);
+  const float radius = kShadowReach;
+  const glm::vec3 up = std::fabs(L.y) > 0.95f ? glm::vec3{0.f, 0.f, 1.f} : glm::vec3{0.f, 1.f, 0.f};
+  fit.texel = 2.f * radius / static_cast<float>(RenderConfig::kShadow);
+
+  glm::vec3 centre = camera.eye + glm::vec3{camera.forward.x, 0.f, camera.forward.z} * (0.5f * radius);
+  const glm::mat4 basis = glm::lookAt(glm::vec3{0.f}, -L, up);
+  glm::vec4 local = basis * glm::vec4(centre, 1.f);
+  local.x = std::round(local.x / fit.texel) * fit.texel;
+  local.y = std::round(local.y / fit.texel) * fit.texel;
+  centre = glm::vec3(glm::inverse(basis) * local);
+
+  const glm::vec3 sceneCentre = (scene.boundsMin + scene.boundsMax) * 0.5f;
+  const float sceneRadius = 0.5f * glm::length(scene.boundsMax - scene.boundsMin) + 1.f;
+  const float back = radius + glm::length(centre - sceneCentre) + sceneRadius + 10.f;
+  const glm::mat4 view = glm::lookAt(centre + L * back, centre, up);
+  fit.viewProj = glm::ortho(-radius, radius, -radius, radius, 1.f, back + radius + 10.f) * view;
+  return fit;
+}
+
+// The sky's colours greyed under rain cloud, as a room's window panes are.
+glm::vec3 overcastSky(glm::vec3 sky, float overcast) {
+  return glm::mix(sky, glm::vec3{0.85f * glm::dot(sky, glm::vec3{0.299f, 0.587f, 0.114f})}, overcast);
+}
+
 // Flatten one Palette field across all surfaces into shadow/mid/lit
 // triples, or pure red/green/blue per band for --test-colours.
 // Flatten one Palette field across all surfaces into shadow/mid/lit
@@ -240,6 +278,7 @@ Renderer::~Renderer() {
   if (skyVao_) glDeleteVertexArrays(1, &skyVao_);
   if (skyVbo_) glDeleteBuffers(1, &skyVbo_);
   if (progSky_) glDeleteProgram(progSky_);
+  if (progBackdrop_) glDeleteProgram(progBackdrop_);
   for (const auto& row : toon_)
     for (const ToonPrograms& t : row)
       for (unsigned prog : {t.mesh, t.grass, t.water})
@@ -249,6 +288,7 @@ Renderer::~Renderer() {
   if (progPresent_) glDeleteProgram(progPresent_);
   for (unsigned prog : edge_)
     if (prog) glDeleteProgram(prog);
+  if (edgePerspective_) glDeleteProgram(edgePerspective_);
   if (progFire_) glDeleteProgram(progFire_);
   if (progFireShadow_) glDeleteProgram(progFireShadow_);
   if (fireVbo_) glDeleteBuffers(1, &fireVbo_);
@@ -543,9 +583,11 @@ void Renderer::init() {
   progPresent_ = linkProgram("present.vert", "present.frag");
   edge_[0] = linkProgram("edge.vert", "edge.frag");
   edge_[1] = linkProgram("edge.vert", "edge.frag", {}, "#define FIRE_GRID\n");
+  edgePerspective_ = linkProgram("edge.vert", "edge.frag", {}, "#define PERSPECTIVE\n");
   progFire_ = linkProgram("fire.vert", "fire.frag");
   progFireShadow_ = linkProgram("fireshadow.vert", "fireshadow.frag");
   progSky_ = linkProgram("sky.vert", "sky.frag");
+  progBackdrop_ = linkProgram("edge.vert", "backdrop.frag");
   createTargets();
   createQuads();
 
@@ -982,6 +1024,25 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     throw std::invalid_argument("Renderer::render: present is set but FrameParams::framebufferW/H is " +
                                 std::to_string(params.framebufferW) + "x" + std::to_string(params.framebufferH) +
                                 "; set it to Window::framebufferSize(), or clear present");
+  if (camera.projection == CameraFrame::Projection::kPerspective) {
+    // What a perspective camera does not support yet is switched off.
+    FrameParams supported = params;
+    supported.showGrass = false;
+    supported.fire = false;
+    supported.rays = false;
+    supported.fireflies = false;
+    supported.lights.clear();
+    supported.grassFire = false;
+    supported.igniteGrass.clear();
+    supported.gridStrokes.clear();
+    draw(scene, camera, supported);
+    return;
+  }
+  draw(scene, camera, params);
+}
+
+void Renderer::draw(const Scene& scene, const CameraFrame& camera, const FrameParams& params) {
+  const bool perspective = camera.projection == CameraFrame::Projection::kPerspective;
   // Indoors there is no sky in view: no cloud shadows and no god rays (and
   // the edge pass draws no rain, below).
   Lighting lighting = params.lighting;
@@ -989,8 +1050,10 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     lighting.cloudStrength = 0.f;
     lighting.rays = 0.f;
   }
-  const LightFit light = fitLight(scene, lighting.lightDir);
-  const LightFit flash = fitLight(scene, lighting.flashDir);
+  const LightFit light =
+      perspective ? fitLightAhead(scene, lighting.lightDir, camera) : fitLight(scene, lighting.lightDir);
+  const LightFit flash =
+      perspective ? fitLightAhead(scene, lighting.flashDir, camera) : fitLight(scene, lighting.flashDir);
   const float normalBias = 3.f * light.texel;
   const glm::mat4 viewProj = camera.proj * camera.view;
   const float biasNdc = kGrassBiasMetres * 2.f / (camera.farPlane - camera.nearPlane);
@@ -1025,7 +1088,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   // drawn into their own map when they change, copied in, and the
   // characters drawn over them.
   const bool actors = !params.actors.empty();
-  const bool sceneShadows = !shadowValid_ || shadowLight_ != lighting.lightDir || crownShadows;
+  const bool sceneShadows =
+      !shadowValid_ || shadowLight_ != lighting.lightDir || shadowFit_ != light.viewProj || crownShadows;
   if (sceneShadows) {
     glBindFramebuffer(GL_FRAMEBUFFER, actors ? fboShadowStatic_ : fboShadow_);
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
@@ -1036,6 +1100,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     for (const Mesh& m : scene.shadowOnly) m.draw();
     shadowValid_ = true;
     shadowLight_ = lighting.lightDir;
+    shadowFit_ = light.viewProj;
     shadowStaticValid_ = actors;
   }
   if (actors || shadowHadActors_) {
@@ -1059,7 +1124,8 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     shadowHadActors_ = actors;
   }
   // Lightning's map: drawn once when a flash strikes from a new direction.
-  if (lighting.flash > 0.f && (!flashValid_ || flashLight_ != lighting.flashDir || crownShadows)) {
+  if (lighting.flash > 0.f &&
+      (!flashValid_ || flashLight_ != lighting.flashDir || flashFit_ != flash.viewProj || crownShadows)) {
     glBindFramebuffer(GL_FRAMEBUFFER, fboFlash_);
     glViewport(0, 0, RenderConfig::kShadow, RenderConfig::kShadow);
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -1069,6 +1135,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     for (const Mesh& m : scene.shadowOnly) m.draw();
     flashValid_ = true;
     flashLight_ = lighting.flashDir;
+    flashFit_ = flash.viewProj;
   }
   glDisable(GL_POLYGON_OFFSET_FILL);
   endPass();
@@ -1089,7 +1156,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
     grid_.advance(scene, params.time, params.igniteGrass, params.gridStrokes, lighting.rain,
                   windDir * lighting.windStrength);
   const bool grassFire = params.grassFire && grid_.running();
-  progEdge_ = edge_[grassFire ? 1 : 0];
+  progEdge_ = perspective ? edgePerspective_ : edge_[grassFire ? 1 : 0];
   const ToonPrograms& toon = toon_[grassFire ? 1 : 0][fireLights_.size() > 1 ? 1 : 0];
   progMesh_ = toon.mesh;
   progGrass_ = toon.grass;
@@ -1193,7 +1260,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
 
   // Reflection: the scene mirrored about the water plane, clipped to what
   // stands above it, drawn only where the water can be on screen.
-  const bool hasWater = !scene.water.empty();
+  const bool hasWater = !scene.water.empty() && !perspective;
   beginPass(PassTimes::kReflection);
   if (hasWater) {
     const float h = scene.waterLevel;
@@ -1234,6 +1301,32 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glViewport(0, 0, rtW(), rtH());
   drawMeshes(scene, params, viewProj, identity, -1e9f);
+  // Under a perspective camera, the sky wherever nothing was drawn. Before
+  // the window panes, which go over it. The normal target is left as the
+  // background's.
+  if (perspective) {
+    const glm::vec3 horizon = overcastSky(lighting.skyHorizon, lighting.overcast);
+    const glm::vec3 zenith = overcastSky(lighting.skyZenith, lighting.overcast);
+    glDisable(GL_CULL_FACE);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glUseProgram(progBackdrop_);
+    u2f(progBackdrop_, "uTarget", static_cast<float>(rtW()), static_cast<float>(rtH()));
+    u3f(progBackdrop_, "uFwd", camera.forward.x, camera.forward.y, camera.forward.z);
+    u3f(progBackdrop_, "uRight", camera.right.x, camera.right.y, camera.right.z);
+    u3f(progBackdrop_, "uUp", camera.up.x, camera.up.y, camera.up.z);
+    u2f(progBackdrop_, "uTanHalf", 1.f / camera.proj[0][0], 1.f / camera.proj[1][1]);
+    u3f(progBackdrop_, "uHorizon", horizon.x, horizon.y, horizon.z);
+    u3f(progBackdrop_, "uZenith", zenith.x, zenith.y, zenith.z);
+    glBindVertexArray(presentVao_);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_CULL_FACE);
+  }
   // Indoors, the sky through the windows, where the openings show only the
   // empty background. The normal target is left as the background's.
   if (scene.indoors && skyVertices_ > 0) {
@@ -1453,7 +1546,7 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u3f(progEdge_, "uInk", lighting.ink.x, lighting.ink.y, lighting.ink.z);
   // Light rims and point lights stay out of the dark regions.
   bindDarkRegions(progEdge_, scene);
-  u1f(progEdge_, "uRain", scene.indoors ? 0.f : lighting.rain);
+  u1f(progEdge_, "uRain", scene.indoors || perspective ? 0.f : lighting.rain);
   u1i(progEdge_, "uIndoors", scene.indoors ? 1 : 0);
   u1f(progEdge_, "uSunRain", lighting.rain);
   u1f(progEdge_, "uFlash", lighting.flash);
@@ -1479,6 +1572,18 @@ void Renderer::render(const Scene& scene, const CameraFrame& camera, const Frame
   u1f(progEdge_, "uYawTexels", camera.yawRadians / camera.texelWorld);
   const glm::vec3 rainCol = lighting.palette[kSurfFoam].band[2];
   u3f(progEdge_, "uRainColour", rainCol.x, rainCol.y, rainCol.z);
+  if (perspective) {
+    // Rebuilding positions from the perspective depth, the depth steps
+    // that count as outlines, and the haze.
+    const float tanY = 1.f / camera.proj[1][1];
+    u1f(progEdge_, "uFar", camera.farPlane);
+    u2f(progEdge_, "uTanHalf", 1.f / camera.proj[0][0], tanY);
+    u1f(progEdge_, "uPixelAngle", 2.f * tanY / static_cast<float>(rtH()));
+    u1f(progEdge_, "uRefTexel", 1.f / RenderConfig::kPixelsPerUnit);
+    const glm::vec3 haze = overcastSky(lighting.skyHorizon, lighting.overcast);
+    u3f(progEdge_, "uHaze", haze.x, haze.y, haze.z);
+    u2f(progEdge_, "uHazeSpan", 0.6f * camera.farPlane, camera.farPlane);
+  }
   glBindVertexArray(presentVao_);
   glDrawArrays(GL_TRIANGLES, 0, 3);
   glBindVertexArray(0);

@@ -1,14 +1,20 @@
 // The smallest game on pxe: a procedural scene - rolling grass, a standing
 // stone, a tree and a campfire on a stone slab - lit at a fixed hour and drawn
 // in a window until it is closed or Escape is pressed. Q and E turn the view.
+// With --first-person it is seen from standing height through a perspective
+// camera instead, looking at the stone and the tree, and the mouse looks
+// around.
 //
 //   pxe_minimal                     open the window
 //   pxe_minimal --capture out.png   draw a few frames offscreen, write the
 //                                   low-res view to out.png, exit
+//   pxe_minimal --first-person      the view from standing height
+//   pxe_minimal --hour H            light it at hour H (0-24), not 16.5
 //
 // docs/engine-guide.md walks through this file.
 
 #include "pxe/camera.hpp"
+#include "pxe/first_person_camera.hpp"
 #include "pxe/image.hpp"
 #include "pxe/input.hpp"
 #include "pxe/lighting.hpp"
@@ -24,10 +30,12 @@
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <random>
 #include <string>
@@ -38,11 +46,17 @@
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
-constexpr float kHour = 16.5f;              // the fixed time of day, 0-24
+constexpr float kHour = 16.5f;              // the time of day, 0-24, unless --hour says
 constexpr float kYaw = 45.f * kPi / 180.f;  // the view looks along +x +z
 constexpr float kGroundHalf = 40.f;         // the ground runs -40..40 m in x and z
 constexpr float kGroundCell = 0.5f;
 constexpr int kCaptureFrames = 4;
+// The first-person view: an eye at standing height, reaching just past the
+// ground's far edges so they fade into the sky, turned by the mouse.
+constexpr float kEyeHeight = 1.7f;
+constexpr float kFirstPersonFar = 50.f;
+constexpr float kLookPerPixel = 0.0015f;        // radians per framebuffer pixel of mouse motion
+constexpr float kMaxPitch = 85.f * kPi / 180.f;  // up or down
 
 // Rolling ground, about a metre from crest to trough.
 float groundHeight(float x, float z) { return 0.5f * std::sin(0.21f * x + 0.4f) * std::cos(0.17f * z - 0.3f); }
@@ -99,12 +113,15 @@ std::vector<pxe::Triangle> addCrown(pxe::SurfaceGeometry& geometry, glm::vec3 ce
   return pxe::trianglesOf(v, idx);
 }
 
-// The game's scene: what the engine draws, and where the game's own fire
-// burns. The game owns both.
+// The game's scene: what the engine draws, where the game's own fire
+// burns, and where its cameras start. The game owns all of it.
 struct World {
   pxe::Scene scene;
   glm::vec3 fireBase{0.f};
   glm::vec3 focus{0.f};
+  // The first-person eye, and the point it looks at to start with.
+  glm::vec3 eye{0.f};
+  glm::vec3 lookAt{0.f};
 };
 
 // Builds and uploads the scene's geometry. Needs the window's GL context.
@@ -149,6 +166,9 @@ World buildWorld() {
   addBox(geometry, pxe::kSurfStone, 1.f, 3.f, {0.8f, 0.28f, 0.8f});
   world.fireBase = {1.f, groundHeight(1.f, 3.f) + 0.36f, 3.f};
   world.focus = {0.f, groundHeight(0.f, 0.f) + 1.f, 1.f};
+  // Facing the stone, the campfire and the tree, the stone on the left.
+  world.eye = {-4.f, groundHeight(-4.f, -7.f) + kEyeHeight, -7.f};
+  world.lookAt = {0.f, groundHeight(0.f, 0.5f) + 1.4f, 0.5f};
 
   pxe::buildSceneMaps(scene, geometry);
   pxe::uploadScene(scene, geometry);
@@ -165,12 +185,12 @@ World buildWorld() {
 }
 
 // One frame's draw list: everything the renderer needs, built fresh.
-pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float time) {
+pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float time, float hour) {
   pxe::FrameParams params;
   params.framebufferW = framebuffer.x;
   params.framebufferH = framebuffer.y;
   params.time = time;
-  params.lighting = pxe::lightingAt(world.scene, kHour, pxe::Weather{});
+  params.lighting = pxe::lightingAt(world.scene, hour, pxe::Weather{});
   params.fires.push_back({1, world.fireBase, 1.f, 0.f, 1.f});
   return params;
 }
@@ -179,11 +199,26 @@ pxe::FrameParams frameParams(const World& world, glm::ivec2 framebuffer, float t
 
 int main(int argc, char** argv) {
   std::string capture;
-  if (argc == 3 && std::string(argv[1]) == "--capture") {
-    capture = argv[2];
-  } else if (argc != 1) {
-    std::fprintf(stderr, "usage: pxe_minimal [--capture out.png]\n");
-    return 1;
+  bool firstPerson = false;
+  float hour = kHour;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    bool ok = true;
+    if (arg == "--capture" && i + 1 < argc) {
+      capture = argv[++i];
+    } else if (arg == "--first-person") {
+      firstPerson = true;
+    } else if (arg == "--hour" && i + 1 < argc) {
+      char* end = nullptr;
+      hour = std::strtof(argv[++i], &end);
+      ok = *end == '\0' && hour >= 0.f && hour <= 24.f;
+    } else {
+      ok = false;
+    }
+    if (!ok) {
+      std::fprintf(stderr, "usage: pxe_minimal [--capture out.png] [--first-person] [--hour 0-24]\n");
+      return 1;
+    }
   }
 
   try {
@@ -206,11 +241,26 @@ int main(int argc, char** argv) {
     camera.setYawRadians(kYaw);
     camera.setTarget(world.focus);
 
+    // The first-person camera, turned toward world.lookAt. A positive pitch
+    // looks down.
+    pxe::FirstPersonCamera eyeCamera;
+    eyeCamera.setEye(world.eye);
+    eyeCamera.setFarPlane(kFirstPersonFar);
+    const glm::vec3 look = world.lookAt - world.eye;
+    eyeCamera.setYawRadians(std::atan2(look.x, look.z));
+    eyeCamera.setPitchRadians(-std::atan2(look.y, std::hypot(look.x, look.z)));
+    // The frame to draw, through whichever camera this run looks through.
+    auto view = [&] {
+      if (firstPerson) return eyeCamera.frame(renderer.rtW(), renderer.rtH());
+      return camera.frame(renderer.rtW(), renderer.rtH());
+    };
+
     if (!capture.empty()) {
       // A few frames at fixed times, so a capture is the same on every run.
       for (int f = 0; f < kCaptureFrames; ++f) {
-        const pxe::FrameParams params = frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f);
-        renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
+        const pxe::FrameParams params =
+            frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f, hour);
+        renderer.render(world.scene, view(), params);
       }
       const bool ok = pxe::writePng(capture, renderer.viewW(), renderer.viewH(), renderer.readView());
       std::fprintf(stderr, "pxe_minimal: %s %s\n", ok ? "wrote" : "failed to write", capture.c_str());
@@ -218,6 +268,8 @@ int main(int argc, char** argv) {
     }
 
     pxe::Input input;
+    // Mouse look holds the cursor in the window; Escape still closes it.
+    if (firstPerson) window.setCursorCaptured(true);
     double previous = window.time();
     while (!window.shouldClose()) {
       const double now = window.time();
@@ -230,6 +282,12 @@ int main(int argc, char** argv) {
       if (input.keyPressed(pxe::Key::kQ)) camera.rotateSteps(-1);
       if (input.keyPressed(pxe::Key::kE)) camera.rotateSteps(1);
       camera.update(dt);
+      if (firstPerson) {
+        // Moving the mouse right turns right (a smaller yaw), down looks down.
+        const glm::vec2 turn = input.mouseDelta() * kLookPerPixel;
+        eyeCamera.setYawRadians(eyeCamera.yawRadians() - turn.x);
+        eyeCamera.setPitchRadians(std::clamp(eyeCamera.pitchRadians() + turn.y, -kMaxPitch, kMaxPitch));
+      }
 
       // A minimised window can have a 0x0 framebuffer, and render throws when
       // asked to present at that size: skip drawing, and wait rather than spin.
@@ -238,8 +296,8 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
         continue;
       }
-      const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now));
-      renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
+      const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now), hour);
+      renderer.render(world.scene, view(), params);
       window.swap();
     }
   } catch (const std::exception& e) {

@@ -33,7 +33,11 @@ void setRamp(glm::vec3 (&out)[3], std::uint32_t shadow, std::uint32_t mid, std::
 // the rest of it. A room's oak furniture is a honey oak, warm at every hour:
 // amber-gold in golden hour, darker warm browns at twilight and night, never
 // blue or grey (each tone's red above its green, its green above its blue),
-// and lighter than the floor in every phase.
+// and lighter than the floor in every phase. The sky behind a perspective
+// view runs from a pale horizon to a deeper zenith in each phase: a soft
+// blue by day, a warm amber horizon under a lavender sky in golden hour, a
+// dusky rose under violet at twilight, and navy at night, a little lighter
+// at the horizon than the moonlit ground.
 Scene::Scene() {
   struct Ramps {
     std::uint32_t band[3], detail[3], tip[3];
@@ -60,6 +64,8 @@ Scene::Scene() {
   set(kPhaseDay, kSurfOak, plain(0x8c5a30, 0xb47a42, 0xd49c5c));
   rim[kPhaseDay] = hex(0xf5f0dc);
   ink[kPhaseDay] = hex(0x4c4c66);
+  skyHorizon[kPhaseDay] = hex(0xd0dcd4);
+  skyZenith[kPhaseDay] = hex(0x84a8c8);
 
   set(kPhaseGolden, kSurfGrass, {{0x44665c, 0x84a444, 0xb4c050}, {0x547464, 0x6c943c, 0x94ac3c}, {0x44665c, 0xa8b850, 0xe0d070}});
   set(kPhaseGolden, kSurfDirt, plain(0x4c4c5c, 0x6c6058, 0x9c8460));
@@ -74,6 +80,8 @@ Scene::Scene() {
   set(kPhaseGolden, kSurfOak, plain(0x8a5028, 0xb4703a, 0xe49c52));
   rim[kPhaseGolden] = hex(0xffe0a0);
   ink[kPhaseGolden] = hex(0x403860);
+  skyHorizon[kPhaseGolden] = hex(0xf0c88c);
+  skyZenith[kPhaseGolden] = hex(0x7c88b4);
 
   set(kPhaseTwilight, kSurfGrass, {{0x2c4c50, 0x34565a, 0x3c5e5c}, {0x345a58, 0x3c625c, 0x446a60}, {0x2c4c50, 0x446a64, 0x507468}});
   set(kPhaseTwilight, kSurfDirt, plain(0x34364c, 0x3c3e54, 0x46465c));
@@ -88,6 +96,8 @@ Scene::Scene() {
   set(kPhaseTwilight, kSurfOak, plain(0x5c3c24, 0x70482c, 0x825838));
   rim[kPhaseTwilight] = hex(0x9c94bc);
   ink[kPhaseTwilight] = hex(0x24203c);
+  skyHorizon[kPhaseTwilight] = hex(0xa07c98);
+  skyZenith[kPhaseTwilight] = hex(0x343c68);
 
   set(kPhaseNight, kSurfGrass, {{0x1c2448, 0x222c54, 0x28345e}, {0x222c54, 0x28345e, 0x2e3c6a}, {0x1c2448, 0x2e3c6a, 0x384a7c}});
   set(kPhaseNight, kSurfDirt, plain(0x1a1e3e, 0x20264a, 0x262e54));
@@ -102,6 +112,8 @@ Scene::Scene() {
   set(kPhaseNight, kSurfOak, plain(0x3c2818, 0x4a3220, 0x583c28));
   rim[kPhaseNight] = hex(0x7084c0);
   ink[kPhaseNight] = hex(0x12163a);
+  skyHorizon[kPhaseNight] = hex(0x283462);
+  skyZenith[kPhaseNight] = hex(0x0e1236);
 }
 
 }  // namespace pxe

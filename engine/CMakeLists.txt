@@ -60,6 +60,7 @@ target_compile_features(imgui PUBLIC cxx_std_11)
 # shaders/ at build time, regenerated whenever a shader changes. Nothing is
 # read from disk at run time.
 set(PXE_SHADERS
+  backdrop.frag
   common.glsl
   edge.frag
   edge.vert
@@ -105,6 +106,7 @@ add_library(pxe_engine
   src/shader.cpp
   src/mesh.cpp
   src/camera.cpp
+  src/first_person_camera.cpp
   src/renderer.cpp
   src/gltf.cpp
   src/skinned.cpp

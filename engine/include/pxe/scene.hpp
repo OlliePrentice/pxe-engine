@@ -127,6 +127,12 @@ struct Scene {
   // Default to the reference style's, like `palette`.
   glm::vec3 rim[kPhaseCount]{};
   glm::vec3 ink[kPhaseCount]{};
+  // The sky behind a perspective view (FirstPersonCamera) per phase: a
+  // gradient from the horizon colour to the zenith colour, in flat bands.
+  // Surfaces fade into the horizon colour toward the far plane. Default to
+  // the reference style's, like `palette`. Not drawn under Camera.
+  glm::vec3 skyHorizon[kPhaseCount]{};
+  glm::vec3 skyZenith[kPhaseCount]{};
 
   // N·L thresholds for the toon ramp with the sun high. They scale down as
   // the sun drops so a low sun still lights flat ground.

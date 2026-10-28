@@ -6,10 +6,18 @@
 
 namespace pxe {
 
-// One camera update. `eye` is already snapped onto the view-aligned texel
-// grid. `texelError` is how far the desired eye was from that snap, in
-// low-res texels, and the presenter shifts the upscale by it.
+// One camera update, from the orthographic Camera or the perspective
+// FirstPersonCamera (first_person_camera.hpp); the renderer draws through
+// either. Orthographic: `eye` is already snapped onto the view-aligned texel
+// grid, `texelError` is how far the desired eye was from that snap, in
+// low-res texels, and the presenter shifts the upscale by it; `fovY` is
+// unused. Perspective: the eye is not snapped and `texelError` is zero;
+// `fovY` is the vertical field of view in radians, and `texelWorld`,
+// `orthoHalfW` and `orthoHalfH` are unused.
 struct CameraFrame {
+  enum class Projection { kOrthographic, kPerspective };
+  Projection projection = Projection::kOrthographic;
+  float fovY = 0.f;
   glm::mat4 view{1.f};
   glm::mat4 proj{1.f};
   glm::vec3 eye{0.f};
@@ -22,7 +30,7 @@ struct CameraFrame {
   float orthoHalfW = 1.f;
   float orthoHalfH = 1.f;
   float yawRadians = 0.f;
-  float pitchRadians = 0.f;
+  float pitchRadians = 0.f;  // positive looks down
   float nearPlane = 0.5f;
   float farPlane = 220.f;
   float pixelsPerUnit = 16.f;

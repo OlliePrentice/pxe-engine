@@ -46,6 +46,11 @@ struct Lighting {
   float skyLight = 0.f;
   glm::vec3 skyTint{1.f};
   glm::vec3 skyColour{0.f};
+  // The sky behind a perspective view, blended from Scene::skyHorizon and
+  // skyZenith: its colour at the horizon (which far surfaces fade into) and
+  // overhead.
+  glm::vec3 skyHorizon{0.f};
+  glm::vec3 skyZenith{0.f};
   // God rays: how strong the sunbeams are (0 none; the renderer adds the
   // camera angle) and their colour.
   float rays = 0.f;
