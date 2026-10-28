@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace desert {
@@ -61,40 +62,102 @@ float ridgeProfile(float u, float windward) {
   return v * v;
 }
 
-void appendGround(pxe::SurfaceGeometry& geometry) {
-  const int n = static_cast<int>(2.f * kGroundHalf / kGroundCell);
-  // duneHeight at every corner of the grid, row by row along +x.
-  std::vector<float> corner(static_cast<std::size_t>((n + 1) * (n + 1)));
-  for (int j = 0; j <= n; ++j)
-    for (int i = 0; i <= n; ++i)
-      corner[static_cast<std::size_t>(j * (n + 1) + i)] =
-          duneHeight(-kGroundHalf + static_cast<float>(i) * kGroundCell, -kGroundHalf + static_cast<float>(j) * kGroundCell);
-  auto at = [&](int i, int j) {
-    return glm::vec3{-kGroundHalf + static_cast<float>(i) * kGroundCell, corner[static_cast<std::size_t>(j * (n + 1) + i)],
-                     -kGroundHalf + static_cast<float>(j) * kGroundCell};
-  };
+// How far either side of a point the dunes' slope is read for its normal,
+// metres. The same step everywhere, so a vertex the fine and coarse grids
+// share has one normal and the two shade alike where they meet.
+constexpr float kNormalStep = 0.5f;
 
-  // Each cell is two triangles split corner (i, j) to (i+1, j+1), as
-  // groundHeight reads them, each with its own face normal, so the toon
-  // ramp bands the slopes facet by facet.
+// The dunes' smooth normal at world xz, from duneHeight's slope across the
+// point, so the toon ramp bands each slope in contours that follow its
+// curve rather than facet by facet.
+glm::vec3 duneNormal(float x, float z) {
+  const float e = kNormalStep;
+  return glm::normalize(glm::vec3{duneHeight(x - e, z) - duneHeight(x + e, z), 2.f * e,
+                                  duneHeight(x, z - e) - duneHeight(x, z + e)});
+}
+
+void appendGround(pxe::SurfaceGeometry& geometry) {
   std::vector<pxe::Vertex> v;
   std::vector<std::uint32_t> idx;
-  v.reserve(static_cast<std::size_t>(n * n * 6));
-  idx.reserve(static_cast<std::size_t>(n * n * 6));
-  auto triangle = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c) {
-    // Wound counter-clockwise seen from above: meshes are drawn with back
-    // faces culled.
-    const glm::vec3 normal = glm::normalize(glm::cross(b - a, c - a));
-    const auto base = static_cast<std::uint32_t>(v.size());
-    for (const glm::vec3& p : {a, b, c})
-      v.push_back({p.x, p.y, p.z, normal.x, normal.y, normal.z, static_cast<float>(pxe::kSurfSand)});
-    idx.insert(idx.end(), {base, base + 1, base + 2});
+  auto vertex = [&](float x, float z) {
+    const glm::vec3 n = duneNormal(x, z);
+    v.push_back({x, duneHeight(x, z), z, n.x, n.y, n.z, static_cast<float>(pxe::kSurfSand)});
+    return static_cast<std::uint32_t>(v.size() - 1);
   };
-  for (int j = 0; j < n; ++j)
-    for (int i = 0; i < n; ++i) {
-      const glm::vec3 p00 = at(i, j), p10 = at(i + 1, j), p01 = at(i, j + 1), p11 = at(i + 1, j + 1);
-      triangle(p00, p11, p10);
-      triangle(p00, p01, p11);
+  // Wound counter-clockwise seen from above, whatever order the corners
+  // come in: meshes are drawn with back faces culled.
+  auto triangle = [&](std::uint32_t a, std::uint32_t b, std::uint32_t c) {
+    const pxe::Vertex &pa = v[a], &pb = v[b], &pc = v[c];
+    if ((pb.pz - pa.pz) * (pc.px - pa.px) - (pb.px - pa.px) * (pc.pz - pa.pz) < 0.f) std::swap(b, c);
+    idx.insert(idx.end(), {a, b, c});
+  };
+
+  // The fine grid, 1 m cells over the middle, each cell two triangles split
+  // corner (i, j) to (i+1, j+1), as groundHeight reads them.
+  const int nf = static_cast<int>(2.f * kFineHalf / kFineCell);
+  std::vector<std::uint32_t> fine(static_cast<std::size_t>((nf + 1) * (nf + 1)));
+  auto f = [&](int i, int j) { return fine[static_cast<std::size_t>(j * (nf + 1) + i)]; };
+  for (int j = 0; j <= nf; ++j)
+    for (int i = 0; i <= nf; ++i)
+      fine[static_cast<std::size_t>(j * (nf + 1) + i)] =
+          vertex(-kFineHalf + static_cast<float>(i) * kFineCell, -kFineHalf + static_cast<float>(j) * kFineCell);
+  for (int j = 0; j < nf; ++j)
+    for (int i = 0; i < nf; ++i) {
+      triangle(f(i, j), f(i + 1, j + 1), f(i + 1, j));
+      triangle(f(i, j), f(i, j + 1), f(i + 1, j + 1));
+    }
+
+  // The coarse ring, 4 m cells out to the ground's edge. Its corners on the
+  // fine grid's border are the fine grid's own vertices; [c0, c1] is the
+  // fine grid's span in coarse corners, and each coarse side along it holds
+  // `ratio` fine cells.
+  const int nc = static_cast<int>(2.f * kGroundHalf / kCoarseCell);
+  const int c0 = static_cast<int>((kGroundHalf - kFineHalf) / kCoarseCell);
+  const int c1 = nc - c0;
+  const int ratio = static_cast<int>(kCoarseCell / kFineCell);
+  std::vector<std::uint32_t> coarse(static_cast<std::size_t>((nc + 1) * (nc + 1)));
+  auto c = [&](int i, int j) { return coarse[static_cast<std::size_t>(j * (nc + 1) + i)]; };
+  for (int j = 0; j <= nc; ++j)
+    for (int i = 0; i <= nc; ++i) {
+      std::uint32_t& slot = coarse[static_cast<std::size_t>(j * (nc + 1) + i)];
+      if (i >= c0 && i <= c1 && j >= c0 && j <= c1) {
+        // On the fine grid's border, its vertex; inside it, unused.
+        if (i == c0 || i == c1 || j == c0 || j == c1) slot = f((i - c0) * ratio, (j - c0) * ratio);
+        continue;
+      }
+      slot = vertex(-kGroundHalf + static_cast<float>(i) * kCoarseCell, -kGroundHalf + static_cast<float>(j) * kCoarseCell);
+    }
+
+  // A coarse cell beside the fine grid: its near side is the fine border's
+  // vertices side[0..ratio], and its far corners a (beside side[0]) and b
+  // (beside side[ratio]). Fanning the near side's first half to a, its
+  // second half to b, and its middle to both, uses every fine vertex along
+  // the side, so no edge of the fine grid ends part-way along a coarse one.
+  std::vector<std::uint32_t> side(static_cast<std::size_t>(ratio + 1));
+  auto stitch = [&](std::uint32_t a, std::uint32_t b) {
+    const int mid = ratio / 2;
+    for (int k = 0; k < mid; ++k) triangle(side[static_cast<std::size_t>(k)], side[static_cast<std::size_t>(k + 1)], a);
+    triangle(side[static_cast<std::size_t>(mid)], b, a);
+    for (int k = mid; k < ratio; ++k) triangle(side[static_cast<std::size_t>(k)], side[static_cast<std::size_t>(k + 1)], b);
+  };
+  for (int j = 0; j < nc; ++j)
+    for (int i = 0; i < nc; ++i) {
+      const bool alongX = i >= c0 && i < c1, alongZ = j >= c0 && j < c1;
+      if (alongX && alongZ) continue;  // the fine grid's
+      if (alongX && (j == c0 - 1 || j == c1)) {
+        // Below or above the fine grid in z: its near side runs along x.
+        const int row = j == c1 ? nf : 0, far = j == c1 ? j + 1 : j;
+        for (int k = 0; k <= ratio; ++k) side[static_cast<std::size_t>(k)] = f((i - c0) * ratio + k, row);
+        stitch(c(i, far), c(i + 1, far));
+      } else if (alongZ && (i == c0 - 1 || i == c1)) {
+        // Either side of the fine grid in x: its near side runs along z.
+        const int column = i == c1 ? nf : 0, far = i == c1 ? i + 1 : i;
+        for (int k = 0; k <= ratio; ++k) side[static_cast<std::size_t>(k)] = f(column, (j - c0) * ratio + k);
+        stitch(c(far, j), c(far, j + 1));
+      } else {
+        triangle(c(i, j), c(i + 1, j + 1), c(i + 1, j));
+        triangle(c(i, j), c(i, j + 1), c(i + 1, j + 1));
+      }
     }
   geometry.append(pxe::kSurfSand, v, idx);
 }
@@ -118,12 +181,12 @@ float duneHeight(float x, float z) {
 }
 
 float groundHeight(float x, float z) {
-  const float gx = (x + kGroundHalf) / kGroundCell;
-  const float gz = (z + kGroundHalf) / kGroundCell;
+  const float gx = (x + kFineHalf) / kFineCell;
+  const float gz = (z + kFineHalf) / kFineCell;
   const float i = std::floor(gx), j = std::floor(gz);
   const float fx = gx - i, fz = gz - j;
   auto corner = [&](float di, float dj) {
-    return duneHeight(-kGroundHalf + (i + di) * kGroundCell, -kGroundHalf + (j + dj) * kGroundCell);
+    return duneHeight(-kFineHalf + (i + di) * kFineCell, -kFineHalf + (j + dj) * kFineCell);
   };
   const float h00 = corner(0.f, 0.f), h11 = corner(1.f, 1.f);
   // The cell's two triangles, either side of its (i, j)-(i+1, j+1) diagonal.

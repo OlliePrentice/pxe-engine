@@ -24,7 +24,7 @@ Static assets: plants, rocks, buildings and props. The reference asset is the da
 - **Budgets.** A palm is about 3,000 triangles.
 
 ## Terrain
-- The dunes are generated in the game's code, not in Blender: long, smooth, wind-aligned ridges with a sharper crest on the downwind face, faceted on a 1 m grid so the toon ramp bands the slopes.
+- The dunes are generated in the game's code, not in Blender: long, smooth, wind-aligned ridges with a sharper crest on the downwind face, built on a 1 m grid with smooth normals, so the toon ramp cuts each slope into a few clean bands that follow its curve.
 - No ripples, rocks or scrub until a task adds them.
 
 ## Palette

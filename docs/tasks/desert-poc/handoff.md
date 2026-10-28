@@ -137,3 +137,56 @@ Run `tools/build.sh release desert` (or `./build/release/desert/pxe_desert`).
 - **The collision radius is wider than the trunk.** The palm cylinder is 0.40 m (assets.md) plus a 0.3 m body radius (`kBodyRadius`), so the eye stops 0.7 m from the axis. That keeps the 0.1 m near plane well clear of the bark. The task names only the trunk's radius, so this extra radius is my choice.
 - **The gamepad can't release the cursor or quit.** Nothing in the task assigns those to it. Escape and the click are keyboard and mouse only.
 - **Looking and walking pause whenever the cursor is released**, so a gamepad-only player must keep the cursor captured. If the window loses focus, the cursor stays in whatever state it was in.
+
+## Cycle 2
+Build: pass. The clean `check` preset build gives only the expected stb_image_write `sprintf` warning.
+
+### Changes
+- `desert/src/world.hpp`:
+  - `kGroundHalf` goes from 150 to 380 m.
+  - New `kFineHalf` (120 m), `kFineCell` (1 m) and `kCoarseCell` (4 m) replace `kGroundCell`.
+  - The ground's and `groundHeight`'s comments are updated.
+- `desert/src/world.cpp`:
+  - `appendGround` now builds an indexed mesh with smooth per-vertex normals, from the new `duneNormal`: a central difference of `duneHeight`, ±0.5 m.
+  - It builds a 1 m fine grid within ±120 m, and a 4 m coarse ring out to ±380 m.
+  - The ring shares the fine grid's border vertices. Each ring cell along the border fans the 5 fine vertices on its near side to its far corners.
+  - `groundHeight` reads the fine grid from `kFineHalf`. It gives the same corner points as before.
+- `README.md`, `docs/architecture.md` (the desert world row) and `desert/docs/art-style.md` (dunes line): faceted 1 m ground / 300 × 300 m changed to the smooth-shaded 760 × 760 m ground.
+- `docs/tasks/desert-poc/capture_hour{10,16.5,19}.png` were re-captured, and `capture_corner.png` is new: from (-80, -80) at eye height, looking level toward (-1, -1), from a temporary spawn edit that has since been reverted. No flag was added.
+
+### Issues addressed
+- ISSUE-001: smooth normals from the dune height function's gradient, so the toon bands follow the dunes' curves.
+- ISSUE-002: the ground now runs to ±380 m. It has 1 m cells within ±120 m and 4 m cells outside, stitched with no cracks or T-junctions. There are 180,920 triangles.
+
+### Layering
+- Engine: none.
+- Game: `desert/src/world.cpp` builds the ground into the game-owned `World::scene`, as before.
+- Misplaced code touched: none.
+
+### Verification
+- **Mesh check** (temporary code, removed): 180,920 triangles (cycle 1: 180,000) and 90,841 vertices.
+  - Every edge is shared by exactly two triangles, apart from the 760 on the outer ±380 m edge.
+  - No edge is used three times, and every triangle faces up.
+- **Determinism:** two `pxe_desert --capture` runs give byte-identical PNGs.
+- **Byte-identical to dba41e7:** `pxe` default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6`, `--self-test` output, `pxe_minimal --capture` and `pxe_minimal --first-person --capture`. Nothing outside `desert/` and the docs changed.
+- **Dune banding** (`capture_hour16.5.png`, `capture_hour10.png`):
+  - The slopes cut into wide, clean bands that follow each ridge's curve, and the triangle checker is gone.
+  - What remains is pixel stair-stepping along band edges and some small notches on far crest lines near the horizon. Those are raster steps at grazing angles, not facets.
+  - `capture_hour19.png` is night: the sand is nearly one flat blue-grey tone, as in cycle 1.
+- **Horizon edge** (`capture_corner.png`):
+  - From the play-area corner, looking out, the sand runs to the horizon with no line where it ends. Its last pixel rows step into the sky's horizon colour.
+  - A rerun of the same pose with the ground at ±1000 m was byte-identical to it, so no part of the 380 m edge is visible.
+  - From the spawn, the right of the view now shows hazed dunes where cycle 1 showed the ground ending.
+- **Fronds** (revision 2, REQ-001): at 25 m the crown reads as separate broad leaflets on each rib, with no speckle. A few single lighter-green pixels sit on lit blade edges.
+
+### How to playtest
+Run `tools/build.sh release desert`.
+1. **Banding.** Look across the dunes at 16.5, then `--hour 10` and `--hour 17.6`. The light and shadow bands on the slopes should have smooth edges that follow each ridge. There should be no checker of triangles, especially at grazing angles looking along a dune.
+2. **Horizon.** Walk to each corner of the play area and to the middle of each side, and look outward and turn. The sand should fade into the horizon colour without a hard edge or a pale strip of missing ground.
+3. **Coarse ring.** Stand at the play-area edge facing out. The 4 m cells start 40 m beyond the edge. Check there is no visible seam, crack or shading line where they begin.
+4. **Walking** should feel exactly as before. The play area is all on the unchanged 1 m grid, so the eye height follows the same triangles.
+
+### Known limitations
+- **The engine's ground height map grows with the ground.** `pxe::buildSceneMaps` builds `scene.ground` at 0.2 m cells over the whole sand ground: 3,801 × 3,801 floats, about 58 MB, against about 9 MB in cycle 1. The desert doesn't query it. It walks on its own `groundHeight`. Start-up stayed under half a second in a capture run. Avoiding the map would need an engine option or a change to the scene build order, so I left it.
+- **The ring is shaded from a smoother surface than it shows.** Its normals come from the true dune slope at each corner, while its 4 m triangles flatten the smallest (23 m) ridge layer. Far dunes in the ring can show bands that don't quite match their silhouettes. They start 40 m beyond the play area, at least 120 m from the spawn, and are mostly hazed.
+- **The palm's shadow breaks into dashes at the default hour.** Its thin trunk shadow, long under the low sun, shows as a dashed line to the right of the palm. This already happened in cycle 1 and comes from the engine's shadow map resolution. It is unchanged.
