@@ -1,7 +1,7 @@
 # First-person desert game: proof of concept
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 A second game on the pxe engine, separate from `game/`. It is first person, in the same art style, and set in a desert. This proof of concept gets the camera and controls right: the player walks over procedural sand dunes at eye height, with no body, arms, tools or HUD, and the scene is open desert with a single date palm. It uses the perspective camera from task `perspective-camera` and starts only after the user has approved that task's look gate. It also makes the project's docs and tooling hold more than one game, with each game owning its own art style doc.
@@ -18,7 +18,7 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
   - The eye height follows the terrain with light smoothing, so walking over dunes doesn't jolt.
   - Movement uses the frame time clamped to at most 0.05 s, so a stall (a dragged window) never jumps the player.
   - Looking and walking pause while the cursor is released, as in the example.
-- **Terrain.** Dunes are generated in the desert game's code from a height function, as `examples/minimal` builds its ground. They are long, smooth, wind-aligned ridges: a few layered sine-like ridges, each with a sharper crest on the downwind face, 2–6 m from crest to trough. They are faceted by a 1 m grid so the toon ramp bands the slopes. There are no ripples, rocks or scrub. The ground runs 300 × 300 m, centred on the origin, so it reaches the haze. The player is held inside the middle 160 × 160 m. Walking reads the same height function.
+- **Terrain.** Dunes are generated in the desert game's code from a height function, as `examples/minimal` builds its ground. They are long, smooth, wind-aligned ridges: a few layered sine-like ridges, each with a sharper crest on the downwind face, 2–6 m from crest to trough. They are built on a 1 m grid with smooth normals, so the toon ramp cuts each slope into a few clean bands that follow the dune's curve (changed from face normals after cycle 1, when the 1 m facets showed as sawtooth band edges and a triangle checker; user decision). There are no ripples, rocks or scrub. The ground runs to ±380 m, centred on the origin, so from anywhere in the play area its edge is past the far plane and fully hazed (changed from 300 × 300 m after cycle 1, when the edge showed as a hard line; user decision). The middle ±120 m is on the 1 m grid; outside it the cells are 4 m, joined to the 1 m grid without cracks or T-junction gaps. The player is held inside the middle 160 × 160 m. Walking reads the same height function.
 - **Sand surface.** A new engine surface, `Sand` (a glTF material name too), with default palettes. The day mid tone is a warm ochre, about sRGB (214, 176, 118). Golden hour pushes it orange, twilight pink-mauve, and night cool blue-grey, following how the existing surfaces' palettes shift. No grass is scattered on it.
 - **Date palm.** One static Blender asset at real scale:
   - A curved trunk about 11 m tall, tapering slightly, with stepped rings of cut frond stubs for a faceted, scaly read.
@@ -27,7 +27,7 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
   - Materials: trunk and dates `Bark`, fronds `Leaf`, so no new surface for the palm. A `Frond` surface may follow later only if the green looks wrong. No leaf sprites are scattered on the palm.
 - **Placement and spawn.** The palm stands at the world origin, on the side of a low dune rather than on a crest. The player spawns 25 m south of it (engine -Z, the default `Scene::sunSouth`), facing it, looking level (pitch 0°). This is also the `--capture` pose. Changed from 14 m and 5° down after the palm was built: the fronds sit 9.3–14.65 m up, out of frame from there (user decision). The glb's origin goes at the ground height at the palm's spot; its trunk runs 0.5 m below that.
 - **Frond detail is judged in the first capture.** If the 15 thin blades per side speckle or crawl, the designer cuts them to about 6 broader blades per side as a follow-up asset request (user decision). The sun direction (`Scene::sunEast`, `sunSouth`) puts the palm's shadow across the sand to the view's right at the default hour.
-- **Collision.** The palm is a vertical cylinder at its trunk base, with the radius recorded in `assets.md`. The player slides along it and along the play-area boundary. Nothing else blocks.
+- **Collision.** The palm is a vertical cylinder at its trunk base, with the radius recorded in `assets.md`, widened by a 0.3 m body radius so the near plane never cuts into the bark (developer's choice, accepted in the cycle 1 review). The player slides along it and along the play-area boundary. Nothing else blocks.
 - **Time and weather.** A fixed hour from `--hour <0-24>`, default 16.5. The clock doesn't run. There is no weather, rain, wind, fire or audio, and no copy of the existing game's `WorldClock`.
 - **Flags.** `--help`, `--capture <png>` (deterministic, from the spawn pose), `--hour <0-24>` and `--window-png <png>`. No self-test, bench or audio.
 - **Each game owns its art style doc.** Done by the orchestrator at the start of cycle 1, before the designer runs:
@@ -50,7 +50,7 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
 - [ ] `desert/` builds `pxe_desert` in namespace `desert`, added from the root `CMakeLists.txt`, includes only engine headers, and sets its own asset directory under `desert/assets`
 - [ ] `tools/build.sh` builds and can run `desert` with arguments, and its help lists it
 - [ ] `pxe::Surface` has a Sand value, glTF material `Sand` loads as it, and its default palettes match the decided colours. The shader surface constants match
-- [ ] The dune height function gives layered wind-aligned ridges 2–6 m high on a 1 m grid over 300 × 300 m, all Sand, with no grass
+- [ ] The dune height function gives layered wind-aligned ridges 2–6 m high; the ground is Sand with smooth normals, on a 1 m grid within ±120 m and 4 m cells out to ±380 m with no cracks between them, with no grass
 - [ ] The palm loads from `desert/assets/scenes/date_palm.glb` at the origin, standing on the ground height there
 - [ ] The player spawns 25 m south of the palm, facing it, pitch 0°, with the eye 1.7 m above the ground
 - [ ] WASD at 3.5 m/s, Shift sprint at 6 m/s; left stick move, right stick look, left stick press sprint; pitch clamped to ±85°; Y not inverted
@@ -89,3 +89,4 @@ A second game on the pxe engine, separate from `game/`. It is first person, in t
 ## Cycle log
 - Look gate approved by the user 2026-10-28.
 - Cycle 1: 2026-10-28 started, base 4030291 (art style docs split first, by the orchestrator)
+- Cycle 1 review: fresh build clean; existing game and example byte-identical and desert capture deterministic (rerun by the orchestrator). REQ-001 (broader frond blades) done in e1e3506 and checked in an engine capture. ISSUE-001, ISSUE-002 open from user look decisions. The gamepad has no release or quit: out of scope.
