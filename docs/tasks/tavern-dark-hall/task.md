@@ -1,6 +1,6 @@
 # Dark hall behind the tavern door
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -24,17 +24,17 @@ Outside the Sleeping Fox, when the door opens, the doorway shows a flat grey squ
 - Game: `buildRuins` (game/src/scene.cpp) adds one dark region over the hall in the exterior's local frame, placed with `tavernPoint`/`kTavernYaw`. It also extends `kTavernVestibule` to the hall's new depth. The blocker for the old back wall's line goes into the outdoor scene's blockers, next to the door's own blocker.
 
 ## Acceptance criteria
-- [ ] `pxe::Scene` has a dark-region list as described in Layering, defaulting to empty, and is documented in its header with generic wording.
-- [ ] The scene, actor and edge shaders apply the darkening inside a region: start strength at the open face, a linear fade to the end strength at the fade distance, then held. Sun, moon, fill, sky light and fire light don't brighten pixels inside a region. Light rims darken. Ink lines are unchanged.
-- [ ] With no dark regions the output is byte-identical to the cycle base. Captures for `--scene hills` and `--scene tavern` (both have no region) and `--self-test` match the base with `cmp`. The default ruins captures and `--hour 21 --foxes 3` should match too, because the door is shut and the hall is hidden. The handoff explains any difference.
-- [ ] The ruins scene places one region over the hall: open face on the wall's inside face (local z -0.25), back face at the rear wall's inside face, sides at x ±1.9, from the floor to the walls' top. Start 0.35, end 0.05, fade 4 m, each as a named constant in game/src/scene.cpp.
-- [ ] `kTavernVestibule` covers the hall to its new depth.
-- [ ] A blocker on the old back wall's line (local x -1.9 to 1.9, z about -3.1) stops the hero going deeper than before. `Doorway::zoneLo`/`zoneHi` are unchanged.
-- [ ] The loaded tavern_exterior.glb matches assets.md: no Dirt back wall, and the hall floor and side walls reach the rear wall's inside face.
-- [ ] `--capture` of the open door from outside (`--target -11.4,2.5,-25.4 --yaw 180 --tavern-door-open`, at `--hour 14` and `--hour 21`) shows plank floor through the doorway: dim at the threshold, near-black further in, with no grey square.
-- [ ] The engine has no game names (`grep -rniE "tavern|hall|vestibule|fox|hero|ruins" engine/` finds nothing new).
-- [ ] `docs/engine-guide.md` documents dark regions.
-- [ ] Project builds cleanly from a fresh build directory with CMake (`check` preset; only stb's `sprintf` warning).
+- [x] `pxe::Scene` has a dark-region list as described in Layering, defaulting to empty, and is documented in its header with generic wording. (scene.hpp `DarkRegion`, `BoxFace`, `Scene::darkRegions`)
+- [x] The scene, actor and edge shaders apply the darkening inside a region: start strength at the open face, a linear fade to the end strength at the fade distance, then held. Sun, moon, fill, sky light and fire light don't brighten pixels inside a region. Light rims darken. Ink lines are unchanged. (common.glsl `darkAt`; mesh.frag main and `actorColour`; edge.frag `edges` rims and `pointLights`)
+- [x] With no dark regions the output is byte-identical to the cycle base. Captures for `--scene hills` and `--scene tavern` (both have no region) and `--self-test` match the base with `cmp`. The default ruins captures and `--hour 21 --foxes 3` should match too, because the door is shut and the hall is hidden. The handoff explains any difference. (handoff: cmp against 8edf83b and 8edf83b plus the revised glb, every standard case identical)
+- [x] The ruins scene places one region over the hall: open face on the wall's inside face (local z -0.25), back face at the rear wall's inside face, sides at x ±1.9, from the floor to the walls' top. Start 0.35, end 0.05, fade 4 m, each as a named constant in game/src/scene.cpp. (scene.cpp `buildRuins`, `kHallDark*`; a 5 cm margin on the five closed faces, accepted)
+- [x] `kTavernVestibule` covers the hall to its new depth. (scene.cpp `kTavernVestibule` to z -6.05)
+- [x] A blocker on the old back wall's line (local x -1.9 to 1.9, z about -3.1) stops the hero going deeper than before. `Doorway::zoneLo`/`zoneHi` are unchanged. (tavern.cpp `ruinsBlockers`, passed in main.cpp `blockersIn`; zones unchanged)
+- [x] The loaded tavern_exterior.glb matches assets.md: no Dirt back wall, and the hall floor and side walls reach the rear wall's inside face. (assets.md revision 6, 123ec41; back at z -6.05)
+- [x] `--capture` of the open door from outside (`--target -11.4,2.5,-25.4 --yaw 180 --tavern-door-open`, at `--hour 14` and `--hour 21`) shows plank floor through the doorway: dim at the threshold, near-black further in, with no grey square. (review captures at 14:00 and 21:00: plank floor fading to black, no grey square)
+- [x] The engine has no game names (`grep -rniE "tavern|hall|vestibule|fox|hero|ruins" engine/` finds nothing new). (grep over engine/ finds nothing)
+- [x] `docs/engine-guide.md` documents dark regions. (engine-guide `darkRegions` entry and header reference)
+- [x] Project builds cleanly from a fresh build directory with CMake (`check` preset; only stb's `sprintf` warning). (review build check, only stb's sprintf warning)
 
 ## Assets
 - **tavern_exterior.glb (revision)**: a change to the `Vestibule` node only.
@@ -59,3 +59,4 @@ Outside the Sleeping Fox, when the door opens, the doorway shows a flat grey squ
 
 ## Cycle log
 - Cycle 1: 2026-10-28 started, base 31fae82
+- Cycle 1: review passed, no issues; complete. Actor glow staying bright in a region accepted (glow is not light). A rolling fireball can now roll the full hall depth (it follows the ground, not the hero's blocker): accepted. Docs: README (the hall seen through the door), architecture (dark regions rows); engine-guide by the developer

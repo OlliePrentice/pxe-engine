@@ -26,8 +26,8 @@ A feature often needs both. Split it into the engine capability, named for what 
 | Camera, lighting, day/night palette blending | engine | in place |
 | Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | in place: `pxe::Weather`, `pxe::lightingAt(scene, hour, weather)` |
 | Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
-| Indoor rooms: shadow-only geometry, sky windows, fill light, no sky effects indoors; wood, plaster, roof and oak surfaces with default palettes | engine | in place: `pxe::Scene::indoors`, `shadowOnly`, `windows`, `fillDir` |
-| A room's layout, which glTF nodes are shadow-only or kept out of the ground, the doorway passages between scenes, night-only fires | game | in place: `game/src/scene.cpp`, `game/src/tavern.cpp`, `WorldClock::followSun` |
+| Indoor rooms: shadow-only geometry, sky windows, fill light, no sky effects indoors; wood, plaster, roof and oak surfaces with default palettes; dark regions (unlit boxes open on one face, fading with depth) | engine | in place: `pxe::Scene::indoors`, `shadowOnly`, `windows`, `fillDir`, `darkRegions` |
+| A room's layout, which glTF nodes are shadow-only or kept out of the ground, the doorway passages between scenes, night-only fires, where a dark region goes and how dark it is | game | in place: `game/src/scene.cpp`, `game/src/tavern.cpp`, `WorldClock::followSun` |
 | Window and main loop (GLFW) | engine | in place: `pxe::Window` |
 | UI overlay: Dear ImGui set up against the window and OpenGL (context, platform and renderer backends, per-frame begin and end, whether the UI has the keyboard or mouse) | engine | in place: `pxe::Overlay` |
 | Input devices: keyboard, mouse and gamepad to raw input (key and button edges, stick dead zones, controller mappings) | engine | in place: `pxe::Input` |
