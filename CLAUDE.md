@@ -5,7 +5,7 @@ A C++20 engine for t3ssel8r-style 3D pixel art (`engine/`, library `pxe_engine`,
 ## Read first
 - `docs/architecture.md`: what belongs in the engine and what in the game, and where every area lives now. Follow it for every change. Settle where code goes by its test ("Would a different game in this style need this code, unchanged?"), not by where similar code happens to be.
 - `docs/engine-guide.md`: how to use the engine: CMake, start-up order, the frame loop, building a scene, contracts. `examples/minimal/main.cpp` is its worked example.
-- `docs/art-style.md`: the standing art style, for any asset work.
+- `game/docs/art-style.md` and `desert/docs/art-style.md`: each game's standing art style, for any asset work on that game. What the engine requires of every asset file is the asset contract in `docs/engine-guide.md`.
 
 ## Hard rules
 - The engine never includes game headers, calls game code or names game content (fox, hero, tavern, ruins...) in identifiers, APIs or comments.

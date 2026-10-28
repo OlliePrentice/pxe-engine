@@ -1,6 +1,6 @@
-# Art style
+# Art style: the existing game
 
-The standing style for every asset in the project. Tasks may override it, and say so when they do. The reference assets are the hooded hero (`tools/blender/build_hooded_hero.py`) and the fox (`tools/blender/build_fox.py`).
+The standing style for every asset in the existing game (`game/`, the `pxe` executable). Tasks may override it, and say so when they do. What the engine requires of every file, whichever game makes it (format, axes, material names, skinned models), is the [asset contract](../../docs/engine-guide.md#asset-contract) in the engine guide; this doc doesn't repeat it. The reference assets are the hooded hero (`tools/blender/build_hooded_hero.py`) and the fox (`tools/blender/build_fox.py`).
 
 ## Look
 - Low-poly and faceted: every face is flat-shaded, so models read as cut paper.
@@ -18,11 +18,11 @@ The standing style for every asset in the project. Tasks may override it, and sa
 ## Characters
 - Built by a reproducible Blender Python script in `tools/blender/build_<name>.py`, exported to `assets/characters/<name>.glb`, with preview renders beside it.
 - The script is the source of truth. Assets are built step by step in the user's live Blender session through the Blender MCP, so the user can watch, and are then rebuilt and exported headless from the script. Never hand-edit the glb.
-- glTF 2.0 binary, exported +Y up. The figure faces -Y in Blender, which is +Z in the engine. Origin at ground level, centred under the body (for a character that rests lying down, under the resting pose).
+- Exported as the [asset contract](../../docs/engine-guide.md#asset-contract) says. The figure faces -Y in Blender, which is +Z in the engine. Origin at ground level, centred under the body (for a character that rests lying down, under the resting pose).
 - Budget: the hero is about 5,000 triangles. Smaller characters come in proportionally lower: the fox is 968.
 
 ## Materials
-- One skinned mesh with its armature. glTF material order is the contract with the engine: material i is the character's actor material i. Name materials with the character's tag (`Fox_Fur`, `Fox_Cream`).
+- One skinned mesh with its armature. Its glTF material order sets its actor material slots (see the asset contract). Name materials with the character's tag (`Fox_Fur`, `Fox_Cream`).
 - The engine has 64 shared actor-material slots per frame (`pxe::kActorMaterials`). Each character (or moving prop) owns its own range, so they never share a colour: the hero uses 0–7, the fox 8–11, the tavern door 12–14 (`Door_Wood`, `Door_Iron`, `Door_Grain`). A new character takes the next free range and loads with `SkinnedModel::load(path, firstMaterial)`.
 
 ## Rigs
@@ -47,8 +47,8 @@ The standing style for every asset in the project. Tasks may override it, and sa
 ## Buildings and props
 Static assets: buildings, rooms, furniture and scenery. The reference assets are the ruins (`tools/blender/build_ruins.py`) and the Sleeping Fox tavern (`tools/blender/build_tavern_exterior.py`, `build_tavern_interior.py`).
 - Built by a reproducible Blender Python script in `tools/blender/build_<name>.py` and exported to `assets/scenes/<name>.glb`, with preview renders beside it (`assets/scenes/<name>.png`). As for characters, the script is the source of truth: build step by step in the live session through the Blender MCP so the user can watch, then rebuild and export headless. Never hand-edit the glb.
-- glTF 2.0 binary, exported +Y up, 1 unit = 1 metre. Blender -Y is the engine's +Z. Each asset documents its origin; for a building, put it somewhere the code places it by, such as the middle of the doorway's threshold at floor level.
-- **Material names are the contract with the engine's surfaces.** The engine colours static meshes from its own day, golden, twilight and night palettes by material name, not from the glb's colours. Use only `Wood` (warm brown: beams, floors, frames, exterior timber), `Oak` (light oak: interior furniture), `Plaster` (cream walls), `Roof` (blue-grey slate), `Stone` and `Dirt`, plus the ruins' `Grass`, `Bark`, `Leaf` and `Water` where they belong. Any other name loads as Stone. Colours in the .blend are for previews only.
+- Exported as the [asset contract](../../docs/engine-guide.md#asset-contract) says. Each asset documents its origin; for a building, put it somewhere the code places it by, such as the middle of the doorway's threshold at floor level.
+- **Material names pick the engine's surfaces** (see the asset contract), and the engine colours them from its own palettes, not from the glb's colours. Use only `Wood` (warm brown: beams, floors, frames, exterior timber), `Oak` (light oak: interior furniture), `Plaster` (cream walls), `Roof` (blue-grey slate), `Stone` and `Dirt`, plus the ruins' `Grass`, `Bark`, `Leaf` and `Water` where they belong. Any other name loads as Stone. Colours in the .blend are for previews only.
 - **Hero scale.** Anything the hero walks through, sits by or reaches is built at 1.6× real, the hero's size: a doorway about 2.2 × 3.4 m, tables about 1.2 m high, chair seats about 0.74 m, a bar about 1.7 m.
 - **Look.** The same as characters: low-poly, faceted, every face flat-shaded, one solid colour per material. Details have to survive 24 px per metre. Prefer shapes that read as blocks of colour, such as timber against plaster or dark panes in pale walls, over fine geometry. A plank floor reads through V-grooves (bevelled edges) between planks, not through gaps.
 - **Shadow-only geometry.** End an object's name with `_ShadowOnly` and it is drawn only into the sun and moon shadow map. It never appears in the main, reflection or edge passes, never in `scene.ground`, but it does count toward `scene.shelter`. The engine reads the glTF node name, which is the Blender object name, so every object name must be unique. Blender's `.001` duplicate suffix would hide `_ShadowOnly`, and each build script checks for it. Use shadow-only pieces for the roof and the near walls of a cutaway room, so the room is lit as if enclosed but the camera sees in.

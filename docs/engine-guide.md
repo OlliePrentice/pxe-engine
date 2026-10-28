@@ -334,7 +334,7 @@ addBox(geometry, pxe::kSurfStone, 1.f, 3.f, {0.8f, 0.28f, 0.8f});
 For one-off meshes outside a scene, `pxe::Mesh` has `upload(vertices, indices)`, `update` (rewrite the vertices of a mesh rebuilt every frame) and `draw()`. It is move-only and frees its buffers when destroyed.
 
 ### Geometry, from a .glb
-`pxe::loadGltf(path)` reads a glTF 2.0 file (.glb or .gltf) into `GltfPrimitive`s: node name, material name, surface, world-space vertices and indices. Node transforms are already applied. The surface comes from the material name's prefix, case-insensitive: `Grass`, `Dirt`, `Bark`, `Leaf`, `Water` and `Foam` map to their surfaces, and anything else is stone. Textures, skinning and animation are ignored. It throws `std::runtime_error` if the file is missing or unreadable.
+`pxe::loadGltf(path)` reads a glTF 2.0 file (.glb or .gltf) into `GltfPrimitive`s: node name, material name, surface, world-space vertices and indices. Node transforms are already applied. The surface comes from the material name, as the [asset contract](#asset-contract) lists. Textures, skinning and animation are ignored. It throws `std::runtime_error` if the file is missing or unreadable.
 
 ```cpp
 pxe::SurfaceGeometry geometry;
@@ -462,6 +462,14 @@ const bool ok = pxe::writePng(capture, renderer.viewW(), renderer.viewH(), rende
 - `pxe::writeWav(path, sampleRate, interleavedStereo)` writes interleaved stereo float samples (the layout `AudioDevice` renders, -1..1) to a 16-bit PCM stereo WAV with a 44-byte header. Samples are clamped to -1..1 and scaled by 32767. It does not create directories. It returns false if the sample rate is not positive, the sample count is odd, or the file can't be written. Use it to render sound offline, calling the same render function the device would, and compare runs.
 
 Use a hidden window (`WindowOptions::visible = false`, `vsync = false`) for captures and tests. A capture is repeatable when the scene is built from fixed seeds and every frame uses a fixed `time`, hour and weather.
+
+## Asset contract
+What the engine requires of every model file, whichever game makes it. Each game's own art style doc (`game/docs/art-style.md`, `desert/docs/art-style.md`) sets how its assets look; this section sets what loads.
+
+- **Format and axes.** glTF 2.0, binary (.glb) by convention, exported from Blender +Y up. 1 unit = 1 metre. Blender's -Y is the engine's +Z, so a model facing -Y in Blender faces +Z in the engine. The engine applies no scale of its own: a game scales a model when it places it.
+- **Static surfaces by material name.** `loadGltf` picks each primitive's surface from its material name's prefix, case-insensitive, so Blender's `.001` duplicate suffix still matches: `Grass`, `Dirt`, `Stone`, `Bark`, `Leaf`, `Water`, `Foam`, `Wood`, `Plaster`, `Roof` (slate), `Oak` (furniture) and `Sand` (added by the desert-poc task). Any other name loads as Stone. Static meshes are coloured from the scene's palettes by surface, so colours in the file are for previews only.
+- **Node names reach the game.** Each `GltfPrimitive` carries its node name (the Blender object name), which a game can use to pick out pieces. The engine gives no node name a meaning of its own.
+- **Skinned models.** One skinned mesh with its skeleton, at most `kMaxJoints` (64) joints. The model's glTF material *i* draws with actor-material slot `firstMaterial + i` (`SkinnedModel::load(path, firstMaterial)`), out of `kActorMaterials` (64) slots shared by every model in a frame, so a game gives each kind of model its own range. Joints and clips are looked up by name. Clips are sampled linearly between keys, rotations slerped the short way.
 
 ## Contracts
 - **GL context first, last.** `Window` before anything that touches the GPU, and destroyed after all of it. `Mesh`, `SkinnedMesh`, `Scene` (it holds meshes), `SkinnedModel`, `Renderer` and `Overlay` all free GPU objects in their destructors.
