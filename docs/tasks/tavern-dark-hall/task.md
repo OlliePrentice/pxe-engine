@@ -58,4 +58,4 @@ Outside the Sleeping Fox, when the door opens, the doorway shows a flat grey squ
 - Dark regions in other scenes.
 
 ## Cycle log
-- Cycle 1: 2026-10-28 started
+- Cycle 1: 2026-10-28 started, base 31fae82
