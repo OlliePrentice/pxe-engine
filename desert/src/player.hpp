@@ -7,7 +7,7 @@
 
 namespace desert {
 
-// The player is only an eye: no body, arms or tools are drawn.
+// The player is an eye. Its arms are drawn attached to the view (arms.hpp); it has no body or tools.
 constexpr float kEyeHeight = 1.7f;  // metres above the ground, at real scale
 constexpr float kWalkSpeed = 3.5f;  // metres a second
 constexpr float kSprintSpeed = 6.f;

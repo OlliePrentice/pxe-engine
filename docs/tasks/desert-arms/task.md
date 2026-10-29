@@ -1,7 +1,7 @@
 # The desert player's arms
 Type: feature
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 2
 
 ## Goal
 The desert player is only an eye. Give it a pair of arms, seen in first person and themed for a sci-fi desert: the wanderer's wrapped forearms, dark leather gloves, and a brass bracer with a glowing teal gauge on the left forearm. They aren't animated in this task. They're a rigged model held in its rest pose, locked to the view.
@@ -89,6 +89,8 @@ Then add a short entry for the arms to the Characters section of `desert/docs/ar
 - the framing rules.
 
 ### 2. Engine: `FrameParams::viewModel`
+`engine/src/gl.hpp`: add `M(PFNGLDEPTHRANGEPROC, glDepthRange)` to `PXE_GL_EACH`, after the `glDepthMask` entry. The loader has no `glDepthRange` yet.
+
 `engine/include/pxe/renderer.hpp`, in `FrameParams` after `actorEffects` (binding):
 ```cpp
   // Perspective mode only (ignored in orthographic mode): characters
@@ -131,7 +133,7 @@ Then add a short entry for the arms to the Characters section of `desert/docs/ar
 - The view model is not drawn in the shadow pass, the actors' static-map logic, or the lightning map. Don't add `params.viewModel` to any of them.
 - Nothing else in the frame changes. The edge pass reads the squeezed depths as surfaces just past the near plane. That outlines the view model against the scene and gives it no haze.
 
-No other engine file changes. In particular:
+No other engine file changes besides `gl.hpp`'s entry. In particular:
 - `renderer.cpp`, `renderer_orthographic.cpp` and every shader stay as they are;
 - `game/` doesn't change.
 
@@ -238,18 +240,18 @@ Run in the task's worktree:
 7. Designer previews present (Assets), and the build script's checks pass on a headless rebuild.
 
 ## Acceptance criteria
-- [ ] `desert/tools/blender/build_arms.py` builds `desert/assets/characters/arms.glb`. A headless rebuild passes all its checks: names, material order, triangles 2,000–3,000, closed volumes, framing, near clearance and attachment
-- [ ] The glb has one skinned mesh with exactly the 39 joints listed, materials in the order `Arms_Wrap`, `Arms_Glove`, `Arms_Strap`, `Arms_Brass`, `Arms_Glow` with the listed colours, `Arms_Glow` emissive, and no clips
-- [ ] `assets.md` documents the asset as `desert/docs/art-style.md`'s Delivery section asks, plus the measured framing and near clearance. The previews `arms.png` and `arms_eye.png` are beside the glb
-- [ ] `desert/docs/art-style.md`'s Characters section describes the arms as the desert's first character: view-model origin at the eye, actor slots 0–4, joint names
-- [ ] `FrameParams::viewModel` exists with the comment above. The perspective frame draws it after the scene, sky and window panes, with the depth range `[0, 0.01]` and back faces culled, and draws it into no shadow map. The actor uniform block also runs for a view model alone
-- [ ] `renderer.cpp`, `renderer_orthographic.cpp`, every shader and `game/` are unchanged from the cycle base (Verification 4)
-- [ ] `desert::Arms` matches the interface above. It loads into slots 0–4, places the model with the binding eye transform, adds it to `params.viewModel`, and sets crease on Wrap, Glove and Brass only
-- [ ] `desert/src/main.cpp` poses the arms in the capture and play loops from the same `PerspectiveFrame` it renders
-- [ ] `tools/ortho-check.sh <cycle base>` passes. `tools/perspective-check.sh <cycle base>` passes `example-first-person` and fails only the two desert cases
-- [ ] The day, morning, golden and night captures and the two clipping captures are in the task folder and show what Verification 5 and 6 describe. Captures are deterministic
-- [ ] The engine names no game content (no arms, gloves, bracer or player in engine identifiers or comments beyond the generic "a first-person view's arms or a held tool")
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `desert/tools/blender/build_arms.py` builds `desert/assets/characters/arms.glb`. A headless rebuild passes all its checks: names, material order, triangles 2,000–3,000, closed volumes, framing, near clearance and attachment — headless rebuild by the designer, all checks pass (assets.md Build checks); 2,236 triangles
+- [x] The glb has one skinned mesh with exactly the 39 joints listed, materials in the order `Arms_Wrap`, `Arms_Glove`, `Arms_Strap`, `Arms_Brass`, `Arms_Glow` with the listed colours, `Arms_Glow` emissive, and no clips — assets.md; designer's re-import check scripts/verify_arms_glb.py
+- [x] `assets.md` documents the asset as `desert/docs/art-style.md`'s Delivery section asks, plus the measured framing and near clearance. The previews `arms.png` and `arms_eye.png` are beside the glb — assets.md; arms.png and arms_eye.png beside the glb
+- [x] `desert/docs/art-style.md`'s Characters section describes the arms as the desert's first character: view-model origin at the eye, actor slots 0–4, joint names — Characters section: view models, slots 0-4, joint names, framing
+- [x] `FrameParams::viewModel` exists with the comment above. The perspective frame draws it after the scene, sky and window panes, with the depth range `[0, 0.01]` and back faces culled, and draws it into no shadow map. The actor uniform block also runs for a view model alone — renderer.hpp comment verbatim; renderer_perspective.cpp view-model block after the window panes; not in any shadow pass; actor block condition
+- [x] `renderer.cpp`, `renderer_orthographic.cpp`, every shader and `game/` are unchanged from the cycle base (Verification 4) — Verification 4: empty diff (orchestrator)
+- [x] `desert::Arms` matches the interface above. It loads into slots 0–4, places the model with the binding eye transform, adds it to `params.viewModel`, and sets crease on Wrap, Glove and Brass only — arms.hpp/arms.cpp: slots 0-4, binding eye transform, crease on kWrap/kGlove/kBrass
+- [x] `desert/src/main.cpp` poses the arms in the capture and play loops from the same `PerspectiveFrame` it renders — capture and play loops pose from the rendered `view`
+- [x] `tools/ortho-check.sh <cycle base>` passes. `tools/perspective-check.sh <cycle base>` passes `example-first-person` and fails only the two desert cases — orchestrator: ortho 6/6 vs db97273; perspective 1/3, only the desert cases differ
+- [x] The day, morning, golden and night captures and the two clipping captures are in the task folder and show what Verification 5 and 6 describe. Captures are deterministic — six captures in the task folder; checked by the orchestrator (day, night, trunk); day and night repeat byte-identically (handoff)
+- [x] The engine names no game content (no arms, gloves, bracer or player in engine identifiers or comments beyond the generic "a first-person view's arms or a held tool") — engine diff names only "a first-person view's arms or a held tool"
+- [x] Project builds cleanly from a fresh build directory with CMake — fresh check build, cycle 2: stb warning only
 
 ## Assets
 - **arms**: the player's two arms, seen in first person. Wanderer style, as in Decisions: wrapped forearms, gloves, and a left-forearm bracer with a glowing gauge. Low-poly, every face flat-shaded, one solid colour per material, no textures (`desert/docs/art-style.md`).
@@ -315,6 +317,18 @@ Run in the task's worktree:
 - A separate field of view for the view model
 
 ## Spec revisions
-None.
+- Revision 1, 2026-10-29: Approach step 2 adds `glDepthRange` to the engine's GL loader table (`engine/src/gl.hpp`), which the binding view-model block needs and the loader lacked. See replan-1.md.
 
 ## Cycle log
+- Cycle 1: 2026-10-29 started, base f4f25c4
+- Cycle 1 review: assets built (1c07899), previews checked against the spec. Code returned SPEC INFEASIBLE: `glDepthRange` is not in the GL loader. Claim confirmed; replan 1 applied (Approach only).
+- Cycle 2: 2026-10-29 started, base 6607415, implementing the code under revision 1
+- Cycle 2 review: fresh build clean (stb warning only); ortho-check 6/6 and perspective-check (only the two desert cases differ) rerun by the orchestrator; engine diff matches the binding blocks; captures checked. No issues. Task complete.
+
+## Playtest checklist
+- `tools/build.sh release desert`: both gloved hands sit in the lower corners, the left bracer's three teal bars glowing.
+- Turn quickly and look fully up and down: the arms stay locked to the view, with no lag or jitter.
+- Walk into the palm until you stop against it: the hands stay whole in front of the bark, never cut by it.
+- Stand in the palm's shadow: the gloves and wraps darken; the gauge stays bright.
+- `--hour 18.5` and `--hour 21`: the arms take the golden and night light; the gauge stays readable.
+- Judge the framing: only a few centimetres of wrapped forearm show behind each glove. If you want more of the wraps in view, that is a new planning decision (the framing rules).

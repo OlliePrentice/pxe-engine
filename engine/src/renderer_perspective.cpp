@@ -20,6 +20,11 @@ namespace {
 // metres. Nothing beyond it is shadowed.
 constexpr float kShadowReach = 60.f;
 
+// A view model is drawn into [0, kViewModelDepth] of the depth range, in
+// front of every surface of the scene: a surface's depth reaches
+// kViewModelDepth only about a millimetre past the near plane.
+constexpr double kViewModelDepth = 0.01;
+
 // The same fixed-size square for a perspective camera, kShadowReach round
 // the eye pushed half that ahead along the view's flat forward (not at all
 // looking straight down), so most of the map lies where the view looks.
@@ -169,7 +174,7 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
   u1f(progMesh_, "uTime", params.time);
   bindToon(progMesh_, lighting, scene, light.viewProj, flash.viewProj, fireLight, normalBias,
            params.testColours);
-  if (!params.actors.empty() || !params.actorEffects.empty()) {
+  if (!params.actors.empty() || !params.actorEffects.empty() || !params.viewModel.empty()) {
     // The stone's ramp now, over its mid colour by day: the light a character stands in.
     const glm::vec3 day = glm::max(scene.palette[kPhaseDay][kSurfStone].band[1], glm::vec3{0.02f});
     std::vector<float> tint, colour;
@@ -243,6 +248,21 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
     glEnable(GL_CULL_FACE);
+  }
+  // The view model, in front of everything already drawn.
+  if (!params.viewModel.empty()) {
+    glDepthRange(0.0, kViewModelDepth);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glUseProgram(progMesh_);
+    umat(progMesh_, "uViewProj", viewProj);
+    umat(progMesh_, "uMirror", identity);
+    u1f(progMesh_, "uClipBelow", -1e9f);
+    drawActors(progMesh_, params.viewModel);
+    glDepthRange(0.0, 1.0);
   }
   endPass();
 

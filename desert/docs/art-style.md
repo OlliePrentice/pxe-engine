@@ -32,7 +32,17 @@ Static assets: plants, rocks, buildings and props. The reference asset is the da
 - **Palm:** the trunk is the engine's `Bark` brown and the fronds its `Leaf` green. If the green reads wrong against the sand, a grey-green `Frond` surface is the fix, as its own task.
 
 ## Characters
-None yet. When the desert gains characters, start from the existing game's Characters, Rigs and Animation sections, at real scale.
+Start from the existing game's Characters, Materials, Rigs and Animation sections, at real scale (no 1.6× character scale). Built by `desert/tools/blender/build_<name>.py` and exported to `desert/assets/characters/<name>.glb`, with previews beside it. The first character is the player's arms (`build_arms.py`, `arms.glb`, task `desert-arms`): a rigged model held in its rest pose and drawn as the view model, in front of the whole scene.
+- **A view model is modelled round the eye.** Its origin is the eye and its `root` joint sits there. It faces -Y in Blender (engine +Z, the view's forward), +Z up, Blender +X (engine +X) the player's left. The game places the origin at the eye with the view's axes, so the file's frame is the view's frame. The rest (bind) pose is the held pose.
+- **Actor slots.** The desert's ranges in `pxe::kActorMaterials`: the arms take 0–4 (`Arms_Wrap`, `Arms_Glove`, `Arms_Strap`, `Arms_Brass`, `Arms_Glow`, in that glTF order). The game sets crease ink per slot (on the wrap, glove and brass). A new character takes the next free range, from 5.
+- **Joints** follow the game's naming: lowercase, dotted chains, `.L`/`.R`, never renamed once shipped. The arms' 39: `root`; per side `shoulder`, `upper_arm`, `forearm`, `hand`, and `thumb`, `index`, `middle`, `ring`, `pinky`, each `.1`–`.3`.
+- **Framing**, checked by the build through the eye camera (Blender: at the origin looking along -Y, +Z up, 60° vertical field of view, 16:9) and binding:
+  - nothing in view above the lower 35% (NDC y ≤ -0.30);
+  - every vertex in view at least 0.15 m ahead of the eye (the near plane is 0.1 m);
+  - limbs leave through the bottom edge;
+  - anything the player must read (the arms' gauge) wholly in view, facing the eye, and at least 3 px wide.
+  At real proportions a forearm rises steeply, so only a few centimetres behind the hand show. Put readable details at the wrist end.
+- **Test poses.** The attachment check also runs in poses beyond the rest pose, so later animation stays safe: wrists turned 30° each way about all three axes, fingers curled 60°, elbows opened 30°.
 
 ## Delivery
 - **assets.md** in the task folder documents each asset: its source and how to rebuild it, triangle count, materials, origin, collision footprint, and every point the code uses.
