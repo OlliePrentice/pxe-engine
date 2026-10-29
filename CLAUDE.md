@@ -47,6 +47,8 @@ A refactor that should not change output must be **byte-identical**. `tools/orth
 
 Shell notes for this Mac: the shell is zsh, so pass multi-word arguments through `"$@"` or an array, and a pipe's exit codes are in `$pipestatus` (lowercase). BSD `sed -i` needs an empty suffix argument (`sed -i ''`). After restoring a file from a copy (`cp`, which keeps the old timestamp), `touch` it, or the next build may skip it and a capture comes from a stale binary.
 
+Headless Blender: `Blender -b -P <script>` exits 0 even when the script raises, so a build script's failed check doesn't show in the exit code. Run `/Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 -P <script>`. A rebuild run only to verify also rewrites the previews, whose bytes vary between runs: restore them with `git checkout -- <dir>` afterwards unless the asset changed.
+
 ## Workflow
 Features and fixes are planned first and implemented later, unattended:
 1. **Plan** with `/feature <request>` (`.claude/skills/feature/SKILL.md`), in a session started with `claude --model claude-opus-5-5 --effort high`. It interviews the user, settles the architecture, writes an implementation-ready spec per task in `docs/tasks/<task-id>/task.md` (with code examples where prose isn't enough) and queues the tasks in `docs/backlog.md`. It implements nothing.
