@@ -35,12 +35,13 @@ Assets: no
 Merged: 02ecc72
 
 ## render-mode-split: Orthographic and perspective as separate render modes
-Status: in-progress
+Status: done
 Type: alignment
 Spec: docs/tasks/render-mode-split/task.md
 Depends on: render-mode-checks
 Touches: engine/include/pxe/renderer.hpp, engine/include/pxe/camera.hpp, engine/include/pxe/first_person_camera.hpp, engine/src/renderer.cpp, engine/src/renderer_orthographic.cpp, engine/src/renderer_perspective.cpp, engine/src/renderer_internal.hpp, engine/src/camera.cpp, engine/src/first_person_camera.cpp, engine/shaders/edge.frag, engine/shaders/edge_perspective.frag, engine/CMakeLists.txt, game/src/main.cpp, desert/src/main.cpp, examples/minimal/main.cpp
 Assets: no
+Merged: cab03e7
 
 ## desert-arms: The desert player's arms
 Status: queued
