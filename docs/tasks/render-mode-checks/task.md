@@ -1,7 +1,7 @@
 # Byte-identical checks per render mode
 Type: tooling
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 The engine renders in two separate modes, orthographic and perspective (`docs/architecture.md`, "Render modes"). Work on one must never change the other's output. Today the only way to check that is the manual recipe in `CLAUDE.md`: build the base from `git archive`, run each case on both builds, `cmp` the outputs. Turn that recipe into two tools, one per mode: `tools/ortho-check.sh <base-ref>` and `tools/perspective-check.sh <base-ref>`. Each builds the base and the current working tree, runs that mode's standard cases on both, and reports pass or fail per case. Every later task that touches the renderer, shaders or cameras is verified with them, starting with `render-mode-split`.
@@ -127,3 +127,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1: 2026-10-29 started, base 5d9dc1b
