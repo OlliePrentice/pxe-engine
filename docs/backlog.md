@@ -62,12 +62,13 @@ Assets: no
 Merged: d64d2de
 
 ## desert-arms-detail: Detailed arms and gadgets
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-arms-detail/task.md
 Depends on: view-model-edges
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/src/arms.hpp, desert/src/arms.cpp, desert/docs/art-style.md, docs/tasks/desert-arms-detail/
 Assets: yes
+Merged: b9c8d7a
 
 ## desert-arms-walk: The arms walk with the player
 Status: queued
