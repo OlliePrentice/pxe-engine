@@ -65,7 +65,8 @@ Check that the change:
 - puts each piece in the layer the architecture test and rules give it, and fits its row in "Where things live";
 - keeps the engine free of game content and game includes, and the engine holding no pointer to game objects between calls;
 - uses the engine as the guide describes: start-up order, the frame loop, the scene build order, upload-then-render, ownership, RNG order when scattering;
-- keeps `engine/` self-contained (no path outside it, nothing read from the source tree at run time).
+- keeps `engine/` self-contained (no path outside it, nothing read from the source tree at run time);
+- keeps the orthographic and perspective render modes separate ("Render modes" in `docs/architecture.md`): no change for one mode in the other's code or output.
 
 Act on every discrepancy without asking the user first:
 - **In the change itself:** record it as an issue in the task's `issues.md` and send it back to game-developer as the next cycle.

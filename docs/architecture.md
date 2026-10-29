@@ -22,6 +22,12 @@ A feature often needs both. Split it into the engine capability, named for what 
 - **No speculative promotion.** A small helper (math, geometry, an easing curve, a smoothing filter) stays with its only user, even if it is generic. It moves to the engine when a third user needs it unchanged, or when it is part of an engine capability being built. Until then a second user keeps its own copy (as with `SecondOrder` below), and engine code that needs a game helper writes its own: the engine never includes game code. Similar code that behaves differently (other edge cases, other fallbacks) is not the same helper. Duplicating a helper inside one layer is fine.
 - **Asset choice is the game's.** The engine loads whatever file it is given. Which `.glb` to load, and where its objects go, is game code.
 
+## Render modes
+The engine renders in one of two separate modes, orthographic (`pxe::Camera`) and perspective (`pxe::FirstPersonCamera`), so that tuning one never means a trade-off against the other (user decision, 2026-10-29):
+- **Work on one mode never changes the other's output.** `tools/ortho-check.sh` and `tools/perspective-check.sh` prove it: run both for any change to the renderer, the shaders, the cameras, `Scene` or `Lighting`.
+- **Each mode has its own frame and its own screen-space shaders.** That means its own frame function (which passes run, in what order, with which uniforms) and its own edge pass. A feature for one mode goes in that mode's code. It is never a branch in the other's.
+- **The machinery underneath is shared.** That covers render targets, upload, mesh drawing, the mesh and toon shaders (`mesh.frag`, `common.glsl`), the shadow-map shader and present. Shared code changes only if both modes' checks pass, or with the user's explicit approval for the mode whose output changes. When one mode needs a shared shader to behave differently, fork that shader for that mode; don't add a mode branch to it.
+
 ## Where things live
 Home `game` is `game/`, `desert` is `desert/`.
 

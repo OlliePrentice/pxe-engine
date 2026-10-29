@@ -24,3 +24,19 @@ Questions:
 Tasks run in the order listed. Add new ones at the bottom, except tooling tasks from a retro, which go at the top of the queued tasks.
 
 # Tasks
+
+## render-mode-checks: Byte-identical checks per render mode
+Status: queued
+Type: tooling
+Spec: docs/tasks/render-mode-checks/task.md
+Depends on: none
+Touches: tools/ortho-check.sh, tools/perspective-check.sh, tools/README.md, CLAUDE.md
+Assets: no
+
+## render-mode-split: Orthographic and perspective as separate render modes
+Status: queued
+Type: alignment
+Spec: docs/tasks/render-mode-split/task.md
+Depends on: render-mode-checks
+Touches: engine/include/pxe/renderer.hpp, engine/include/pxe/camera.hpp, engine/include/pxe/first_person_camera.hpp, engine/src/renderer.cpp, engine/src/renderer_orthographic.cpp, engine/src/renderer_perspective.cpp, engine/src/renderer_internal.hpp, engine/src/camera.cpp, engine/src/first_person_camera.cpp, engine/shaders/edge.frag, engine/shaders/edge_perspective.frag, engine/CMakeLists.txt, game/src/main.cpp, desert/src/main.cpp, examples/minimal/main.cpp
+Assets: no
