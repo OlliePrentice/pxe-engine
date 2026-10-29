@@ -89,6 +89,8 @@ Then add a short entry for the arms to the Characters section of `desert/docs/ar
 - the framing rules.
 
 ### 2. Engine: `FrameParams::viewModel`
+`engine/src/gl.hpp`: add `M(PFNGLDEPTHRANGEPROC, glDepthRange)` to `PXE_GL_EACH`, after the `glDepthMask` entry. The loader has no `glDepthRange` yet.
+
 `engine/include/pxe/renderer.hpp`, in `FrameParams` after `actorEffects` (binding):
 ```cpp
   // Perspective mode only (ignored in orthographic mode): characters
@@ -131,7 +133,7 @@ Then add a short entry for the arms to the Characters section of `desert/docs/ar
 - The view model is not drawn in the shadow pass, the actors' static-map logic, or the lightning map. Don't add `params.viewModel` to any of them.
 - Nothing else in the frame changes. The edge pass reads the squeezed depths as surfaces just past the near plane. That outlines the view model against the scene and gives it no haze.
 
-No other engine file changes. In particular:
+No other engine file changes besides `gl.hpp`'s entry. In particular:
 - `renderer.cpp`, `renderer_orthographic.cpp` and every shader stay as they are;
 - `game/` doesn't change.
 
@@ -315,7 +317,8 @@ Run in the task's worktree:
 - A separate field of view for the view model
 
 ## Spec revisions
-None.
+- Revision 1, 2026-10-29: Approach step 2 adds `glDepthRange` to the engine's GL loader table (`engine/src/gl.hpp`), which the binding view-model block needs and the loader lacked. See replan-1.md.
 
 ## Cycle log
 - Cycle 1: 2026-10-29 started, base f4f25c4
+- Cycle 1 review: assets built (1c07899), previews checked against the spec. Code returned SPEC INFEASIBLE: `glDepthRange` is not in the GL loader. Claim confirmed; replan 1 applied (Approach only).
