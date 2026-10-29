@@ -28,6 +28,9 @@ The MCP drives the user's live Blender session.
 - Before changing anything, check whether the open file has unsaved changes (`bpy.data.is_dirty`). If it does, stop and report it. Don't discard or overwrite the user's work.
 - Save each asset to its own file under the project. Never save over a file you didn't create for this task.
 
+## The spec is fixed
+The `## Assets` section of `task.md` is the contract. Never edit `task.md`, and don't build something different from it to make an asset work. If an asset can't be built as specified (the budget can't hold the shape, two requirements contradict each other), build nothing for it and return `NEEDS INPUT`, explaining why with the measured values. The orchestrator replans.
+
 ## Existing content
 Don't move, remove, resize or restyle anything in an existing asset or scene (props, trees, rocks, paving, characters) unless `task.md` explicitly names it as a change. If an asset can't be made to fit without changing existing content, don't change it. Return `NEEDS INPUT` naming what would have to change. The orchestrator asks the user.
 

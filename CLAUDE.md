@@ -47,6 +47,8 @@ Features and fixes are planned first and implemented later, unattended:
 3. **Retro.** Each batch ends by reading the agents' `friction.md` reports into `docs/friction-log.md`. It writes missing docs straight away, adds missing instructions to the skills and agents, and queues a tooling task once the same tool has been written by hand three times. `tools/README.md` lists the tools.
 4. **Unblock** with `/feature unblock` when a task stops on a question nobody could answer during the run.
 
+Specs are fixed once queued. The developer and designer implement them as written and never change them to get a task done. When a spec can't be implemented, the agent returns the evidence and the run replans the task on Opus. A new approach that keeps everything the user agreed is applied and recorded in the spec's `## Spec revisions`. Anything that changes the goal, a decision, the layering, a criterion, the assets or the scope goes back to the user.
+
 Task folders record every past change and its verification.
 
 ## Alignment review

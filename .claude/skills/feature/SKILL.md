@@ -87,10 +87,15 @@ Cycle: 0
 ## Out of scope
 - <Anything explicitly excluded>
 
+## Spec revisions
+<None. Only a replan adds entries here.>
+
 ## Cycle log
 ```
 
 For a fix, add a `## Reproduction` section with the exact steps and the observed versus expected behaviour.
+
+**Specs are fixed once queued.** The developer and designer implement the spec exactly and never change it. When it can't be implemented as written, the run replans it on Opus (`/backlog-run`, **Replanning**). That replan may change only `## Approach` and `## Verification` on its own. Anything else comes back to the user. So put everything the user agreed in the Goal, Decisions, Layering, acceptance criteria, Assets and Out of scope, and keep `## Approach` to how it's built.
 
 Nobody runs the game during the run, so the reviewer verifies the criteria by reading the code and running the commands in `## Verification`. Write them so that's possible.
 
@@ -111,6 +116,6 @@ Don't start implementing. If the user corrects a spec later, change it and commi
 ## Unblocking
 `/backlog-run` sets a task to `blocked` when it needs a decision nobody could make during the run, and writes the questions under the task's backlog entry.
 1. Read every `blocked` entry in `docs/backlog.md`, with its task folder (`task.md`, `issues.md`, the latest `handoff.md` entry).
-2. Put the questions to the user, each labelled with its task ID. Grill where the answer opens new questions.
+2. Put the questions to the user, each labelled with its task ID. Grill where the answer opens new questions. For a task blocked on a replan, present its latest `replan-<n>.md`: what failed, the proposal and each section it would change. The user approves it, picks another alternative, or redirects the task. Record the agreed change in `## Spec revisions`.
 3. Record the answers in each `task.md` (`## Decisions`, `## Approach`, `## Assets`) and add a cycle log line `Unblocked: <date>, <one line>`. If the task has a worktree (`git worktree list`), its `task.md` is the one in the worktree: edit it there, set `Status: open`, and commit on the task branch. Where the answer changes the plan, revise the specs of the later tasks that depend on it too.
 4. In the backlog, set the task to `in-progress` if it has a worktree (the run resumes it there) or `queued` if not, remove the answered questions, and commit: `plan: unblock <task-ids>`.

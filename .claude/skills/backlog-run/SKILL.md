@@ -67,13 +67,13 @@ Run every batch task's cycles at the same time:
 For each task, at the start of every cycle, increment `Cycle` in `task.md`, set `Status: open`, and add a cycle log line with the date and the current `HEAD` hash: it is the cycle's base. From cycle 2 on, also list the outstanding issue IDs. Every change is committed, so any cycle can be undone with `git revert`. The designer and developer each commit their own work and report the hash. You commit `task.md`, `issues.md` and `friction.md` yourself.
 
 1. **Assets first.** If the `## Assets` section lists assets that don't exist yet, or `asset-requests.md` has requests with `Status: open`, delegate to **designer** with the worktree path, the task folder path and the request IDs.
-   - If the designer returns `NEEDS INPUT`, answer what `task.md`, `docs/art-style.md` and the existing assets settle, and send it back with the answers. Block the task (see **Blocking**) on anything that is a style call or would change existing content.
+   - If the designer returns `NEEDS INPUT`, answer what `task.md`, `docs/art-style.md` and the existing assets settle, and send it back with the answers. If it says an asset can't be built as specified, go to **Replanning**. Block the task (see **Blocking**) on anything that is a style call or would change existing content.
    - If the designer reports that Blender or the MCP isn't available, or that the open file has unsaved changes, block the task with that reason.
-   - If a request comes back `needs-decision`, decide it if the spec and the art style settle it, and record the decision in the request. Otherwise block the task.
+   - If a request comes back `needs-decision`, decide it if the spec and the art style settle it, and record the decision in the request. Otherwise go to **Replanning**.
    - Check the designer's preview images before moving on. If an asset clearly doesn't match the spec, send it back to the designer with the reason.
 2. **Code.** Delegate to **game-developer**. Pass the worktree path, the task folder path and, from cycle 2 on, the issue IDs it must fix.
    - If it returns `BLOCKED ON ASSETS`, go back to step 1 for its new requests in `asset-requests.md`, then delegate to the developer again.
-   - If it reports that the layering won't fit, or that the task needs existing content changed, decide it if the spec and `docs/architecture.md` settle it, and record the decision in `## Decisions`. Otherwise block the task.
+   - If it returns `SPEC INFEASIBLE`, go to **Replanning**.
    - When it returns, confirm `handoff.md` has an entry for this cycle reporting a successful build, and that the cycle's work is committed (`git -C <worktree> status` shows nothing of the developer's or designer's left uncommitted). If not, send it back with the reason.
 3. **Build check.** Build from a fresh directory yourself. Don't trust the developer's report:
    ```
@@ -85,6 +85,8 @@ For each task, at the start of every cycle, increment `Cycle` in `task.md`, set 
 5. **Resolve.** For each issue the developer marked `fixed`, check it's actually gone in this cycle's build or review, then set it to `resolved`. If it isn't gone, set it back to `open` and increment `Reopened`.
 6. **Commit.** Commit `task.md`, `issues.md` and `friction.md` in the worktree with the message `<task-id> cycle <n>: review`.
 7. **Loop.** If any issue is `open`, start the next cycle.
+
+The spec's content sections (Goal, Decisions, Layering, Approach, Verification, acceptance criteria, Assets, Out of scope) are fixed during a cycle, for you as much as for the agents. You keep the cycle log, the status and the criteria's ticks. Never edit a content section to make a change pass review or to close a task. The only way a spec changes is **Replanning**.
 
 Record issues in `issues.md` in this format. Number them sequentially and never reuse IDs.
 
@@ -108,8 +110,16 @@ Block the task, rather than looping, if:
 - the same issue has been reopened 3 times
 - the same asset has been sent back to the designer 3 times
 - the task reaches cycle 5 without converging
-- an issue needs a design decision outside the task's scope
+- the task has been replanned twice and the new approach fails too
 - the build environment is broken in a way the developer can't fix (missing toolchain, missing dependency). Report status `stop` too: later tasks would hit the same wall.
+
+### Replanning
+When the developer returns `SPEC INFEASIBLE`, the designer says an asset can't be built as specified, or your review finds that the spec itself is wrong, the task goes back to planning. You are on Opus at high effort, as `/feature` is, so you do the planning, as `/feature` would.
+1. **Check the claim.** Read the code and the developer's evidence. Run what it ran. If the spec does work and the developer missed how, record an issue explaining how, and send it back as the next cycle. A spec that does work doesn't get changed.
+2. **Design an alternative.** Follow `/feature`'s design step (`.claude/skills/feature/SKILL.md`, step 2): work from the code, read the files involved, and keep to `docs/architecture.md`. Prefer the alternative that keeps the most of the spec. Write `docs/tasks/<task-id>/replan-<n>.md`: what failed, with the evidence; the alternatives you considered and why you rejected them; the proposal; and the exact changes to each spec section, with code examples where the spec has them.
+3. **Apply it or block.**
+   - If the proposal only changes `## Approach` and `## Verification` (how it's built and checked), apply it yourself. The Goal, Decisions, Layering, acceptance criteria, Assets and Out of scope stay as they were, and no existing content changes. Edit those two sections, add an entry to `## Spec revisions` (`Revision <n>, <date>: <what changed and why>, see replan-<n>.md`), update the task's `Touches` in the backlog if they changed, commit `<task-id>: replan <n>`, and start the next cycle. If the new `Touches` overlap a task still running in this batch, hold this task until that one merges, then have the developer merge the run's branch into the task branch at the start of the next cycle.
+   - Otherwise the user decides, because the change reaches what they agreed in planning: block the task (see **Blocking**). The question points to `replan-<n>.md` and names each section that would change. `/feature unblock` takes them through it.
 
 ## 5. Close the task
 A task is complete when:
