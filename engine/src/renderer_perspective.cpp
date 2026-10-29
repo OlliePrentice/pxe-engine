@@ -301,6 +301,9 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
   u3f(progEdge_, "uUp", camera.up.x, camera.up.y, camera.up.z);
   u3f(progEdge_, "uFwd", camera.forward.x, camera.forward.y, camera.forward.z);
   u1f(progEdge_, "uNear", camera.nearPlane);
+  // The view model's pixels are those drawn into [0, kViewModelDepth] of
+  // the depth range; with none in the frame, no pixel is.
+  u1f(progEdge_, "uViewModelDepth", params.viewModel.empty() ? 0.f : static_cast<float>(kViewModelDepth));
   // Rebuilding positions from the perspective depth, the depth steps that
   // count as outlines, and the haze.
   {

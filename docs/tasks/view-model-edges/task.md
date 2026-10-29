@@ -1,7 +1,7 @@
 # Edges for the view model
 Type: feature
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 2
 
 ## Goal
 The perspective edge pass reads the view model (`FrameParams::viewModel`) as surfaces just past the near plane, because the view model is drawn squeezed into the nearest 1% of the depth range. So no outline is drawn where one part of the view model stands in front of another. The view model's outline against the scene is also mostly a light rim, which gets lost against bright sand and sky. Make the perspective edge pass read a view-model pixel's true depth. Then ink every view-model silhouette in dark ink: against the scene, and inside the view model wherever a neighbour is more than 1 cm further away. Intricate parts stacked in depth (a dial on its housing, a cable over a plate, a finger over the palm) then read as separate pieces. Only view-model pixels change. Nothing else in either render mode changes, so the ruins game (orthographic) and every perspective frame without a view model stay byte-identical.
@@ -131,16 +131,16 @@ Run in the task's worktree:
 7. **The trunk, checked by a temporary edit.** Never commit it. Set `kSpawn` in `desert/src/main.cpp` to `{0.f, -0.71f}`, rebuild, and capture `edges-at-trunk.png`. The bark around the hands shows no new light or dark line along the arms' outline beyond the arms' own ink. Revert, `touch desert/src/main.cpp`, rebuild, and confirm a fresh `--capture` byte-matches `edges-day.png`.
 
 ## Acceptance criteria
-- [ ] `edge_perspective.frag` reads a pixel's true depth from `viewDepth`, stretching depths below `uViewModelDepth` back over the whole range, and has the binding uniform, constant and `viewModelAt` above
-- [ ] A view-model pixel is outlined against any scene or sky neighbour, and against a view-model neighbour more than `kViewModelStep` (0.01 m, or a recorded value within 0.005–0.02) plus the edge-on allowance further away. Its silhouettes use `min(mix(col, uInk, 0.65), col * 0.8)`, before rims and crease ink
-- [ ] A view-model pixel takes a light rim only at an upward crease, never on a silhouette
-- [ ] A scene pixel skips its view-model neighbours. A scene pixel's own rules, with no view-model neighbour, are unchanged
-- [ ] `renderer_perspective.cpp` sets `uViewModelDepth` to 0 with no view model and to `kViewModelDepth` with one, and nothing else in the file changes
-- [ ] The header comment gains the binding paragraph
-- [ ] Verification 2–5 pass: ortho 6/6, `example-first-person` identical, the diff empty, the grep only in the two files
-- [ ] The captures and `diff_box.py` output are in the task folder. Every differing pixel is in rows 351–539. The captures show what Verification 6 describes and are deterministic
-- [ ] The engine names no game content
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `edge_perspective.frag` reads a pixel's true depth from `viewDepth`, stretching depths below `uViewModelDepth` back over the whole range, and has the binding uniform, constant and `viewModelAt` above. Evidence: `viewDepth`, `uViewModelDepth`, `kViewModelStep` and `viewModelAt` in `engine/shaders/edge_perspective.frag`, binding text.
+- [x] A view-model pixel is outlined against any scene or sky neighbour, and against a view-model neighbour more than `kViewModelStep` (0.01 m, or a recorded value within 0.005–0.02) plus the edge-on allowance further away. Its silhouettes use `min(mix(col, uInk, 0.65), col * 0.8)`, before rims and crease ink. Evidence: `edges()`: `apart = vm ? kViewModelStep : ...`, `behind = (vm && !vmq) || dq - d > tol`, early `return min(mix(col, uInk, 0.65), col * 0.8)` before the rim and crease-ink returns; `kViewModelStep` kept at 0.01.
+- [x] A view-model pixel takes a light rim only at an upward crease, never on a silhouette. Evidence: `edges()` `if (vm)` branch sets `rim` only on `crease && nq.y < n.y - 0.3`, and `crease` needs `!behind`; glove-top rims gone in `edges-day.png`.
+- [x] A scene pixel skips its view-model neighbours. A scene pixel's own rules, with no view-model neighbour, are unchanged. Evidence: `if (!vm && vmq) continue;`; the scene branch is unchanged text; `example-first-person` identical; `edges-at-trunk.png` shows no new line on the bark.
+- [x] `renderer_perspective.cpp` sets `uViewModelDepth` to 0 with no view model and to `kViewModelDepth` with one, and nothing else in the file changes. Evidence: `git diff 37c2178 -- engine/src/renderer_perspective.cpp` is the 3 binding lines.
+- [x] The header comment gains the binding paragraph. Evidence: header of `edge_perspective.frag`, after the "Dark regions" paragraph.
+- [x] Verification 2–5 pass: ortho 6/6, `example-first-person` identical, the diff empty, the grep only in the two files. Evidence: my runs: `ortho-check: 6/6`, `perspective-check: 1/3` with `example-first-person` PASS, protected-file diff 0 lines, grep only in the two files.
+- [x] The captures and `diff_box.py` output are in the task folder. Every differing pixel is in rows 351–539. The captures show what Verification 6 describes and are deterministic. Evidence: `diff-day.txt`/`diff-night.txt`: 1827 pixels, rows 425..539; captures inspected; cycle 2 fresh captures `cmp`-identical to the committed ones.
+- [x] The engine names no game content. Evidence: review of the diff; the new comments speak of the view model only.
+- [x] Project builds cleanly from a fresh build directory with CMake. Evidence: my fresh `check` build in cycle 2: exit 0, only the stb `sprintf` warning.
 
 ## Assets
 None.
@@ -156,3 +156,16 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-29: base 37c2178
+- Cycle 1 review: build clean, ortho 6/6, example-first-person identical, desert differs only in rows 425-539; captures checked. One minor issue: ISSUE-001.
+- Cycle 2, 2026-10-29: base 9308ab5. Outstanding: ISSUE-001
+- Cycle 2 review: fresh build clean; the block moved unchanged; fresh day and night captures byte-match cycle 1's. ISSUE-001 resolved. Complete.
+
+## Playtest checklist
+- `build/release/desert/pxe_desert`: look down at both arms against the sand. Each arm has a thin dark outline; the glove tops no longer carry a light rim.
+- Move the mouse so the arms pass over the sky and the horizon sand: the outline holds against both.
+- Look at the left gauge and the bracer straps, and where the thumbs and fingers cross the hands: dark inner lines, and no ink across the middle of a glove's back or a wrap band.
+- Walk into the palm trunk until the hands are against the bark: no flicker or extra light or dark line on the bark along the arms' outline.
+- Sprint and turn quickly: the inner outlines stay steady, not shimmering.
+- `tools/build.sh release desert -- --hour 21`: the same at night.
+- The ruins game is unchanged (ortho check 6/6); no need to playtest it for this task.

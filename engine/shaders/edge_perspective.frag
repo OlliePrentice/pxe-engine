@@ -24,6 +24,13 @@
 // Dark regions (pxe::Scene::darkRegions): a light rim inside one takes the
 // region's share of the rim colour.
 //
+// The view model (pxe::FrameParams::viewModel): its pixels are read at
+// their true depth, though it is drawn squeezed in front of the scene. Each
+// of its silhouettes, against the scene and where one of its parts stands
+// more than kViewModelStep in front of another, is inked dark, and it takes
+// a light rim only at an upward crease. The scene never outlines against
+// it. A frame with no view model is drawn exactly as before.
+//
 // Distance haze: surfaces fade into the sky's horizon colour toward the far
 // plane, in flat steps like the sky's bands.
 //
@@ -105,6 +112,13 @@ uniform float uPixelAngle;     // metres across one pixel per metre of distance
 uniform float uRefTexel;       // metres across one pixel of the orthographic view, which kSilhouette suits
 uniform vec3 uHaze;            // the sky's horizon colour
 uniform vec2 uHazeSpan;        // distances where the haze starts and is full, metres
+// The view model (pxe::FrameParams::viewModel) is drawn into [0,
+// uViewModelDepth] of the depth range, in front of the whole scene: a pixel
+// whose depth is below it is the view model's, and its true depth is its
+// depth stretched back over the whole range. 0 when the frame has none.
+uniform float uViewModelDepth;
+// Metres of depth step that count as an outline inside the view model.
+const float kViewModelStep = 0.01;
 
 out vec4 oColor;
 
@@ -117,8 +131,12 @@ vec3 rayAt(ivec2 p) {
     return uFwd + uRight * s.x + uUp * s.y;
 }
 
+bool viewModelAt(ivec2 p) { return texelFetch(uDepth, p, 0).r < uViewModelDepth; }
+
 float viewDepth(ivec2 p) {
-    float z = texelFetch(uDepth, p, 0).r * 2.0 - 1.0;
+    float w = texelFetch(uDepth, p, 0).r;
+    if (w < uViewModelDepth) w /= uViewModelDepth;
+    float z = w * 2.0 - 1.0;
     return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear));
 }
 
@@ -135,7 +153,8 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
     // seen nearly edge-on).
     float d = viewDepth(p);
     vec3 fromEye = rayAt(p) * d;
-    float apart = kSilhouette * max(1.0, d * uPixelAngle / uRefTexel);
+    bool vm = viewModelAt(p);
+    float apart = vm ? kViewModelStep : kSilhouette * max(1.0, d * uPixelAngle / uRefTexel);
     vec3 look = normalize(fromEye);
 
     bool rim = false;
@@ -150,6 +169,9 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
     for (int i = 0; i < 8; ++i) {
         bool diagonal = i >= 4;
         ivec2 q = p + kOffsets[i];
+        bool vmq = viewModelAt(q);
+        // A scene pixel ignores the view model in front of it.
+        if (!vm && vmq) continue;
         float dq = viewDepth(q);
         vec3 rq = rayAt(q);
         float facing = dot(rq, n);
@@ -157,10 +179,16 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
         float tol = apart + min(abs(onPlane - d), d);
         vec4 nq4 = texelFetch(uNormal, q, 0);
         vec3 nq = normalize(nq4.xyz * 2.0 - 1.0);
-        bool behind = dq - d > tol;
+        // A view-model pixel's neighbour in the scene or sky is always behind it.
+        bool behind = (vm && !vmq) || dq - d > tol;
         bool meshNeighbour = nq4.a > 0.0 && nq4.a < 0.99;  // something was drawn there (0 is the sky), and it is no sprite
         bool crease = !behind && abs(dq - d) < tol && meshNeighbour && dot(n, nq) < 0.8;
-        if (!timbered(surface) && n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
+        if (vm) {
+            // The view model: dark outlines on every silhouette, light rims
+            // only at upward creases.
+            if (n.y > 0.6 && crease && nq.y < n.y - 0.3) rim = true;
+            if (behind && !diagonal) ink = true;
+        } else if (!timbered(surface) && n.y > 0.6 && (behind || (crease && nq.y < n.y - 0.3))) rim = true;
         else if (behind && !diagonal) ink = true;
         // Bark is smooth-shaded except along a few seams marked sharp in
         // Blender; there the normal jumps a little, and one light stroke is
@@ -180,6 +208,8 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
             if (!partner || toCam < -1e-3 || (abs(toCam) <= 1e-3 && n.x > nq.x)) creaseInk = true;
         }
     }
+    // A view model's silhouette is inked as a slate crease is, before any rim.
+    if (vm && ink) return min(mix(col, uInk, 0.65), col * 0.8);
     // Bark is painted, not carved: no rims, a faint outline, and its few
     // seam strokes are soft.
     if (surface == kSurfBark) rim = false;

@@ -1,0 +1,2 @@
+differing pixels: 1827
+columns 32..904, rows 425..539
