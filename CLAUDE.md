@@ -45,7 +45,7 @@ Nothing tests rendering automatically. `./build/<config>/game/pxe --help` lists 
 
 A refactor that should not change output must be **byte-identical**. `tools/ortho-check.sh <base>` and `tools/perspective-check.sh <base>` build the base commit in a scratch directory and the working tree, run each render mode's standard cases on both, and compare them (`--help` lists the cases). Run the check for every mode the change could reach. A change to the renderer, the shaders, the cameras or `Scene` and `Lighting` reaches both. Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
 
-Shell notes for this Mac: the shell is zsh, so pass multi-word arguments through `"$@"` or an array, and a pipe's exit codes are in `$pipestatus` (lowercase). BSD `sed -i` needs an empty suffix argument (`sed -i ''`).
+Shell notes for this Mac: the shell is zsh, so pass multi-word arguments through `"$@"` or an array, and a pipe's exit codes are in `$pipestatus` (lowercase). BSD `sed -i` needs an empty suffix argument (`sed -i ''`). After restoring a file from a copy (`cp`, which keeps the old timestamp), `touch` it, or the next build may skip it and a capture comes from a stale binary.
 
 ## Workflow
 Features and fixes are planned first and implemented later, unattended:

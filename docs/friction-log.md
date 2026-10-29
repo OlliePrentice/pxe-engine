@@ -23,9 +23,9 @@ Number entries sequentially and never reuse IDs.
 ## F-001: Shell differences on macOS (zsh, BSD sed)
 Kind: doc-gap
 Status: actioned
-Seen: render-mode-checks (2026-10-29), render-mode-split (2026-10-29, orchestrator: an unquoted `$t` holding a command and its argument didn't word-split in zsh, so a check loop ran nothing)
+Seen: render-mode-checks (2026-10-29), desert-arms (2026-10-29, developer: a `cp`-restored file wasn't rebuilt, so a capture came from a stale binary), render-mode-split (2026-10-29, orchestrator: an unquoted `$t` holding a command and its argument didn't word-split in zsh, so a check loop ran nothing)
 Detail: The developer had to work out that BSD `sed -i` needs `sed -i ''` and that zsh's pipe exit codes are `$pipestatus`, for the negative-check edits. The old byte-identical paragraph in CLAUDE.md carried a zsh tip ("pass multi-word arguments through \"$@\" or an array"), and the render-mode-checks spec's replacement text dropped it.
-Action: CLAUDE.md "Verifying a change" gains a shell-notes paragraph covering zsh arguments, `$pipestatus` and `sed -i ''` (retro commit).
+Action: CLAUDE.md "Verifying a change" gains a shell-notes paragraph covering zsh arguments, `$pipestatus` and `sed -i ''` (retro commit); desert-arms retro adds `touch` after restoring a file.
 
 ## F-002: tools/README.md's build.sh row omitted the desert game
 Kind: doc-gap
@@ -81,5 +81,47 @@ Kind: tool
 Status: open
 Seen: render-mode-split (2026-10-29)
 Detail: Written by hand: docs/tasks/render-mode-split/scripts/bench_alt.sh.
+Action: none yet (first sighting).
+
+## F-010: Asset requirements without a matching build check, and measurement points left undefined
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms (2026-10-29)
+Detail: The arms spec required the gauge to read (Decisions, Verification) but didn't list it among the build checks. It also measured "hand centre", "top of the index knuckle" and "wrist turned 30 degrees" without defining the points or the axis, and gave a pose guide its own binding framing checks contradicted (the gauge fell off-screen with the guide's elbows). The designer worked each out and recorded it in assets.md.
+Action: .claude/skills/feature/SKILL.md, step 1.7 "Each asset": every visual requirement gets a build check, every measured point and axis is defined, and a guide that binding checks also constrain is checked against them, roughly with numbers, before queueing (retro workflow commit).
+
+## F-011: A spec's engine code used a GL call the engine's loader doesn't load
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms (2026-10-29)
+Detail: The binding view-model block called `glDepthRange`, which isn't in `PXE_GL_EACH` (engine/src/gl.hpp), while the spec forbade other engine file changes. It took a replan.
+Action: .claude/skills/feature/SKILL.md, step 2: grep every GL call a spec's engine code adds in engine/src/gl.hpp, and name the table entry in the spec if it's missing (retro workflow commit).
+
+## F-012: Working in the live Blender session through the MCP
+Kind: doc-gap
+Status: actioned
+Seen: desert-arms (2026-10-29)
+Detail: The designer had to work out that a builder object survives between `execute_blender_code` calls only in `bpy.app.driver_namespace`, and that Blender's glTF importer adds a bone-shape `Icosphere` mesh (in `glTF_not_exported`), so a re-import counts two meshes for a one-mesh glb.
+Action: .claude/agents/designer.md, "Building assets": both facts (retro workflow commit).
+
+## F-013: Attachment check for a character's pieces (BVH overlap, ray-parity containment)
+Kind: tool
+Status: open
+Seen: fox (build_fox.py, earlier run), desert-arms (2026-10-29, build_arms.py `attachment_problems`)
+Detail: Written by hand twice, with different interfaces (the fox finds pieces from the mesh, the arms take named pieces and an attach list). The designer also suggested sharing the perspective eye-camera projection (`project`/`framing` in build_arms.py). A third copy triggers a shared tools/blender/ helper.
+Action: none yet (two sightings).
+
+## F-014: Searching a pose numerically against framing checks
+Kind: tool
+Status: open
+Seen: desert-arms (2026-10-29)
+Detail: docs/tasks/desert-arms/scripts/pose_search.py.
+Action: none yet (first sighting).
+
+## F-015: Re-importing a glb to verify it against its build
+Kind: tool
+Status: open
+Seen: desert-arms (2026-10-29)
+Detail: docs/tasks/desert-arms/scripts/verify_arms_glb.py (build_arms.py also reads its glb back after export).
 Action: none yet (first sighting).
 
