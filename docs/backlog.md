@@ -40,3 +40,11 @@ Spec: docs/tasks/render-mode-split/task.md
 Depends on: render-mode-checks
 Touches: engine/include/pxe/renderer.hpp, engine/include/pxe/camera.hpp, engine/include/pxe/first_person_camera.hpp, engine/src/renderer.cpp, engine/src/renderer_orthographic.cpp, engine/src/renderer_perspective.cpp, engine/src/renderer_internal.hpp, engine/src/camera.cpp, engine/src/first_person_camera.cpp, engine/shaders/edge.frag, engine/shaders/edge_perspective.frag, engine/CMakeLists.txt, game/src/main.cpp, desert/src/main.cpp, examples/minimal/main.cpp
 Assets: no
+
+## desert-arms: The desert player's arms
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-arms/task.md
+Depends on: render-mode-split
+Touches: engine/include/pxe/renderer.hpp, engine/src/renderer_perspective.cpp, desert/src/arms.hpp, desert/src/arms.cpp, desert/src/main.cpp, desert/src/player.hpp, desert/CMakeLists.txt, desert/assets/characters/, desert/tools/blender/build_arms.py, desert/docs/art-style.md
+Assets: yes
