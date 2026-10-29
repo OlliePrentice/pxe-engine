@@ -43,9 +43,7 @@ Nothing tests rendering automatically. `./build/<config>/game/pxe --help` lists 
 
 `pxe_desert` has only `--help`, `--capture <png>` (from the spawn pose), `--window-png <png>` and `--hour <0-24>` (default 16.5).
 
-A refactor that should not change output must be **byte-identical**. Build the base commit from `git archive <base> | tar -x -C <dir>` in a scratch directory, run both binaries with the same flags, and compare with `cmp`. Standard cases: the game's default, `--scene hills`, `--hour 21 --foxes 3`, `--hour 21 --candles --shelter-test --extra-fires 6` and `--self-test`, the desert game's `--capture`, and the example's `--capture` and `--first-person --capture`. Logs match apart from the line naming the output file. In zsh, pass multi-word arguments through `"$@"` or an array.
-
-Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
+A refactor that should not change output must be **byte-identical**. `tools/ortho-check.sh <base>` and `tools/perspective-check.sh <base>` build the base commit in a scratch directory and the working tree, run each render mode's standard cases on both, and compare them (`--help` lists the cases). Run the check for every mode the change could reach. A change to the renderer, the shaders, the cameras or `Scene` and `Lighting` reaches both. Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
 
 ## Workflow
 Features and fixes are planned first and implemented later, unattended:
