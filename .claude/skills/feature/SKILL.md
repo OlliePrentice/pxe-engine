@@ -47,7 +47,7 @@ Then split the work into tasks. A task is one reviewable change that builds on i
 ## 3. Write the specs
 Write `docs/tasks/<task-id>/task.md` for each task. This is the specification for the game-developer (Sonnet) and the designer, and the reviewer checks against it. Record decisions, not the conversation.
 
-**Make it implementation-ready.** The developer should not have to make a design decision. Name the files, types and functions. Where prose doesn't pin the design down, show it in code: a new struct or class declaration, a function signature, the shape of a shader change, the call sequence in the frame loop, a tricky formula. Keep code examples to interfaces and the hard parts. Don't write out the whole implementation. If the developer would write it the obvious way, leave it in prose. Mark each example as binding (implement this exactly) or a sketch (follow its shape).
+**Make it implementation-ready.** The developer should not have to make a design decision. Name the files, types and functions. Where prose doesn't pin the design down, show it in code: a new struct or class declaration, a function signature, the shape of a shader change, the call sequence in the frame loop, a tricky formula. Keep code examples to interfaces and the hard parts. Don't write out the whole implementation. If the developer would write it the obvious way, leave it in prose. Mark each example as binding (implement this exactly) or a sketch (follow its shape). When a spec replaces text in a doc, quote the whole passage to replace and the whole replacement, and say what in the old text must survive.
 
 ```
 # <Task title>
