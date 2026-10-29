@@ -26,12 +26,13 @@ Tasks run in the order listed. Add new ones at the bottom, except tooling tasks 
 # Tasks
 
 ## render-mode-checks: Byte-identical checks per render mode
-Status: in-progress
+Status: done
 Type: tooling
 Spec: docs/tasks/render-mode-checks/task.md
 Depends on: none
 Touches: tools/ortho-check.sh, tools/perspective-check.sh, tools/README.md, CLAUDE.md
 Assets: no
+Merged: 02ecc72
 
 ## render-mode-split: Orthographic and perspective as separate render modes
 Status: queued
