@@ -1,7 +1,7 @@
 # Edges for the view model
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 The perspective edge pass reads the view model (`FrameParams::viewModel`) as surfaces just past the near plane, because the view model is drawn squeezed into the nearest 1% of the depth range. So no outline is drawn where one part of the view model stands in front of another. The view model's outline against the scene is also mostly a light rim, which gets lost against bright sand and sky. Make the perspective edge pass read a view-model pixel's true depth. Then ink every view-model silhouette in dark ink: against the scene, and inside the view model wherever a neighbour is more than 1 cm further away. Intricate parts stacked in depth (a dial on its housing, a cable over a plate, a finger over the palm) then read as separate pieces. Only view-model pixels change. Nothing else in either render mode changes, so the ruins game (orthographic) and every perspective frame without a view model stay byte-identical.
@@ -156,3 +156,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-29: base 37c2178
