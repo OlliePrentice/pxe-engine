@@ -53,12 +53,13 @@ Assets: yes
 Merged: 89c5126
 
 ## view-model-edges: Edges for the view model
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/view-model-edges/task.md
 Depends on: none
 Touches: engine/shaders/edge_perspective.frag, engine/src/renderer_perspective.cpp, docs/tasks/view-model-edges/
 Assets: no
+Merged: d64d2de
 
 ## desert-arms-detail: Detailed arms and gadgets
 Status: queued
