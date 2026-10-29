@@ -72,3 +72,32 @@ The perspective checks only run with no rain, so this proves rain/fire/etc. remo
 - Verification 5's third grep cannot give empty output (hits listed above, all spec-mandated text).
 - The perspective checks only cover rain 0, but the renderer sets the removed passes off in every perspective frame, so no input can reach the removed code.
 - `edge_perspective.frag` keeps the old forward declaration of `worldAt`, now defined near the end; it is unused-forward but harmless.
+
+## Cycle 2
+Build: pass
+
+### Changes
+- `docs/tasks/render-mode-split/scripts/__pycache__/`: removed from the branch with `git rm -r` (ISSUE-001). No code changes.
+
+### Issues addressed
+- ISSUE-001: the committed `shaderedit.cpython-314.pyc` is gone; `.gitignore` untouched.
+
+### Verification
+- Fresh build (`cmake --preset check --fresh && cmake --build --preset check --clean-first`): only the stb_image_write `sprintf` warning.
+- Revised Verification 5, third bullet:
+  - `grep -n -E "PerspectiveFrame|FirstPersonCamera|PERSPECTIVE|edgePerspective|progBackdrop|backdrop|fitLightAhead|shadowFit|flashFit|distanceHaze|uHaze" engine/src/renderer_orthographic.cpp engine/shaders/edge.frag engine/include/pxe/camera.hpp`: no output (exit 1).
+  - `grep -n -i perspective` over the same files: `renderer_orthographic.cpp:271` (`glm::perspective` in `updateFires`) and `:360` (the mode-mismatch message). Nothing else.
+
+### Layering
+- Engine: none (unchanged from cycle 1).
+- Game: none.
+- Misplaced code touched: none.
+
+### How to playtest
+- Nothing changed since cycle 1.
+
+### Docs
+- Same as cycle 1.
+
+### Known limitations
+- The cycle 1 limitation about Verification 5's third grep is resolved by Replan 1. The other cycle 1 limitations stand.
