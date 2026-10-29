@@ -1,6 +1,6 @@
 # Byte-identical checks per render mode
 Type: tooling
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -105,14 +105,14 @@ Run from the repo root, on the task branch:
 6. `shellcheck tools/ortho-check.sh tools/perspective-check.sh` if `shellcheck` is installed: no errors. If it isn't installed, say so in the handoff.
 
 ## Acceptance criteria
-- [ ] `tools/ortho-check.sh` and `tools/perspective-check.sh` exist, are executable, and take exactly `<base-ref>` or `--help`, exiting 2 on bad usage
-- [ ] The base is extracted with `git archive` into `${TMPDIR:-/tmp}/pxe-render-check/<full sha>/`, built with the `release` preset, reused when its binaries already exist, and its directory is printed
-- [ ] The current side is the working tree's own `release` build
-- [ ] `ortho-check.sh` runs exactly the six orthographic cases in the table and `perspective-check.sh` the three perspective cases, with the flags shown, from per-side output directories with relative PNG names
-- [ ] Captures are compared with `cmp`, the self-test by its combined output, and each case prints `PASS` or `FAIL <reason>`, followed by a summary line and exit status 0 or 1
-- [ ] Verification steps 3 and 4 pass, and the negative checks in step 5 fail as described (summary lines in the handoff)
-- [ ] `tools/README.md` lists both tools. `CLAUDE.md`'s byte-identical paragraph points at them in place of the manual recipe
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `tools/ortho-check.sh` and `tools/perspective-check.sh` exist, are executable, and take exactly `<base-ref>` or `--help`, exiting 2 on bad usage — both executable; usage parsing at the top of each; no-arg and `not-a-ref` exit 2 (orchestrator rerun)
+- [x] The base is extracted with `git archive` into `${TMPDIR:-/tmp}/pxe-render-check/<full sha>/`, built with the `release` preset, reused when its binaries already exist, and its directory is printed — step 2 of each script; reused on the second run (handoff, and the orchestrator's runs reused b594d8e's base)
+- [x] The current side is the working tree's own `release` build — `cmake --preset release` / `--build --preset release` in `$root`
+- [x] `ortho-check.sh` runs exactly the six orthographic cases in the table and `perspective-check.sh` the three perspective cases, with the flags shown, from per-side output directories with relative PNG names — `run_case` lines match the tables; `cd "$out/base|head"` with relative names
+- [x] Captures are compared with `cmp`, the self-test by its combined output, and each case prints `PASS` or `FAIL <reason>`, followed by a summary line and exit status 0 or 1 — `run_case`: `cmp -s` on PNG or log; PASS/FAIL lines, summary, `((passed == total))`
+- [x] Verification steps 3 and 4 pass, and the negative checks in step 5 fail as described (summary lines in the handoff) — 6/6 and 3/3 against HEAD (orchestrator rerun); negative checks 2/6 and 0/3, exit 1 (handoff)
+- [x] `tools/README.md` lists both tools. `CLAUDE.md`'s byte-identical paragraph points at them in place of the manual recipe — README rows; CLAUDE.md "Verifying a change" paragraph
+- [x] Project builds cleanly from a fresh build directory with CMake — fresh `check` build, only the stb `sprintf` warning
 
 ## Assets
 None.
@@ -128,3 +128,7 @@ None.
 
 ## Cycle log
 - Cycle 1: 2026-10-29 started, base 5d9dc1b
+- Cycle 1 review: fresh build clean (stb warning only); both tools rerun by the orchestrator, 6/6 and 3/3 against HEAD, bad usage exits 2. No issues. shellcheck not installed (bash -n passes). Task complete.
+
+## Playtest checklist
+- Nothing to play: this task adds tools only. Try `tools/ortho-check.sh main` from the repo root and confirm it prints a PASS or FAIL line per case and a summary.
