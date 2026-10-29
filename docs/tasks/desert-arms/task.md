@@ -1,7 +1,7 @@
 # The desert player's arms
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 The desert player is only an eye. Give it a pair of arms, seen in first person and themed for a sci-fi desert: the wanderer's wrapped forearms, dark leather gloves, and a brass bracer with a glowing teal gauge on the left forearm. They aren't animated in this task. They're a rigged model held in its rest pose, locked to the view.
@@ -322,3 +322,4 @@ Run in the task's worktree:
 ## Cycle log
 - Cycle 1: 2026-10-29 started, base f4f25c4
 - Cycle 1 review: assets built (1c07899), previews checked against the spec. Code returned SPEC INFEASIBLE: `glDepthRange` is not in the GL loader. Claim confirmed; replan 1 applied (Approach only).
+- Cycle 2: 2026-10-29 started, base 6607415, implementing the code under revision 1
