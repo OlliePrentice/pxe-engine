@@ -1,7 +1,7 @@
 # Issues: view-model-edges
 
 ## ISSUE-001: View-model uniform block splits the camera uniforms
-Status: fixed
+Status: resolved
 Severity: minor
 Source: review
 Found in cycle: 1
