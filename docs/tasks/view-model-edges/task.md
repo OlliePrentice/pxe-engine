@@ -157,3 +157,4 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-29: base 37c2178
+- Cycle 1 review: build clean, ortho 6/6, example-first-person identical, desert differs only in rows 425-539; captures checked. One minor issue: ISSUE-001.
