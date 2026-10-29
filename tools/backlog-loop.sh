@@ -85,7 +85,13 @@ for ((batch = 1; batch <= max_batches; batch++)); do
   status="$(grep -Eo 'BACKLOG-RUN: (continue|done|stop)' "$log" | tail -n 1 | cut -d' ' -f2 || true)"
   case "$status" in
     continue) ;;
-    done) echo "== Backlog done after $batch batch(es)."; exit 0 ;;
+    done)
+      echo "== Nothing left to run after $batch batch(es)."
+      if grep -q '^Status: blocked' docs/backlog.md; then
+        echo "== Blocked tasks need you. Answer their questions with /feature unblock:"
+        grep -B1 '^Status: blocked' docs/backlog.md | grep '^## ' | sed 's/^## /   /'
+      fi
+      exit 0 ;;
     stop) echo "== Batch $batch stopped and needs you. See $log." >&2; exit 1 ;;
     *) echo "== Batch $batch ended without a status line. See $log." >&2; exit 1 ;;
   esac

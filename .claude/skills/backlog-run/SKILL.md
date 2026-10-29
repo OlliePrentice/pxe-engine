@@ -109,7 +109,7 @@ Reopened: <count>
 Block the task, rather than looping, if:
 - the same issue has been reopened 3 times
 - the same asset has been sent back to the designer 3 times
-- the task reaches cycle 5 without converging
+- the task reaches 5 cycles without converging, counted from its latest spec revision (a replan starts the count again)
 - the task has been replanned twice and the new approach fails too
 - the build environment is broken in a way the developer can't fix (missing toolchain, missing dependency). Report status `stop` too: later tasks would hit the same wall.
 
@@ -118,7 +118,7 @@ When the developer returns `SPEC INFEASIBLE`, the designer says an asset can't b
 1. **Check the claim.** Read the code and the developer's evidence. Run what it ran. If the spec does work and the developer missed how, record an issue explaining how, and send it back as the next cycle. A spec that does work doesn't get changed.
 2. **Design an alternative.** Follow `/feature`'s design step (`.claude/skills/feature/SKILL.md`, step 2): work from the code, read the files involved, and keep to `docs/architecture.md`. Prefer the alternative that keeps the most of the spec. Write `docs/tasks/<task-id>/replan-<n>.md`: what failed, with the evidence; the alternatives you considered and why you rejected them; the proposal; and the exact changes to each spec section, with code examples where the spec has them.
 3. **Apply it or block.**
-   - If the proposal only changes `## Approach` and `## Verification` (how it's built and checked), apply it yourself. The Goal, Decisions, Layering, acceptance criteria, Assets and Out of scope stay as they were, and no existing content changes. Edit those two sections, add an entry to `## Spec revisions` (`Revision <n>, <date>: <what changed and why>, see replan-<n>.md`), update the task's `Touches` in the backlog if they changed, commit `<task-id>: replan <n>`, and start the next cycle. If the new `Touches` overlap a task still running in this batch, hold this task until that one merges, then have the developer merge the run's branch into the task branch at the start of the next cycle.
+   - If the proposal only changes `## Approach` and `## Verification` (how it's built and checked), apply it yourself. The Goal, Decisions, Layering, acceptance criteria, Assets and Out of scope stay as they were, and no existing content changes. Edit those two sections, add an entry to `## Spec revisions` (`Revision <n>, <date>: <what changed and why>, see replan-<n>.md`), update the task's `Touches` in the backlog if they changed, commit `<task-id>: replan <n>`, and start the next cycle. If the new `Touches` overlap a task still running in this batch, hold this task until that one merges or blocks. If it merged, have the developer merge the run's branch into the task branch at the start of the next cycle.
    - Otherwise the user decides, because the change reaches what they agreed in planning: block the task (see **Blocking**). The question points to `replan-<n>.md` and names each section that would change. `/feature unblock` takes them through it.
 
 ## 5. Close the task
