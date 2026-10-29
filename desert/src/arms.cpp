@@ -14,6 +14,15 @@ constexpr int kGlove = 1;
 [[maybe_unused]] constexpr int kStrap = 2;
 constexpr int kBrass = 3;
 [[maybe_unused]] constexpr int kGlow = 4;
+[[maybe_unused]] constexpr int kSteel = 5;
+[[maybe_unused]] constexpr int kCopper = 6;
+[[maybe_unused]] constexpr int kRubber = 7;
+[[maybe_unused]] constexpr int kThread = 8;
+constexpr int kWorn = 9;
+constexpr int kGrime = 10;
+[[maybe_unused]] constexpr int kDial = 11;
+[[maybe_unused]] constexpr int kPaint = 12;
+[[maybe_unused]] constexpr int kAmber = 13;
 
 }  // namespace
 
@@ -37,7 +46,7 @@ void Arms::pose(const pxe::PerspectiveFrame& view, pxe::FrameParams& params) {
   const auto& mats = model_.materials();
   for (int i = 0; i < static_cast<int>(mats.size()) && kFirstMaterial + i < pxe::kActorMaterials; ++i) {
     params.actorMaterials[kFirstMaterial + i] = mats[static_cast<std::size_t>(i)];
-    params.actorMaterials[kFirstMaterial + i].crease = i == kWrap || i == kGlove || i == kBrass;
+    params.actorMaterials[kFirstMaterial + i].crease = i == kWrap || i == kGlove || i == kBrass || i == kWorn || i == kGrime;
   }
 }
 

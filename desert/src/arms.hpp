@@ -16,8 +16,9 @@ namespace desert {
 // transform places it. The game owns it.
 class Arms {
  public:
-  // Actor-material slots 0-4: Arms_Wrap, Arms_Glove, Arms_Strap, Arms_Brass,
-  // Arms_Glow, in the glb's material order.
+  // Actor-material slots 0-13: Arms_Wrap, Arms_Glove, Arms_Strap, Arms_Brass,
+  // Arms_Glow, Arms_Steel, Arms_Copper, Arms_Rubber, Arms_Thread, Arms_Worn,
+  // Arms_Grime, Arms_Dial, Arms_Paint, Arms_Amber, in the glb's material order.
   static constexpr int kFirstMaterial = 0;
 
   // Needs the GL context. Throws std::runtime_error if the glb can't be read.
