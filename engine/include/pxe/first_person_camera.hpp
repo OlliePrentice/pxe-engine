@@ -1,17 +1,35 @@
 #pragma once
 
-#include "pxe/camera.hpp"
-
+#include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
 namespace pxe {
 
+// One perspective camera update, from FirstPersonCamera, for a renderer in
+// RenderMode::kPerspective. The eye is not snapped to the texel grid.
+// Basis as FirstPersonCamera's: forward along the view, right and up
+// across it; a positive pitch looks down.
+struct PerspectiveFrame {
+  glm::mat4 view{1.f};
+  glm::mat4 proj{1.f};
+  glm::vec3 eye{0.f};
+  glm::vec3 forward{0.f, 0.f, 1.f};
+  glm::vec3 right{-1.f, 0.f, 0.f};
+  glm::vec3 up{0.f, 1.f, 0.f};
+  float yawRadians = 0.f;
+  float pitchRadians = 0.f;
+  float fovY = 0.f;        // vertical field of view, radians
+  float nearPlane = 0.1f;  // metres
+  float farPlane = 300.f;  // metres
+};
+
 // A perspective camera at an eye position, for a view from eye height: free
 // yaw and pitch, a vertical field of view and a far plane. It produces a
-// perspective CameraFrame, drawn into the same low-res target as Camera's,
-// with a sky behind the geometry and haze toward the far plane. Its eye is
-// not snapped to the texel grid (a perspective view can't be), so edges may
-// crawl a little as it turns and moves.
+// PerspectiveFrame for a renderer in perspective mode, drawn into the same
+// low-res target as the orthographic Camera's, with a sky behind the
+// geometry and haze toward the far plane. Its eye is not snapped to the
+// texel grid (a perspective view can't be), so edges may crawl a little as
+// it turns and moves.
 //
 // Yaw and pitch follow Camera's: at yaw 0 the view looks along +z, its flat
 // forward is (sin yaw, 0, cos yaw) and its right (-cos yaw, 0, sin yaw), so
@@ -40,7 +58,7 @@ class FirstPersonCamera {
   float farPlane() const { return far_; }
 
   // The view for a target of rtW x rtH (Renderer::rtW(), rtH()).
-  CameraFrame frame(int rtW, int rtH) const;
+  PerspectiveFrame frame(int rtW, int rtH) const;
 
  private:
   glm::vec3 eye_{0.f, 1.7f, 0.f};

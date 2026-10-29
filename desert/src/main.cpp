@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
     pxe::Window window(options);
 
     pxe::Renderer renderer;
-    renderer.init();
+    renderer.init(pxe::RenderMode::kPerspective);
 
     desert::World world = desert::buildWorld();
     renderer.upload(world.scene);

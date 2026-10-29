@@ -263,7 +263,9 @@ int main(int argc, char** argv) {
     pxe::Window window(options);
 
     pxe::Renderer renderer;
-    renderer.init();
+    // The renderer is made for one camera for its whole life: the first-person
+    // view needs perspective mode, the orbiting one orthographic.
+    renderer.init(firstPerson ? pxe::RenderMode::kPerspective : pxe::RenderMode::kOrthographic);
 
     World world = buildWorld();
     renderer.upload(world.scene);
@@ -280,10 +282,14 @@ int main(int argc, char** argv) {
     const glm::vec3 look = world.lookAt - world.eye;
     eyeCamera.setYawRadians(std::atan2(look.x, look.z));
     eyeCamera.setPitchRadians(-std::atan2(look.y, std::hypot(look.x, look.z)));
-    // The frame to draw, through whichever camera this run looks through.
-    auto view = [&] {
-      if (firstPerson) return eyeCamera.frame(renderer.rtW(), renderer.rtH());
-      return camera.frame(renderer.rtW(), renderer.rtH());
+    // Draw a frame through whichever camera this run looks through: each
+    // has its own frame type, for the renderer's mode.
+    auto renderFrame = [&](const pxe::FrameParams& params) {
+      if (firstPerson) {
+        renderer.render(world.scene, eyeCamera.frame(renderer.rtW(), renderer.rtH()), params);
+      } else {
+        renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
+      }
     };
 
     if (!capture.empty()) {
@@ -291,7 +297,7 @@ int main(int argc, char** argv) {
       for (int f = 0; f < kCaptureFrames; ++f) {
         const pxe::FrameParams params =
             frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f, hour);
-        renderer.render(world.scene, view(), params);
+        renderFrame(params);
       }
       const bool ok = pxe::writePng(capture, renderer.viewW(), renderer.viewH(), renderer.readView());
       std::fprintf(stderr, "pxe_minimal: %s %s\n", ok ? "wrote" : "failed to write", capture.c_str());
@@ -343,7 +349,7 @@ int main(int argc, char** argv) {
         continue;
       }
       const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now), hour);
-      renderer.render(world.scene, view(), params);
+      renderFrame(params);
       window.swap();
     }
   } catch (const std::exception& e) {

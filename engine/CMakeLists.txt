@@ -64,6 +64,7 @@ set(PXE_SHADERS
   common.glsl
   edge.frag
   edge.vert
+  edge_perspective.frag
   fire.frag
   fire.vert
   fireshadow.frag
@@ -108,6 +109,8 @@ add_library(pxe_engine
   src/camera.cpp
   src/first_person_camera.cpp
   src/renderer.cpp
+  src/renderer_orthographic.cpp
+  src/renderer_perspective.cpp
   src/gltf.cpp
   src/skinned.cpp
   src/lighting.cpp

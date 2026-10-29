@@ -1,0 +1,9 @@
+## game-developer cycle 1
+- tool: split a large source file into per-mode files by line range from `git show HEAD:...` (keeps moved code byte-identical): `docs/tasks/render-mode-split/scripts/split_renderer.py`.
+- tool: prune a shader by exact-marker cuts with assertions that each marker occurs once, plus an identifier-usage counter: `docs/tasks/render-mode-split/scripts/shaderedit.py`.
+- tool: build and run a throwaway test program against `build/release` libs (macOS link line copied from `build/release/examples/minimal/.../link.txt`): `docs/tasks/render-mode-split/scripts/mode_mismatch.sh`.
+- tool: alternating `--bench 600` runs with medians: `docs/tasks/render-mode-split/scripts/bench_alt.sh` (the third time this has been needed would justify a `tools/bench-compare.sh`).
+- doc-gap: `tools/README.md` does not say that `tools/ortho-check.sh main` leaves main's binaries at `$TMPDIR/pxe-render-check/<full sha>/build/release/game/pxe`; found by reading the script's help text.
+- instruction-gap: Verification 5's grep for `perspective|haze|...` over `renderer_orthographic.cpp` and `edge.frag` cannot be empty: `main`'s `edge.frag` says "haze" in its rain code, `updateFires` calls `glm::perspective` for the fire shadow cubes, and the binding mismatch message names `kPerspective`. I kept all of them (the spec requires each) and listed them in the handoff.
+- instruction-gap: the spec says the unifdef step "keeps every PERSPECTIVE branch", but the shader's uniforms for removed features must still be set (sampler types sharing unit 0 are a GL error), so the first build kept the full uniform set and step 6 pruned shader and renderer together per feature. Worked out from the stepwise instructions.
+- instruction-gap: `ramp` and `kFireShadow` are used by two files (the spec expected `ramp` to be orthographic-only); put both in `renderer_internal.hpp` as the "let the compiler settle it" rule says.

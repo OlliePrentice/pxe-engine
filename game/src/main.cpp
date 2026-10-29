@@ -879,7 +879,7 @@ int main(int argc, char** argv) {
   {
     pxe::Renderer renderer;
     try {
-      renderer.init();
+      renderer.init(pxe::RenderMode::kOrthographic);
     } catch (const std::exception& ex) {
       std::fprintf(stderr, "renderer init failed: %s\n", ex.what());
       exitCode = 1;
