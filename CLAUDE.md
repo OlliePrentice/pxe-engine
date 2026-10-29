@@ -45,6 +45,8 @@ Nothing tests rendering automatically. `./build/<config>/game/pxe --help` lists 
 
 A refactor that should not change output must be **byte-identical**. `tools/ortho-check.sh <base>` and `tools/perspective-check.sh <base>` build the base commit in a scratch directory and the working tree, run each render mode's standard cases on both, and compare them (`--help` lists the cases). Run the check for every mode the change could reach. A change to the renderer, the shaders, the cameras or `Scene` and `Lighting` reaches both. Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
 
+Shell notes for this Mac: the shell is zsh, so pass multi-word arguments through `"$@"` or an array, and a pipe's exit codes are in `$pipestatus` (lowercase). BSD `sed -i` needs an empty suffix argument (`sed -i ''`).
+
 ## Workflow
 Features and fixes are planned first and implemented later, unattended:
 1. **Plan** with `/feature <request>` (`.claude/skills/feature/SKILL.md`), in a session started with `claude --model claude-opus-5-5 --effort high`. It interviews the user, settles the architecture, writes an implementation-ready spec per task in `docs/tasks/<task-id>/task.md` (with code examples where prose isn't enough) and queues the tasks in `docs/backlog.md`. It implements nothing.
