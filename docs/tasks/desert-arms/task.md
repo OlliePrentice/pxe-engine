@@ -1,7 +1,7 @@
 # The desert player's arms
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 The desert player is only an eye. Give it a pair of arms, seen in first person and themed for a sci-fi desert: the wanderer's wrapped forearms, dark leather gloves, and a brass bracer with a glowing teal gauge on the left forearm. They aren't animated in this task. They're a rigged model held in its rest pose, locked to the view.
@@ -318,3 +318,4 @@ Run in the task's worktree:
 None.
 
 ## Cycle log
+- Cycle 1: 2026-10-29 started, base f4f25c4
