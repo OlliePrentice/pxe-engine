@@ -131,6 +131,13 @@ tools/build.sh example -- --capture out.png
 tools/build.sh -h                  # usage
 ```
 
+To check that a change leaves the rendered output byte-identical to a base commit, run `tools/ortho-check.sh <base>` (the game and the example, through the orthographic camera) and `tools/perspective-check.sh <base>` (the desert game and the example's `--first-person`). Each builds the base once in a scratch directory, runs its cases on both builds and prints `PASS` or `FAIL` per case:
+
+```bash
+tools/ortho-check.sh main
+tools/perspective-check.sh HEAD~1
+```
+
 Without presets, the plain form still works (any build directory; `build/` is git-ignored):
 
 ```bash
