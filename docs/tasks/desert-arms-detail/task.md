@@ -1,7 +1,7 @@
 # Detailed arms and gadgets
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Raise the fidelity of the desert player's arms (`desert/assets/characters/arms.glb`, task `desert-arms`).
@@ -281,3 +281,4 @@ Run in the task's worktree:
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-29, base 505b604.
