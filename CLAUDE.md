@@ -41,8 +41,13 @@ A refactor that should not change output must be **byte-identical**. Build the b
 Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
 
 ## Workflow
-- Features and fixes run through the `/feature` skill (`.claude/skills/feature/SKILL.md`): spec in `docs/tasks/<task-id>/task.md`, code by the `game-developer` agent, assets by the `designer` agent (Blender through MCP), then a fresh build check and review. Task folders record every past change and its verification.
-- Independent tasks run in parallel, each in its own git worktree (see the skill).
+Features and fixes are planned first and implemented later, unattended:
+1. **Plan** with `/feature <request>` (`.claude/skills/feature/SKILL.md`), in a session started with `claude --model claude-opus-5-5 --effort high`. It interviews the user, settles the architecture, writes an implementation-ready spec per task in `docs/tasks/<task-id>/task.md` (with code examples where prose isn't enough) and queues the tasks in `docs/backlog.md`. It implements nothing.
+2. **Run** with `tools/backlog-loop.sh`, which runs `/backlog-run` (`.claude/skills/backlog-run/SKILL.md`) on Opus 5.5 at high effort, one fresh session per batch, until nothing is left. Each batch runs independent tasks in parallel, each in its own git worktree. Code goes to the `game-developer` agent (Sonnet 5.5, high), assets to the `designer` agent (Opus 5.5, medium; Blender through MCP), then a fresh build check, review, merge and docs update. `/backlog-run` also works for one batch in a session.
+3. **Retro.** Each batch ends by reading the agents' `friction.md` reports into `docs/friction-log.md`. It writes missing docs straight away, adds missing instructions to the skills and agents, and queues a tooling task once the same tool has been written by hand three times. `tools/README.md` lists the tools.
+4. **Unblock** with `/feature unblock` when a task stops on a question nobody could answer during the run.
+
+Task folders record every past change and its verification.
 
 ## Alignment review
 Every change the game-developer returns is checked against `docs/architecture.md` and `docs/engine-guide.md`, not only against its task spec. So is every merge into a working branch: a task branch merged back, another branch merged in, or `main` merged in. Review the merged diff (`git diff <branch before merge>..HEAD`), not just the task's.
@@ -55,6 +60,6 @@ Check that the change:
 
 Act on every discrepancy without asking the user first:
 - **In the change itself:** record it as an issue in the task's `issues.md` and send it back to game-developer as the next cycle.
-- **In code the change didn't touch, or found when reviewing a merge:** create a new task folder with its spec, and delegate it to game-developer. These alignment tasks don't need the user's confirmation of the spec. They still stop and ask when a fix would move, remove or restyle existing game content, change the game's output, or add an engine capability whose scope is unclear.
+- **In code the change didn't touch, or found when reviewing a merge:** create a new task folder with its spec, and queue it in `docs/backlog.md` for the run. These alignment tasks don't need the user's confirmation of the spec. They still need the user when a fix would move, remove or restyle existing game content, change the game's output, or add an engine capability whose scope is unclear: queue those as `blocked`, with the question.
 
-Once the developer has fixed every discrepancy and the review passes, bring the docs up to date with the code: `docs/architecture.md` (the "Where things live" table, and any new standing rule), `docs/engine-guide.md` (APIs, contracts, snippets, which must still match `examples/minimal/main.cpp` word for word) and `README.md` (features, build, flags). Commit the doc changes with the task's review.
+Once the developer has fixed every discrepancy, the review passes and the task is merged, bring the docs up to date with the code: `docs/architecture.md` (the "Where things live" table, and any new standing rule), `docs/engine-guide.md` (APIs, contracts, snippets, which must still match `examples/minimal/main.cpp` word for word) and `README.md` (features, build, flags). Commit the doc changes after the merge.
