@@ -71,7 +71,7 @@ Assets: yes
 Merged: b9c8d7a
 
 ## desert-arms-walk: The arms walk with the player
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms-walk/task.md
 Depends on: desert-arms-detail
