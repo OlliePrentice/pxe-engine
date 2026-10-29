@@ -51,3 +51,27 @@ Depends on: render-mode-split
 Touches: engine/include/pxe/renderer.hpp, engine/src/renderer_perspective.cpp, engine/src/gl.hpp, desert/src/arms.hpp, desert/src/arms.cpp, desert/src/main.cpp, desert/src/player.hpp, desert/CMakeLists.txt, desert/assets/characters/, desert/tools/blender/build_arms.py, desert/docs/art-style.md
 Assets: yes
 Merged: 89c5126
+
+## view-model-edges: Edges for the view model
+Status: queued
+Type: feature
+Spec: docs/tasks/view-model-edges/task.md
+Depends on: none
+Touches: engine/shaders/edge_perspective.frag, engine/src/renderer_perspective.cpp, docs/tasks/view-model-edges/
+Assets: no
+
+## desert-arms-detail: Detailed arms and gadgets
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-arms-detail/task.md
+Depends on: view-model-edges
+Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/src/arms.hpp, desert/src/arms.cpp, desert/docs/art-style.md, docs/tasks/desert-arms-detail/
+Assets: yes
+
+## desert-arms-walk: The arms walk with the player
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-arms-walk/task.md
+Depends on: desert-arms-detail
+Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/src/arms.hpp, desert/src/arms.cpp, desert/src/player.hpp, desert/src/player.cpp, desert/src/main.cpp, desert/docs/art-style.md, docs/tasks/desert-arms-walk/
+Assets: yes
