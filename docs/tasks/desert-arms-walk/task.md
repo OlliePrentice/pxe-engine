@@ -1,6 +1,6 @@
 # The arms walk with the player
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -201,15 +201,15 @@ Run in the task's worktree:
 8. **Stopping, by reading the code:** `walk()` snaps `moving_` to 0 only when the target is 0, and `pose()` uses `rest_` exactly when `moving_` is 0.
 
 ## Acceptance criteria
-- [ ] `arms.glb` has the clips `Arms_Walk` and `Arms_Sprint` only, each 1.0 s with 31 keys per joint channel, linear. Its mesh, skin, materials and rest pose are unchanged from `desert-arms-detail` (rest-pose vertices read back equal)
-- [ ] The build's clip checks pass (Assets): amplitudes and timing, framing and near clearance at every sampled frame, joint ranges, the 45° key-to-key limit, seamless loops, rest-keyed joints, attachment at 8 frames per clip, and the new closed-elbow test pose
-- [ ] `Player::moved` is the horizontal distance after the edge and trunk held the eye, 0 with no input
-- [ ] `desert::Arms` matches the binding interface and constants. `walk()` follows the binding shape, and `pose()` draws `rest_` exactly when `moving_` is 0 and otherwise blends walk→sprint by `sprinting_` and rest→that by `moving_`
-- [ ] `main.cpp` parses and validates `--walk` and `--sprint` as specified, runs the fixed-step walk before a capture, and calls `arms.walk` every play frame (0 while the cursor is free)
-- [ ] `desert/docs/art-style.md` has the binding "View-model clips" bullet, and nothing else in it changed
-- [ ] Verification 3–6 pass: perspective 3/3 and ortho 6/6 identical, the diff empty, the flags validated
-- [ ] The captures are in the task folder, deterministic, and show what Verification 7 describes
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `arms.glb` has the clips `Arms_Walk` and `Arms_Sprint` only, each 1.0 s with 31 keys per joint channel, linear. Its mesh, skin, materials and rest pose are unchanged from `desert-arms-detail` (rest-pose vertices read back equal) — Evidence: assets.md read-back (2 animations, 117 channels × 31 LINEAR keys, 1.0 s; 29,479 rest vertices max diff 0.0 m), designer commit 3381172.
+- [x] The build's clip checks pass (Assets): amplitudes and timing, framing and near clearance at every sampled frame, joint ranges, the 45° key-to-key limit, seamless loops, rest-keyed joints, attachment at 8 frames per clip, and the new closed-elbow test pose — Evidence: `build_arms.py` headless rebuild with `--python-exit-code 1` passes, two runs `cmp`-identical; measured values in assets.md (walk y ±1.5 cm, z ±2.5 cm; sprint y mean +1.5 cm, z ±5 cm; peaks at phases 0/0.5; max NDC y -0.383; min clearance 0.247 m; max step 2.23°).
+- [x] `Player::moved` is the horizontal distance after the edge and trunk held the eye, 0 with no input — Evidence: `desert/src/player.cpp` `Player::update`: `moved = glm::length(xz - before)` after the clamp and `outsidePalm`; `before == xz` with no input.
+- [x] `desert::Arms` matches the binding interface and constants. `walk()` follows the binding shape, and `pose()` draws `rest_` exactly when `moving_` is 0 and otherwise blends walk→sprint by `sprinting_` and rest→that by `moving_` — Evidence: `desert/src/arms.hpp` interface and `arms.cpp` constants, `Arms::walk` verbatim; `Arms::pose` skins `rest_` when `moving_ == 0.f`, else samples, blends walk→sprint by `sprinting_` and rest→that by `moving_`.
+- [x] `main.cpp` parses and validates `--walk` and `--sprint` as specified, runs the fixed-step walk before a capture, and calls `arms.walk` every play frame (0 while the cursor is free) — Evidence: `desert/src/main.cpp` `parseArgs` (0 < walk ≤ 10, sprint needs walk, both need a headless output), the binding fixed-step loop before the capture frames, `arms.walk(player.moved, dt)` / `arms.walk(0.f, dt)` in the play loop.
+- [x] `desert/docs/art-style.md` has the binding "View-model clips" bullet, and nothing else in it changed — Evidence: `git diff 980bdd5 -- desert/docs/art-style.md` adds only the binding bullet after "Test poses".
+- [x] Verification 3–6 pass: perspective 3/3 and ortho 6/6 identical, the diff empty, the flags validated — Evidence: orchestrator runs: perspective-check 3/3, ortho-check 6/6 against 980bdd5; Verification 5 diff 0 lines; `--help` lists both flags and the four bad arguments exit 1 with "bad argument".
+- [x] The captures are in the task folder, deterministic, and show what Verification 7 describes — Evidence: orchestrator re-rendered all five; each `cmp`-identical to the committed file; walk-low right hand forward and low, walk-left mirrored, walk-mid level and raised, sprint raised with fists, walk-night gauge and lamp glowing.
+- [x] Project builds cleanly from a fresh build directory with CMake — Evidence: orchestrator `cmake --preset check --fresh && cmake --build --preset check --clean-first`: only the stb_image_write `sprintf` warning.
 
 ## Assets
 - **arms** (clips added): the rebuilt arms of `desert-arms-detail`, plus two clips. Nothing else in the glb changes.
@@ -258,8 +258,21 @@ Run in the task's worktree:
 - Changing the mesh, materials, rest pose or framing rules of `desert-arms-detail`
 - Engine changes
 
+## Playtest checklist
+Nothing has played the game; these are the behavioural checks. Run `build/release/desert/pxe_desert`.
+- Standing still from the start, the arms are exactly as before: no breathing or sway.
+- Hold W: both hands bob twice per stride and swing fore and aft in turn (left forward as right goes back), forearms rocking a little. The view itself never bobs.
+- Hold W+Shift: bigger swings, hands lifted, fingers curled into loose fists. The swing keeps pace with the ground, with no sliding feel at walk or sprint.
+- Release the keys: the walk eases out in about half a second and the arms settle to the exact rest pose.
+- S, A and D also swing the arms.
+- Walk into the play-area edge or straight into the palm trunk and keep pushing: the arms stay still. Slide along the trunk at an angle: they swing.
+- Walk over dunes: only the walking swings the arms, not the eye rising and falling.
+- Press Escape while walking: the arms settle to rest. Click to resume.
+- Gamepad: the left stick walks with the same swing; pressing it in sprints.
+
 ## Spec revisions
 None.
 
 ## Cycle log
 - Cycle 1, 2026-10-29, base 55838cc
+- Cycle 1 review, 2026-10-29: build, Verification 1–8 and review pass; no issues. Complete.
