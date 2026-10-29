@@ -44,7 +44,7 @@ Assets: no
 Merged: cab03e7
 
 ## desert-arms: The desert player's arms
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms/task.md
 Depends on: render-mode-split
