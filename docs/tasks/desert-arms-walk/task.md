@@ -1,7 +1,7 @@
 # The arms walk with the player
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 The desert player's arms are held still in their rest pose whatever the player does. Give them a walk: two looping clips, `Arms_Walk` and `Arms_Sprint`, authored in `build_arms.py`. The game plays them with a phase driven by the distance the eye actually moves across the ground, blended in by speed. So the arms keep step at any speed and settle back to the exact rest pose when the player stops. The camera doesn't move: only the arms do. A new `--walk <seconds>` capture flag (with `--sprint`) lets the run see the walk, since nobody plays during it.
@@ -262,3 +262,4 @@ Run in the task's worktree:
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-29, base 55838cc
