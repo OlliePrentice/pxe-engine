@@ -33,10 +33,10 @@ Home `game` is `game/`, `desert` is `desert/`.
 
 | Area | Home | Status |
 |---|---|---|
-| Rendering, shaders, toon ramps, edge pass, water, rain, god rays | engine | in place |
+| Rendering, shaders, toon ramps, edge pass, water, rain, god rays | engine | in place: the orthographic frame in `engine/src/renderer_orthographic.cpp` and its edge pass `engine/shaders/edge.frag`; the machinery both modes share in `engine/src/renderer.cpp` and `renderer_internal.hpp` |
 | Meshes, glTF loading, skinning and animation clips | engine | in place |
 | Camera, lighting, day/night palette blending | engine | in place |
-| Perspective first-person camera, and what the renderer draws under it: the sky backdrop (horizon-to-zenith bands, default palettes per phase blended by time of day), distance haze into the horizon colour, the eye-fitted shadow map, the perspective edge pass | engine | in place: `pxe::FirstPersonCamera`, `CameraFrame::projection`, `Scene::skyHorizon`/`skyZenith`, `Lighting::skyHorizon`/`skyZenith` |
+| Perspective first-person camera, and what the renderer draws under it: the sky backdrop (horizon-to-zenith bands, default palettes per phase blended by time of day), distance haze into the horizon colour, the eye-fitted shadow map, the perspective edge pass | engine | in place: `pxe::FirstPersonCamera`, `pxe::PerspectiveFrame`, `pxe::RenderMode::kPerspective`, the perspective frame in `engine/src/renderer_perspective.cpp` and its edge pass `engine/shaders/edge_perspective.frag`, `Scene::skyHorizon`/`skyZenith`, `Lighting::skyHorizon`/`skyZenith` |
 | Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | in place: `pxe::Weather`, `pxe::lightingAt(scene, hour, weather)` |
 | Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
 | Desert ground: a sand surface with default palettes for every phase, walkable like grass and dirt | engine | in place: `pxe::kSurfSand`, glTF material `Sand` |
