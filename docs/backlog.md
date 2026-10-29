@@ -62,7 +62,7 @@ Assets: no
 Merged: d64d2de
 
 ## desert-arms-detail: Detailed arms and gadgets
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms-detail/task.md
 Depends on: view-model-edges
