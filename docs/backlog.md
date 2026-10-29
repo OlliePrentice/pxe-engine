@@ -35,7 +35,7 @@ Assets: no
 Merged: 02ecc72
 
 ## render-mode-split: Orthographic and perspective as separate render modes
-Status: queued
+Status: in-progress
 Type: alignment
 Spec: docs/tasks/render-mode-split/task.md
 Depends on: render-mode-checks
