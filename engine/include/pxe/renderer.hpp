@@ -4,6 +4,7 @@
 #include "pxe/config.hpp"
 #include "pxe/fire.hpp"
 #include "pxe/firegrid.hpp"
+#include "pxe/first_person_camera.hpp"
 #include "pxe/lighting.hpp"
 #include "pxe/scene.hpp"
 #include "pxe/skinned.hpp"
@@ -115,6 +116,12 @@ struct PassTimes {
   static const char* name(int pass);
 };
 
+// Which camera a renderer draws through, fixed by init() for the renderer's
+// life. Each mode has its own frame and edge pass; they share the scene,
+// mesh, shadow-map and present machinery. Work on one mode never changes
+// the other's output (docs/architecture.md, "Render modes").
+enum class RenderMode { kOrthographic, kPerspective };
+
 class Renderer {
  public:
   Renderer() = default;
@@ -122,7 +129,12 @@ class Renderer {
   Renderer(const Renderer&) = delete;
   Renderer& operator=(const Renderer&) = delete;
 
-  void init();
+  // Set the renderer up for `mode` (a GL context must be current). The mode
+  // is fixed for the renderer's life: an orthographic renderer draws only
+  // CameraFrames and never links the perspective programs, and the reverse.
+  // A program that wants both views needs two renderers.
+  void init(RenderMode mode);
+  RenderMode mode() const { return mode_; }
   // Time each pass on the GPU (blocks at the end of every frame; for --bench).
   void setProfiling(bool on) { profiling_ = on; }
   const PassTimes& passTimes() const { return passTimes_; }
@@ -148,26 +160,29 @@ class Renderer {
   // A point of the window (framebuffer pixels from its top left, `fbW` x
   // `fbH`) as presented for `camera`: the view ray through it starts at the
   // returned point on the camera's plane and runs along camera.forward.
-  // Orthographic cameras only.
+  // Orthographic mode only: throws std::invalid_argument in perspective mode.
   glm::vec3 rayThrough(const CameraFrame& camera, int fbW, int fbH, glm::vec2 px) const;
-  // And back: where a world point shows in the window. Orthographic
-  // cameras only.
+  // And back: where a world point shows in the window. Orthographic mode
+  // only: throws std::invalid_argument in perspective mode.
   glm::vec2 windowPoint(const CameraFrame& camera, int fbW, int fbH, glm::vec3 world) const;
-  // Draw a frame. `scene` must be the scene last passed to upload(): the
-  // renderer keeps shadow maps drawn from it between frames and redraws them
-  // only when the light changes or upload() is called again, never by
-  // checking which scene it is given. Throws std::invalid_argument, before
-  // drawing anything, if params.present is set without a positive
-  // framebuffer size.
-  //
-  // Through a perspective camera (FirstPersonCamera) the sky fills the
-  // background and surfaces fade into its horizon colour toward the far
-  // plane; the sun's shadow map covers 60 m round the eye, pushed ahead
-  // along the view, and nothing beyond it is shadowed. Not yet supported
-  // there, and skipped whatever params says: grass and leaf sprites, water
-  // and its reflections, god rays, rain, fires (their flames and light) and
-  // the grass fire, fireflies and point lights.
+  // Draw a frame through Camera, in orthographic mode. `scene` must be the
+  // scene last passed to upload(): the renderer keeps shadow maps drawn from
+  // it between frames and redraws them only when the light changes or
+  // upload() is called again, never by checking which scene it is given.
+  // Throws std::invalid_argument, before drawing anything, if params.present
+  // is set without a positive framebuffer size, or in perspective mode.
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
+  // Draw a frame through FirstPersonCamera, in perspective mode. The sky
+  // fills the background and surfaces fade into its horizon colour toward
+  // the far plane; the sun's shadow map covers 60 m round the eye, pushed
+  // ahead along the view, and nothing beyond it is shadowed. Not yet
+  // supported, and skipped whatever params says: grass and leaf sprites,
+  // water and its reflections, god rays, rain, fires (their flames and
+  // light) and the grass fire, fireflies and point lights. The same
+  // contract on `scene` and params.present as the orthographic render.
+  // Throws std::invalid_argument, before drawing anything, in orthographic
+  // mode.
+  void render(const Scene& scene, const PerspectiveFrame& camera, const FrameParams& params);
 
   // Centre RenderConfig::kViewW x kViewH of the low-res target (the view
   // without its padding), bottom-up RGBA8. This is the snapped image,
@@ -177,9 +192,6 @@ class Renderer {
   std::vector<std::uint8_t> readPresented(int width, int height);
 
  private:
-  // render() past its checks, with params already cut down to what the
-  // camera supports.
-  void draw(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
   void destroyTargets();
   void createTargets();
   void createQuads();
@@ -190,7 +202,7 @@ class Renderer {
   // Cut the point lights into per-tile lists for the edge pass and upload
   // them; returns how many lights there are.
   int uploadPointLights(const CameraFrame& camera);
-  void drawPresent(const CameraFrame& camera, const FrameParams& params);
+  void drawPresent(glm::vec2 texelError, const FrameParams& params);
   // Draw the scene's meshes (and sprites, if shown) with the given mirror.
   void drawMeshes(const Scene& scene, const FrameParams& params, const glm::mat4& viewProj, const glm::mat4& mirror,
                   float clipBelow);
@@ -292,7 +304,7 @@ class Renderer {
   // [grass fire]: [1] adds the grid's glow and darkens charred ground in
   // the firelight; [0] is the edge pass as it always was.
   unsigned edge_[2] = {};
-  unsigned edgePerspective_ = 0;  // the edge pass for a perspective camera
+  unsigned edgePerspective_ = 0;  // the edge pass for a perspective camera; perspective mode only
   unsigned progWater_ = 0;
   struct ToonPrograms {
     unsigned mesh = 0, grass = 0, water = 0;
@@ -323,10 +335,10 @@ class Renderer {
   unsigned skyVbo_ = 0;
   int skyVertices_ = 0;
   // The sky behind a perspective view, over the whole target at the far
-  // plane.
+  // plane; perspective mode only.
   unsigned progBackdrop_ = 0;
 
-
+  RenderMode mode_ = RenderMode::kOrthographic;
   bool ready_ = false;
   bool profiling_ = false;
   // The shadow maps are only redrawn when the light changes or they are
@@ -334,7 +346,7 @@ class Renderer {
   glm::vec3 shadowLight_{0.f};
   glm::vec3 flashLight_{0.f};
   // And when the map's fit changes: under a perspective camera it follows
-  // the eye.
+  // the eye. Perspective mode only.
   glm::mat4 shadowFit_{1.f};
   glm::mat4 flashFit_{1.f};
   bool shadowValid_ = false;  // the sun's map holds the uploaded scene from shadowLight_

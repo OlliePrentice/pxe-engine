@@ -126,7 +126,6 @@ void Camera::basis(float yaw, glm::vec3& forward, glm::vec3& right, glm::vec3& u
 
 CameraFrame Camera::frame(int rtW, int rtH) const {
   CameraFrame f;
-  f.projection = CameraFrame::Projection::kOrthographic;
   f.yawRadians = yaw_;
   f.pitchRadians = kPitch;
   f.pixelsPerUnit = RenderConfig::kPixelsPerUnit;
