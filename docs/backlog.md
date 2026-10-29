@@ -44,9 +44,10 @@ Assets: no
 Merged: cab03e7
 
 ## desert-arms: The desert player's arms
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-arms/task.md
 Depends on: render-mode-split
 Touches: engine/include/pxe/renderer.hpp, engine/src/renderer_perspective.cpp, engine/src/gl.hpp, desert/src/arms.hpp, desert/src/arms.cpp, desert/src/main.cpp, desert/src/player.hpp, desert/CMakeLists.txt, desert/assets/characters/, desert/tools/blender/build_arms.py, desert/docs/art-style.md
 Assets: yes
+Merged: 89c5126
