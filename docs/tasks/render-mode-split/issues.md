@@ -1,7 +1,7 @@
 # render-mode-split issues
 
 ## ISSUE-001: Python bytecode committed in the task's scripts
-Status: fixed
+Status: resolved
 Severity: minor
 Source: review
 Found in cycle: 1

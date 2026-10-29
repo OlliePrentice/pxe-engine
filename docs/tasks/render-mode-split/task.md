@@ -1,6 +1,6 @@
 # Orthographic and perspective as separate render modes
 Type: alignment
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -289,20 +289,20 @@ Run from the task's worktree.
 7. Performance numbers recorded as in step 9 of the Approach, with the split's median at most 1.02 × `main`'s.
 
 ## Acceptance criteria
-- [ ] `pxe::RenderMode { kOrthographic, kPerspective }` exists. `Renderer::init(RenderMode)` takes it with no default, and `Renderer::mode()` returns it
-- [ ] `Renderer::render` has a `CameraFrame` overload and a `PerspectiveFrame` overload. Each throws `std::invalid_argument` with the spec's message, before drawing, when the renderer is in the other mode. `rayThrough` and `windowPoint` throw in perspective mode
-- [ ] An orthographic renderer links neither `edge_perspective.frag` nor `backdrop.frag`, and a perspective renderer doesn't link the `edge.frag` programs
-- [ ] `PerspectiveFrame` is declared in `first_person_camera.hpp` with exactly the fields in step 1, and `FirstPersonCamera::frame` returns it
-- [ ] `camera.hpp` and `camera.cpp` are identical to `main`'s
-- [ ] `edge.frag` differs from `main`'s only in `kSurfaces` and `kSurfActorCrease`
-- [ ] `edge_perspective.frag` exists and is in `PXE_SHADERS`. It has no `#ifdef`s for `PERSPECTIVE` or `FIRE_GRID`, and none of the god-ray, point-light, rain or fire code, except a feature the handoff records as kept because removing it changed the output
-- [ ] The orthographic frame is in `renderer_orthographic.cpp`, its body equal to `main`'s `Renderer::render` but for the mode check and the `drawPresent` argument (Verification 5's `diff`). The perspective frame is in `renderer_perspective.cpp`. `renderer.cpp` names perspective only in `init` and the destructor
-- [ ] Helpers shared between the renderer files are in `engine/src/renderer_internal.hpp`, in `pxe::detail`
-- [ ] `game/src/main.cpp` inits orthographic, `desert/src/main.cpp` perspective, and the example by `--first-person`
-- [ ] `tools/ortho-check.sh <cycle base>`, `tools/perspective-check.sh <cycle base>` and `tools/ortho-check.sh main` all pass
-- [ ] The handoff records five `--bench 600` runs per side and their medians. The split's median is at most 1.02 × `main`'s
-- [ ] The engine names no game content and includes no game headers
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `pxe::RenderMode { kOrthographic, kPerspective }` exists. `Renderer::init(RenderMode)` takes it with no default, and `Renderer::mode()` returns it — renderer.hpp `RenderMode`, `init(RenderMode)`, `mode()`
+- [x] `Renderer::render` has a `CameraFrame` overload and a `PerspectiveFrame` overload. Each throws `std::invalid_argument` with the spec's message, before drawing, when the renderer is in the other mode. `rayThrough` and `windowPoint` throw in perspective mode — both overloads' first statement; rayThrough/windowPoint checks; scripts/mode_mismatch.sh passed
+- [x] An orthographic renderer links neither `edge_perspective.frag` nor `backdrop.frag`, and a perspective renderer doesn't link the `edge.frag` programs — renderer.cpp `init`: edge_ only in ortho, edgePerspective_/progBackdrop_ only in perspective
+- [x] `PerspectiveFrame` is declared in `first_person_camera.hpp` with exactly the fields in step 1, and `FirstPersonCamera::frame` returns it — first_person_camera.hpp, `FirstPersonCamera::frame`
+- [x] `camera.hpp` and `camera.cpp` are identical to `main`'s — `git diff main` empty
+- [x] `edge.frag` differs from `main`'s only in `kSurfaces` and `kSurfActorCrease` — `git diff main` shows only kSurfaces and kSurfActorCrease
+- [x] `edge_perspective.frag` exists and is in `PXE_SHADERS`. It has no `#ifdef`s for `PERSPECTIVE` or `FIRE_GRID`, and none of the god-ray, point-light, rain or fire code, except a feature the handoff records as kept because removing it changed the output — in PXE_SHADERS; no ifdefs; all four features removed, none kept (handoff)
+- [x] The orthographic frame is in `renderer_orthographic.cpp`, its body equal to `main`'s `Renderer::render` but for the mode check and the `drawPresent` argument (Verification 5's `diff`). The perspective frame is in `renderer_perspective.cpp`. `renderer.cpp` names perspective only in `init` and the destructor — Verification 5 diff: only the mode check and drawPresent line; renderer.cpp names perspective only in init/destructor
+- [x] Helpers shared between the renderer files are in `engine/src/renderer_internal.hpp`, in `pxe::detail` — engine/src/renderer_internal.hpp, `pxe::detail`
+- [x] `game/src/main.cpp` inits orthographic, `desert/src/main.cpp` perspective, and the example by `--first-person` — game, desert and example init calls
+- [x] `tools/ortho-check.sh <cycle base>`, `tools/perspective-check.sh <cycle base>` and `tools/ortho-check.sh main` all pass — orchestrator: 6/6 vs 5dbaca2, 6/6 vs main 3b5daed, perspective 3/3
+- [x] The handoff records five `--bench 600` runs per side and their medians. The split's median is at most 1.02 × `main`'s — medians 3.79 split vs 3.80 main (0.997)
+- [x] The engine names no game content and includes no game headers — diff reviewed
+- [x] Project builds cleanly from a fresh build directory with CMake — fresh check build, cycle 2: stb warning only
 
 ## Assets
 None.
@@ -322,3 +322,9 @@ None.
 - Cycle 1: 2026-10-29 started, base 5dbaca2
 - Cycle 1 review: fresh build clean (stb warning only); orchestrator reran ortho-check (6/6 vs 5dbaca2 and vs main 3b5daed) and perspective-check (3/3); structure checks 5.1, 5.2, 5.4-5.6 as specified; bench median 3.79 vs main's 3.80 ms. Replan 1 (Verification 5.3 grep). ISSUE-001 open.
 - Cycle 2: 2026-10-29 started, base 80a4b91, fixing ISSUE-001
+- Cycle 2 review: ISSUE-001 resolved (pyc removed); fresh build clean; revised Verification 5.3 grep as specified. Task complete.
+
+## Playtest checklist
+- `tools/build.sh release game`: play as usual; the game should look and behave exactly as before (the captures are byte-identical to main).
+- `tools/build.sh release desert`: walk, look round and sprint; the sky, haze, shadows and outlines should look as before.
+- `./build/release/examples/minimal/pxe_minimal` and `--first-person`: both cameras work as before; Q/E still turn the orthographic one, the mouse and WASD drive the first-person one.
