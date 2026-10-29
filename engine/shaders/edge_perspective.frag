@@ -106,6 +106,12 @@ uniform vec3 uRight;
 uniform vec3 uUp;
 uniform vec3 uFwd;
 uniform float uNear;
+uniform float uFar;            // the far plane, metres (uNear is the near one)
+uniform vec2 uTanHalf;         // tangents of half the horizontal and vertical field of view
+uniform float uPixelAngle;     // metres across one pixel per metre of distance
+uniform float uRefTexel;       // metres across one pixel of the orthographic view, which kSilhouette suits
+uniform vec3 uHaze;            // the sky's horizon colour
+uniform vec2 uHazeSpan;        // distances where the haze starts and is full, metres
 // The view model (pxe::FrameParams::viewModel) is drawn into [0,
 // uViewModelDepth] of the depth range, in front of the whole scene: a pixel
 // whose depth is below it is the view model's, and its true depth is its
@@ -113,12 +119,6 @@ uniform float uNear;
 uniform float uViewModelDepth;
 // Metres of depth step that count as an outline inside the view model.
 const float kViewModelStep = 0.01;
-uniform float uFar;            // the far plane, metres (uNear is the near one)
-uniform vec2 uTanHalf;         // tangents of half the horizontal and vertical field of view
-uniform float uPixelAngle;     // metres across one pixel per metre of distance
-uniform float uRefTexel;       // metres across one pixel of the orthographic view, which kSilhouette suits
-uniform vec3 uHaze;            // the sky's horizon colour
-uniform vec2 uHazeSpan;        // distances where the haze starts and is full, metres
 
 out vec4 oColor;
 

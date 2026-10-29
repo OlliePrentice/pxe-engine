@@ -49,3 +49,31 @@ None. `kViewModelStep` stays at 0.01 m: no ink across a continuous surface was s
 
 ### Known limitations
 - Texels outside the target (a neighbour past the frame edge) are read with `texelFetch` as before; with a view model they may read as depth 0, so a view-model pixel on the very edge of the frame (arms at the bottom row) may not outline against the frame edge. Not seen as an issue in the captures.
+
+## Cycle 2
+Build: pass (fresh `cmake --preset check --fresh && cmake --build --preset check --clean-first`: only the stb_image_write `sprintf` warning)
+
+### Changes
+- engine/shaders/edge_perspective.frag: moved the `uViewModelDepth` / `kViewModelStep` block, unchanged, to directly after `uniform vec2 uHazeSpan;`, so `uNear` and `uFar` sit together again. `viewModelAt` stays where it was.
+
+### Issues addressed
+- ISSUE-001: uniform block moved after the camera uniform group; fixed.
+
+### Verification
+- Fresh desert captures (day, `--hour 21`) are byte-identical (`cmp`) to the committed `edges-day.png` and `edges-night.png`.
+- `tools/ortho-check.sh 37c2178`: 6/6 cases identical.
+- `tools/perspective-check.sh 37c2178`: 1/3 identical, as in cycle 1: `example-first-person` PASS; `desert-default` and `desert-night` differ (the intended change).
+
+### Layering
+- Engine: none new (a declaration moved within one shader).
+- Game: none.
+- Misplaced code touched: none
+
+### How to playtest
+- As in cycle 1; nothing visible changes.
+
+### Docs
+- As in cycle 1.
+
+### Known limitations
+- As in cycle 1.
