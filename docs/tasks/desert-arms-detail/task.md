@@ -1,6 +1,6 @@
 # Detailed arms and gadgets
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -176,16 +176,16 @@ Run in the task's worktree:
 9. Designer previews present (Assets).
 
 ## Acceptance criteria
-- [ ] `build_arms.py` builds `arms.glb`, and a headless rebuild passes every check: the existing ones and the new ones in Assets
-- [ ] The glb has one skinned mesh with the same 39 joints at the same rest transforms (to 1e-6 m), the 14 materials in slot order with the listed colours, `Arms_Glow` and `Arms_Amber` emissive and no others, no clips, and 12,000–20,000 triangles
-- [ ] The gauge's bars measure where `docs/tasks/desert-arms/assets.md` records them (NDC y -0.970..-0.857, x -0.851..-0.686, ±0.005), and the gauge check passes
-- [ ] The compass checks pass (Assets), and the dial, the three toggles and at least 2 bezel screws are seen
-- [ ] Every seen small part listed in Assets is at least 3 px. Every round part in a creased material has at least 10 sides
-- [ ] `assets.md` documents the asset as `desert/docs/art-style.md`'s Delivery section asks, with the measured framing, near clearance, gauge, compass and small-part widths. The four previews are beside the glb
-- [ ] `desert/docs/art-style.md` has the binding changes above, and nothing else in it changed
-- [ ] `arms.cpp` names the 14 offsets and sets crease on Wrap, Glove, Brass, Worn and Grime only. The `arms.hpp` comment lists slots 0–13
-- [ ] Verification 3–6 pass. The captures are in the task folder and show what Verification 7 and 8 describe
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `build_arms.py` builds `arms.glb`, and a headless rebuild passes every check: the existing ones and the new ones in Assets — Headless `Blender -b -P desert/tools/blender/build_arms.py` run twice by the orchestrator: no check raised (`main()` raises before export on any problem), both glbs `cmp`-identical and equal to the committed one.
+- [x] The glb has one skinned mesh with the same 39 joints at the same rest transforms (to 1e-6 m), the 14 materials in slot order with the listed colours, `Arms_Glow` and `Arms_Amber` emissive and no others, no clips, and 12,000–20,000 triangles — `check_glb` read-back: 15,844 triangles, 39 joints, 14 materials with the listed sRGB, glow only on Glow and Amber; joints and inverse binds identical to 505b604 (scripts/compare_joints.py, assets.md).
+- [x] The gauge's bars measure where `docs/tasks/desert-arms/assets.md` records them (NDC y -0.970..-0.857, x -0.851..-0.686, ±0.005), and the gauge check passes — Build log: NDC y -0.970..-0.857, x -0.851..-0.686, 17.9–19.0 px (assets.md).
+- [x] The compass checks pass (Assets), and the dial, the three toggles and at least 2 bezel screws are seen — Build log: face cos 1.000, 216/216 vertices in view and unblocked, 46.7 px, lamp 5.3 px, lid top NDC -0.610; dial, 3 toggles and screws 1–2 seen.
+- [x] Every seen small part listed in Assets is at least 3 px. Every round part in a creased material has at least 10 sides — Build log: screws 7.9/8.3 px, toggle tips 5.8, index 4.6, needle 5.9, ticks 4.0–5.3, knurl pitch 3.73–4.90; 45 creased round parts, fewest 12 sides.
+- [x] `assets.md` documents the asset as `desert/docs/art-style.md`'s Delivery section asks, with the measured framing, near clearance, gauge, compass and small-part widths. The four previews are beside the glb — docs/tasks/desert-arms-detail/assets.md; arms_eye/arms/arms_left/arms_right.png in desert/assets/characters/.
+- [x] `desert/docs/art-style.md` has the binding changes above, and nothing else in it changed — `git diff 505b604 -- desert/docs/art-style.md`: the four binding edits only, word for word.
+- [x] `arms.cpp` names the 14 offsets and sets crease on Wrap, Glove, Brass, Worn and Grime only. The `arms.hpp` comment lists slots 0–13 — desert/src/arms.cpp anonymous namespace kWrap..kAmber, `Arms::pose` line 49; arms.hpp kFirstMaterial comment.
+- [x] Verification 3–6 pass. The captures are in the task folder and show what Verification 7 and 8 describe — Orchestrator: ortho-check 6/6 identical; perspective-check example-first-person identical, desert-default/night differ; diff of listed paths empty; crease grep line 49 only. Six captures reviewed; day and night recaptures `cmp`-identical.
+- [x] Project builds cleanly from a fresh build directory with CMake — Orchestrator's `check` preset fresh, clean-first build: only the stb_image_write sprintf warning.
 
 ## Assets
 - **arms** (rebuilt): the player's two arms, seen in first person, as in `desert-arms`, with the detail in Decisions. Low-poly and flat-shaded, one solid colour per material, no textures, under the view-model detail rule (`desert/docs/art-style.md`, as amended here).
@@ -282,3 +282,12 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-29, base 505b604.
+- Cycle 1 review: designer d7178a7 (asset, art style), developer cdfaabe (code, captures). No issues. Accepted the designer's two calls as within the spec: the elbow-side bezel screws sit on the bezel's wall at its corners, out of view (the spec asks for 2 of 4 seen); the per-part triangle guide was not met but the binding 12,000–20,000 total was (15,844).
+
+## Playtest checklist
+- `tools/build.sh release desert`. Look at the hands: stitched dashes along the fingers, thumbs and cuffs, knuckle pads, worn patches, and the grime bands on the wraps.
+- Left wrist: the three teal bars where they were, the steel bezel screws, the knurled dial with its red index mark, the three red-tipped toggles, the coil, the canister and its valve wheel.
+- Right wrist: the sun compass tilted toward you, ivory face, 12 red ticks, the needle, the amber lamp, the two side buttons and the propped lid.
+- Turn and look about: the arms stay fixed in the view with no gaps or floating detail. Walk into the palm trunk and look down at the sand: the arms stay whole and in front.
+- `--hour 21` and `--hour 18.5`: the teal bars and the amber lamp keep glowing.
+- The arms are now about 15,800 triangles (was about 2,500): check the frame rate still feels smooth.
