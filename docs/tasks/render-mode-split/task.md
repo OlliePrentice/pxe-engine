@@ -1,7 +1,7 @@
 # Orthographic and perspective as separate render modes
 Type: alignment
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 The perspective camera (task `perspective-camera`) was added inside the orthographic renderer. `Renderer::draw` is one function with `perspective` branches mixed through it. `edge.frag` serves both cameras through eight `#ifdef PERSPECTIVE` blocks inside shared rules. `CameraFrame` carries fields that mean nothing to one camera or the other. The orthographic output has stayed byte-identical so far, but any future tuning of either camera would have to trade off against the other.
@@ -321,3 +321,4 @@ None.
 ## Cycle log
 - Cycle 1: 2026-10-29 started, base 5dbaca2
 - Cycle 1 review: fresh build clean (stb warning only); orchestrator reran ortho-check (6/6 vs 5dbaca2 and vs main 3b5daed) and perspective-check (3/3); structure checks 5.1, 5.2, 5.4-5.6 as specified; bench median 3.79 vs main's 3.80 ms. Replan 1 (Verification 5.3 grep). ISSUE-001 open.
+- Cycle 2: 2026-10-29 started, base 80a4b91, fixing ISSUE-001
