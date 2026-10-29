@@ -53,7 +53,7 @@ Assets: yes
 Merged: 89c5126
 
 ## view-model-edges: Edges for the view model
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/view-model-edges/task.md
 Depends on: none
