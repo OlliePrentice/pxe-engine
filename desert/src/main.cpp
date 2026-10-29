@@ -1,12 +1,13 @@
 // pxe_desert: a first-person walk over sand dunes to a date palm, in the
-// engine's pixel-art style. The view is from the eye at real scale, with no
-// body, tools or HUD.
+// engine's pixel-art style. The view is from the eye at real scale, with the
+// player's arms, no tools or HUD.
 //
 // Keyboard and mouse: the mouse looks, WASD walks, Shift sprints. The cursor
 // is held while playing; Escape lets it go, Escape again quits, and a click
 // in the window takes it back. Gamepad: the left stick walks, the right
 // stick looks, and the left stick pressed in sprints while held.
 
+#include "arms.hpp"
 #include "player.hpp"
 #include "world.hpp"
 
@@ -114,7 +115,7 @@ desert::PlayerInput readInput(const pxe::Input& input, float dt) {
 }
 
 // One frame's draw list, built fresh: the scene lit at the fixed hour under
-// a clear, still sky. Nothing else is drawn.
+// a clear, still sky. The player's arms are added on top (Arms::pose).
 pxe::FrameParams frameParams(const desert::World& world, glm::ivec2 framebuffer, float time, float hour) {
   pxe::FrameParams params;
   params.framebufferW = framebuffer.x;
@@ -147,6 +148,9 @@ int main(int argc, char** argv) {
     desert::World world = desert::buildWorld();
     renderer.upload(world.scene);
 
+    desert::Arms arms;
+    arms.load();
+
     // At the engine's default 60 degree field of view and 300 m far plane.
     pxe::FirstPersonCamera camera;
     desert::Player player;
@@ -156,9 +160,11 @@ int main(int argc, char** argv) {
     if (headless) {
       // A few frames at fixed times, so a capture is the same on every run.
       for (int f = 0; f < kCaptureFrames; ++f) {
-        const pxe::FrameParams params =
+        pxe::FrameParams params =
             frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f, opt.hour);
-        renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
+        const pxe::PerspectiveFrame view = camera.frame(renderer.rtW(), renderer.rtH());
+        arms.pose(view, params);
+        renderer.render(world.scene, view, params);
       }
       bool ok = true;
       if (!opt.capture.empty()) {
@@ -210,8 +216,10 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
         continue;
       }
-      const pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now), opt.hour);
-      renderer.render(world.scene, camera.frame(renderer.rtW(), renderer.rtH()), params);
+      pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now), opt.hour);
+      const pxe::PerspectiveFrame view = camera.frame(renderer.rtW(), renderer.rtH());
+      arms.pose(view, params);
+      renderer.render(world.scene, view, params);
       window.swap();
     }
   } catch (const std::exception& e) {

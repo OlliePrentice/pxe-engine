@@ -9,3 +9,5 @@
 ## game-developer cycle 1
 - instruction-gap: the spec says "No other engine file changes" but its binding block calls glDepthRange, which engine/src/gl.hpp's PXE_GL_EACH loader table doesn't have. I found it from the compile error. A spec using any GL call in engine code should check the table (grep the call in engine/src/gl.hpp).
 - doc-gap: a stale rebuild after a temporary edit: `cp` restoring main.cpp did not make `tools/build.sh` recompile it, so a capture still showed the edited pose. I found it by comparing the captures with cmp and `touch`ed the file. Rebuild with `touch` after reverting a temporary edit.
+## game-developer cycle 2
+- none

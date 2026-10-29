@@ -2,6 +2,7 @@
 # palm. It uses only the engine; its assets are its own, under
 # desert/assets.
 add_executable(pxe_desert
+  src/arms.cpp
   src/main.cpp
   src/player.cpp
   src/world.cpp

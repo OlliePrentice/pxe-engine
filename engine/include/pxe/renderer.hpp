@@ -107,6 +107,14 @@ struct FrameParams {
   // Drawn with the characters but casting no shadow, already in world space:
   // a sword's glowing smear.
   std::vector<const Mesh*> actorEffects;
+  // Perspective mode only (ignored in orthographic mode): characters
+  // attached to the view, such as a first-person view's arms or a held
+  // tool, posed in world space in front of the eye. They are drawn after
+  // the scene and the sky, in front of everything, so the scene never cuts
+  // or hides them. They take the scene's light and its shadows as other
+  // characters do, but cast none. Their materials come from actorMaterials,
+  // and their joints must last until the frame is drawn, as for actors.
+  std::vector<ActorDraw> viewModel;
 };
 
 // GPU milliseconds per pass for the last frame, when profiling is on.
