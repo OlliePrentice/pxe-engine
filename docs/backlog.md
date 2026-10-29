@@ -26,7 +26,7 @@ Tasks run in the order listed. Add new ones at the bottom, except tooling tasks 
 # Tasks
 
 ## render-mode-checks: Byte-identical checks per render mode
-Status: queued
+Status: in-progress
 Type: tooling
 Spec: docs/tasks/render-mode-checks/task.md
 Depends on: none
