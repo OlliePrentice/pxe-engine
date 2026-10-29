@@ -47,6 +47,9 @@ Default to glTF 2.0 binary (`.glb`) unless the task or the existing project spec
 - Name objects, meshes and materials meaningfully. The developer will reference them in code.
 - After exporting, check the exported file: re-import it into a scratch scene, or inspect it, to confirm it contains what the manifest says. Blender's glTF importer adds a bone-shape `Icosphere` mesh in a `glTF_not_exported` collection for a skinned file, so count only the meshes with an Armature modifier.
 - To build step by step in the live session, keep the builder between `execute_blender_code` calls in `bpy.app.driver_namespace` (the namespace persists for the session); module-level variables don't survive between calls.
+- Detail on a skinned surface whose weights blend (a cuff between forearm and hand) takes the weights skinning gives that surface at the detail's position: interpolate the weights of the surface's own vertices (its rings), not the blend function evaluated at the detail's position. Skinning interpolates a facet linearly between its vertices' weights, so the two differ, and the detail drifts off in posed checks.
+- Render previews with the Standard view transform (`scene.view_settings.view_transform = 'Standard'`). The default (AgX in Blender 5.x) washes out close colours, so two materials can look the same.
+- Run headless builds with `--python-exit-code 1` (`Blender -b --python-exit-code 1 -P <script>`): without it Blender exits 0 even when the script raises on a failed check.
 - Take a viewport screenshot or render of each finished asset and save it as `assets/export/<asset-name>.png`, so the user and orchestrator can review it without opening Blender.
 
 ## Handling change requests
