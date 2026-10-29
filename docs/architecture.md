@@ -37,6 +37,7 @@ Home `game` is `game/`, `desert` is `desert/`.
 | Meshes, glTF loading, skinning and animation clips | engine | in place |
 | Camera, lighting, day/night palette blending | engine | in place |
 | Perspective first-person camera, and what the renderer draws under it: the sky backdrop (horizon-to-zenith bands, default palettes per phase blended by time of day), distance haze into the horizon colour, the eye-fitted shadow map, the perspective edge pass | engine | in place: `pxe::FirstPersonCamera`, `pxe::PerspectiveFrame`, `pxe::RenderMode::kPerspective`, the perspective frame in `engine/src/renderer_perspective.cpp` and its edge pass `engine/shaders/edge_perspective.frag`, `Scene::skyHorizon`/`skyZenith`, `Lighting::skyHorizon`/`skyZenith` |
+| A view model under the perspective camera: characters attached to the view, drawn in front of the whole scene, lit and shadowed but casting no shadow | engine | in place: `FrameParams::viewModel`, drawn in `engine/src/renderer_perspective.cpp` |
 | Turning weather (rain, cloud, wind, lightning) and time of day into `pxe::Lighting`: overcast, god-ray strength, firefly and firelight bands, the lightning wash | engine | in place: `pxe::Weather`, `pxe::lightingAt(scene, hour, weather)` |
 | Fire, grass fire, fireflies, shelter map, height maps | engine | in place |
 | Desert ground: a sand surface with default palettes for every phase, walkable like grass and dirt | engine | in place: `pxe::kSurfSand`, glTF material `Sand` |
@@ -56,6 +57,7 @@ Home `game` is `game/`, `desert` is `desert/`.
 | Player character, fox, tavern, fireball | game | in place |
 | The desert's world: the dune height function and its smooth-shaded sand ground (1 m cells in the middle, 4 m cells out to the edge), the date palm loaded and placed at the origin, the sun's directions, the fixed hour | desert | in place: `desert/src/world.cpp` |
 | The desert's player: the eye, its yaw and pitch, walking and sprinting, ground following, sliding along the palm's trunk and the play area's edge, driving `pxe::FirstPersonCamera` | desert | in place: `desert/src/player.cpp` |
+| The desert player's arms: the arms model loaded into actor slots 0-4, placed at the eye from the view each frame, crease ink on its wraps, gloves and brass | desert | in place: `desert/src/arms.cpp` |
 | World clock and weather rules (`WorldClock`): time of day, when it rains, when lightning strikes, cloud drift, fires burning down and rain putting them out. The engine takes the results as data | game | in place |
 | Input actions (what a key or button does), the settings menu's contents and style (its `ImGui::` widget calls), which sounds play when | game | in place |
 | The desert's input actions (mouse and right stick look, WASD and left stick walk, sprint, cursor capture and release) | desert | in place: `desert/src/main.cpp` |

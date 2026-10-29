@@ -251,6 +251,8 @@ eyeCamera.setPitchRadians(-std::atan2(look.y, std::hypot(look.x, look.z)));
 - fireflies (`fireflies`) and point lights (`lights`);
 - `Renderer::rayThrough` and `windowPoint`.
 
+**View model.** `FrameParams::viewModel` takes characters attached to the view, such as a first-person view's arms or a held tool: `ActorDraw`s like `actors`, posed in world space in front of the eye (typically skinned with the view's own transform, so a model built round the eye sits where the eye is). The perspective frame draws them after the scene, the sky and any window panes, squeezed into the nearest 1% of the depth range, so nothing in the scene ever cuts or hides them, even with the eye against a wall. They take the scene's light and shadows through the actor shader like any character, and their materials come from `actorMaterials`, but they cast no shadows. Their joints must last until `render` returns. The orthographic mode ignores the field. The desert game's arms (`desert/src/arms.cpp`) are a worked example.
+
 **Mouse look.** `Window::setCursorCaptured(true)` hides the cursor and holds it in the window with unbounded motion (raw, unaccelerated motion where the system supports it); `setCursorCaptured(false)` gives it back, and `cursorCaptured()` says which. `Input::mouseDelta()` is how far the mouse moved since the previous update, in window points (the cursor's own units, not framebuffer pixels, so the same motion gives the same delta on any display density), +x right and +y down. It is zero on the first update and on the update after the cursor is captured or released, when the position jumps. The example captures the cursor before its loop:
 
 ```cpp
@@ -431,7 +433,7 @@ for (int i = 0; i < static_cast<int>(mats.size()) && model.firstMaterial() + i <
   params.actorMaterials[model.firstMaterial() + i] = mats[static_cast<std::size_t>(i)];
 ```
 
-`FrameParams::actorEffects` takes world-space `Mesh` pointers drawn with the characters but without shadows, such as a sword's smear.
+`FrameParams::actorEffects` takes world-space `Mesh` pointers drawn with the characters but without shadows, such as a sword's smear. `FrameParams::viewModel` takes characters attached to a first-person view (see [First-person camera](#first-person-camera)).
 
 ## Audio
 `pxe::AudioDevice` plays whatever the game renders into it. The engine plays sound; the game owns every sound: samples, synthesis recipes, mixing and when each one plays.
