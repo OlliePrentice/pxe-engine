@@ -281,7 +281,7 @@ Run from the task's worktree.
 5. Structure, each to give exactly what is stated:
    - `git diff main -- engine/include/pxe/camera.hpp engine/src/camera.cpp`: no output.
    - `git diff main -- engine/shaders/edge.frag`: only the `kSurfaces` and `kSurfActorCrease` lines change.
-   - `grep -n -i -E "perspective|PerspectiveFrame|FirstPersonCamera|backdrop|haze|shadowFit|flashFit" engine/src/renderer_orthographic.cpp engine/shaders/edge.frag engine/include/pxe/camera.hpp`: no output.
+   - `grep -n -E "PerspectiveFrame|FirstPersonCamera|PERSPECTIVE|edgePerspective|progBackdrop|backdrop|fitLightAhead|shadowFit|flashFit|distanceHaze|uHaze" engine/src/renderer_orthographic.cpp engine/shaders/edge.frag engine/include/pxe/camera.hpp`: no output. `grep -n -i perspective` over the same files: only `glm::perspective` in `updateFires` and the mode-mismatch message.
    - `grep -n -E "PERSPECTIVE|FIRE_GRID|CameraFrame" engine/shaders/edge_perspective.frag engine/src/renderer_perspective.cpp`: no output.
    - `grep -n -i perspective engine/src/renderer.cpp`: only lines in `init` and the destructor.
    - `diff <(git show main:engine/src/renderer.cpp | sed -n '/^void Renderer::render(/,/^}/p') <(sed -n '/^void Renderer::render(/,/^}/p' engine/src/renderer_orthographic.cpp)`: only the added mode check and the `drawPresent(camera.texelError, params)` line.
@@ -316,7 +316,8 @@ None.
 - `RenderConfig` (target size, pixels per unit), which stays shared
 
 ## Spec revisions
-None.
+- Revision 1, 2026-10-29: Verification 5's third grep narrowed to the perspective mode's own identifiers, because `main`'s `edge.frag` ("haze" in its rain code), `updateFires`' `glm::perspective` and the binding mismatch message all match the old one. See replan-1.md.
 
 ## Cycle log
 - Cycle 1: 2026-10-29 started, base 5dbaca2
+- Cycle 1 review: fresh build clean (stb warning only); orchestrator reran ortho-check (6/6 vs 5dbaca2 and vs main 3b5daed) and perspective-check (3/3); structure checks 5.1, 5.2, 5.4-5.6 as specified; bench median 3.79 vs main's 3.80 ms. Replan 1 (Verification 5.3 grep). ISSUE-001 open.
