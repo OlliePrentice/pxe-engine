@@ -1,8 +1,13 @@
 #include "arms.hpp"
 
+#include "player.hpp"
+
 #include <glm/vec4.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 
 namespace desert {
@@ -24,11 +29,36 @@ constexpr int kGrime = 10;
 [[maybe_unused]] constexpr int kPaint = 12;
 [[maybe_unused]] constexpr int kAmber = 13;
 
+// Metres walked per cycle of each clip (two steps), and how fast the walk's
+// weights follow the speed: a time constant, seconds.
+constexpr float kWalkCycle = 2.0f;
+constexpr float kSprintCycle = 3.0f;
+constexpr float kEase = 0.15f;
+// Below this the walk's weight is taken as none, and the arms are drawn in
+// the rest pose itself.
+constexpr float kAtRest = 1e-3f;
+
 }  // namespace
 
 void Arms::load() {
   model_ = pxe::SkinnedModel::load(std::string(PXE_ASSET_DIR) + "/characters/arms.glb", kFirstMaterial);
   model_.restPose(rest_);
+  walkClip_ = model_.clip("Arms_Walk");
+  sprintClip_ = model_.clip("Arms_Sprint");
+  if (walkClip_ < 0 || sprintClip_ < 0) throw std::runtime_error("arms.glb lacks the Arms_Walk or Arms_Sprint clip");
+}
+
+void Arms::walk(float moved, float dt) {
+  if (dt <= 0.f) return;
+  const float speed = moved / dt;
+  const float k = 1.f - std::exp(-dt / kEase);
+  const float moving = std::clamp(speed / kWalkSpeed, 0.f, 1.f);
+  const float sprinting = std::clamp((speed - kWalkSpeed) / (kSprintSpeed - kWalkSpeed), 0.f, 1.f);
+  moving_ += (moving - moving_) * k;
+  sprinting_ += (sprinting - sprinting_) * k;
+  if (moving == 0.f && moving_ < kAtRest) moving_ = 0.f;
+  const float cycle = kWalkCycle + (kSprintCycle - kWalkCycle) * sprinting_;
+  phase_ = std::fmod(phase_ + moved / cycle, 1.f);
 }
 
 void Arms::pose(const pxe::PerspectiveFrame& view, pxe::FrameParams& params) {
@@ -40,7 +70,17 @@ void Arms::pose(const pxe::PerspectiveFrame& view, pxe::FrameParams& params) {
   eye[1] = glm::vec4(view.up, 0.f);
   eye[2] = glm::vec4(view.forward, 0.f);
   eye[3] = glm::vec4(view.eye, 1.f);
-  model_.skin(rest_, eye, joints_);
+  if (moving_ == 0.f) {
+    model_.skin(rest_, eye, joints_);
+  } else {
+    // The clips at the stride's phase, the sprint blended over the walk by
+    // its weight, and that over the rest pose by the walk's.
+    model_.sample(walkClip_, phase_ * model_.clipDuration(walkClip_), walkPose_);
+    model_.sample(sprintClip_, phase_ * model_.clipDuration(sprintClip_), sprintPose_);
+    pxe::SkinnedModel::blend(walkPose_, sprintPose_, sprinting_, pose_);
+    pxe::SkinnedModel::blend(rest_, pose_, moving_, pose_);
+    model_.skin(pose_, eye, joints_);
+  }
 
   params.viewModel.push_back({&model_.mesh(), joints_});
   const auto& mats = model_.materials();

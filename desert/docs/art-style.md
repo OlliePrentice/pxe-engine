@@ -44,6 +44,7 @@ Start from the existing game's Characters, Materials, Rigs and Animation section
   - anything the player must read (the arms' gauge and compass face) wholly in view, facing the eye, and at least 3 px wide.
   At real proportions a forearm rises steeply, so only a few centimetres behind the hand show. Put readable details at the wrist end.
 - **Test poses.** The attachment check also runs in poses beyond the rest pose, so later animation stays safe: wrists turned 30° each way about all three axes, fingers curled 60°, elbows opened 30°.
+- **View-model clips.** A view model's clips move only its limbs: its `root` and every joint it doesn't animate are keyed at exactly their rest transform, and every translation and scale key equals rest. The framing rules (lower 35%, near clearance, limbs leaving through the bottom edge) hold at every sampled frame; readability (the gauge, the compass) is checked at rest only. A locomotion clip's phase is driven by the distance walked: assets.md records each clip's cycle length in metres. The arms' `Arms_Walk` and `Arms_Sprint` are 1.0 s each, 2.0 m and 3.0 m per cycle, the left hand furthest forward at phase 0.
 
 ## Delivery
 - **assets.md** in the task folder documents each asset: its source and how to rebuild it, triangle count, materials, origin, collision footprint, and every point the code uses.
