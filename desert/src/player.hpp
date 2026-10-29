@@ -34,6 +34,9 @@ struct Player {
   glm::vec3 eye{0.f};
   float yaw = 0.f;    // as FirstPersonCamera's: 0 looks along +z, larger turns left
   float pitch = 0.f;  // positive looks down
+  // How far the eye moved over the ground in the last update, metres:
+  // across it only, after the trunk and the play area's edge held it.
+  float moved = 0.f;
 
   // Stands the eye on the ground at xz, its height settled.
   void spawn(glm::vec2 xz, float yawRadians, float pitchRadians);

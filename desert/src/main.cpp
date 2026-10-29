@@ -1,6 +1,6 @@
 // pxe_desert: a first-person walk over sand dunes to a date palm, in the
 // engine's pixel-art style. The view is from the eye at real scale, with the
-// player's arms, no tools or HUD.
+// player's arms, which walk with the player: no tools or HUD.
 //
 // Keyboard and mouse: the mouse looks, WASD walks, Shift sprints. The cursor
 // is held while playing; Escape lets it go, Escape again quits, and a click
@@ -49,6 +49,8 @@ struct Options {
   std::string capture;
   std::string windowPng;
   float hour = kHour;
+  float walk = 0.f;     // seconds walked from the spawn before a capture
+  bool sprint = false;  // that walk is a sprint
 };
 
 void printUsage(std::FILE* out) {
@@ -57,10 +59,12 @@ void printUsage(std::FILE* out) {
                "  --capture path.png       the %dx%d low-res view from the spawn, then exit\n"
                "  --window-png path.png    the integer-upscaled window from the spawn, then exit\n"
                "  --hour H                 time of day, 0-24 (default %.4g); the clock doesn't run\n"
+               "  --walk S                 walk straight ahead from the spawn for S seconds (0-10) first\n"
+               "  --sprint                 with --walk: sprint instead\n"
                "  --help                   this list\n"
-               "Play: the mouse looks, WASD walks, Shift sprints; Escape frees the cursor, a click takes\n"
-               "it back, Escape with it free quits. Gamepad: left stick walks (pressed in: sprint),\n"
-               "right stick looks.\n",
+               "Play: the mouse looks, WASD walks, Shift sprints, and the arms walk with you; Escape\n"
+               "frees the cursor, a click takes it back, Escape with it free quits. Gamepad: left\n"
+               "stick walks (pressed in: sprint), right stick looks.\n",
                pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH, static_cast<double>(kHour));
 }
 
@@ -80,6 +84,12 @@ int parseArgs(int argc, char** argv, Options& opt) {
       char* end = nullptr;
       opt.hour = std::strtof(argv[++i], &end);
       ok = *end == '\0' && opt.hour >= 0.f && opt.hour <= 24.f;
+    } else if (arg == "--walk" && i + 1 < argc) {
+      char* end = nullptr;
+      opt.walk = std::strtof(argv[++i], &end);
+      ok = *end == '\0' && opt.walk > 0.f && opt.walk <= 10.f;
+    } else if (arg == "--sprint") {
+      opt.sprint = true;
     } else {
       ok = false;
     }
@@ -88,6 +98,18 @@ int parseArgs(int argc, char** argv, Options& opt) {
       printUsage(stderr);
       return 1;
     }
+  }
+  // The walk and the sprint run before a capture, so they need one.
+  const bool headless = !opt.capture.empty() || !opt.windowPng.empty();
+  if ((opt.walk > 0.f || opt.sprint) && !headless) {
+    std::fprintf(stderr, "pxe_desert: bad argument: --walk and --sprint need --capture or --window-png\n");
+    printUsage(stderr);
+    return 1;
+  }
+  if (opt.sprint && opt.walk == 0.f) {
+    std::fprintf(stderr, "pxe_desert: bad argument: --sprint needs --walk\n");
+    printUsage(stderr);
+    return 1;
   }
   return -1;
 }
@@ -158,6 +180,18 @@ int main(int argc, char** argv) {
     player.aim(camera);
 
     if (headless) {
+      // The walk before a capture: fixed 1/60 s steps straight ahead, so
+      // a capture is the same on every run.
+      const int steps = static_cast<int>(std::lround(opt.walk * 60.f));
+      for (int s = 0; s < steps; ++s) {
+        desert::PlayerInput in;
+        in.move = {0.f, 1.f};
+        in.sprint = opt.sprint;
+        player.update(in, 1.f / 60.f);
+        arms.walk(player.moved, 1.f / 60.f);
+      }
+      player.aim(camera);
+
       // A few frames at fixed times, so a capture is the same on every run.
       for (int f = 0; f < kCaptureFrames; ++f) {
         pxe::FrameParams params =
@@ -207,6 +241,10 @@ int main(int argc, char** argv) {
       if (window.cursorCaptured()) {
         player.update(readInput(input, dt), dt);
         player.aim(camera);
+        arms.walk(player.moved, dt);
+      } else {
+        // Play is paused: the arms settle.
+        arms.walk(0.f, dt);
       }
 
       // A minimised window can have a 0x0 framebuffer, and render throws when

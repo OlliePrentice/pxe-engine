@@ -47,6 +47,7 @@ void Player::update(const PlayerInput& in, float dt) {
   const float amount = glm::length(move);
   if (amount > 1.f) move /= amount;
   glm::vec2 xz{eye.x, eye.z};
+  const glm::vec2 before = xz;
   if (amount > 0.f) {
     xz += move * (in.sprint ? kSprintSpeed : kWalkSpeed) * dt;
     // Each axis held separately at the edge, so walking into it slides
@@ -54,6 +55,7 @@ void Player::update(const PlayerInput& in, float dt) {
     xz = glm::clamp(xz, glm::vec2{-kPlayHalf}, glm::vec2{kPlayHalf});
     xz = outsidePalm(xz);
   }
+  moved = glm::length(xz - before);
   eye.x = xz.x;
   eye.z = xz.y;
   const float standing = groundHeight(xz.x, xz.y) + kEyeHeight;
