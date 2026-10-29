@@ -57,7 +57,7 @@ Home `game` is `game/`, `desert` is `desert/`.
 | Player character, fox, tavern, fireball | game | in place |
 | The desert's world: the dune height function and its smooth-shaded sand ground (1 m cells in the middle, 4 m cells out to the edge), the date palm loaded and placed at the origin, the sun's directions, the fixed hour | desert | in place: `desert/src/world.cpp` |
 | The desert's player: the eye, its yaw and pitch, walking and sprinting, ground following, sliding along the palm's trunk and the play area's edge, driving `pxe::FirstPersonCamera` | desert | in place: `desert/src/player.cpp` |
-| The desert player's arms: the arms model loaded into actor slots 0-4, placed at the eye from the view each frame, crease ink on its wraps, gloves and brass | desert | in place: `desert/src/arms.cpp` |
+| The desert player's arms: the arms model loaded into actor slots 0-13, placed at the eye from the view each frame, crease ink on its wraps, gloves, brass, worn patches and grime | desert | in place: `desert/src/arms.cpp` |
 | World clock and weather rules (`WorldClock`): time of day, when it rains, when lightning strikes, cloud drift, fires burning down and rain putting them out. The engine takes the results as data | game | in place |
 | Input actions (what a key or button does), the settings menu's contents and style (its `ImGui::` widget calls), which sounds play when | game | in place |
 | The desert's input actions (mouse and right stick look, WASD and left stick walk, sprint, cursor capture and release) | desert | in place: `desert/src/main.cpp` |
