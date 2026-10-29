@@ -1,15 +1,19 @@
 """Build the desert player's arms and export desert/assets/characters/arms.glb.
 
-Run headless (builds, checks, exports, then renders the previews beside the glb):
-    /Applications/Blender.app/Contents/MacOS/Blender -b -P desert/tools/blender/build_arms.py
+Run headless (builds, checks, exports, appends the clips, reads the glb back,
+then renders the previews beside the glb):
+    /Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 -P desert/tools/blender/build_arms.py
     PXE_DESERT_OUT=/some/dir ... writes the glb and previews there instead.
     PXE_SKIP_PREVIEW=1 ... skips the previews.
+    PXE_SKIP_EXPORT=1 ... stops after the checks.
+    PXE_ARMS_BEFORE=<glb> ... the glb whose rest pose the new one must equal
+        (default: the glb about to be overwritten, else the shipped one).
 
 Or step by step in an open Blender, to watch it go together:
     import runpy; am = runpy.run_path(".../build_arms.py", run_name="arms")
     b = am["Builder"](); b.start(); b.arms(); b.gloves(); b.fingers(); b.glove_detail(); b.wrap_detail()
-    b.bracer(); b.gauge(); b.bracer_detail(); b.compass(); b.rig()
-    problems, m = am["check"](b)
+    b.bracer(); b.gauge(); b.bracer_detail(); b.compass(); b.rig(); b.animate()
+    problems, m = am["check"](b); clip_problems, cm = am["clip_checks"](b)
 Each step adds its pieces to the Arms collection of the current scene, leaving
 the rest of the file alone.
 
@@ -83,8 +87,23 @@ rigid to its joint, and every gadget part (bracer, gauge, straps, devices,
 compass and its mount) to its forearm. Stitches, pads and patches take the
 weights of the glove surface under them. The attachment check runs in the
 rest pose and in test poses: each wrist twisted, flexed and bent sideways 30
-degrees each way, every finger and thumb joint curled 60 degrees, and each
-elbow opened 30 degrees.
+degrees each way, every finger and thumb joint curled 60 degrees, each elbow
+opened 30 degrees and closed 10.
+
+Two looping clips (task desert-arms-walk), a first-person carry in place,
+each 1.0 s at 30 fps, 31 keys (the last the first), linear, every joint keyed
+on every frame: Arms_Walk (2.0 m walked per cycle) and Arms_Sprint (3.0 m).
+Both hands bob twice per cycle and counter-swing once, the left furthest
+forward at phase 0, the bob's low points at phases 0 and 0.5; each forearm
+rocks at the elbow with its swing and the hand trails it at the wrist; the
+shoulder and upper arm turn the least they can to put each wrist on its
+target. Arms_Sprint lifts the hands and curls every finger and thumb joint
+25 degrees into a loose fist. Only shoulder, upper_arm, forearm and hand turn
+(and the digits in the sprint); every other joint, and every translation and
+scale, is keyed at exactly rest. They are kept as actions on the rig, and the
+build appends them to the exported glb itself (add_clips), so the rest keys
+are exact. The checks (clip_checks, check_glb_clips) sample every key and
+half-key as the engine does.
 
 Material order is the contract with the engine: glTF material i is actor
 slot firstMaterial + i (desert::Arms loads into slots 0-13).
@@ -98,6 +117,7 @@ import struct
 
 import bmesh
 import bpy
+import numpy as np
 from mathutils import Matrix, Quaternion, Vector
 from mathutils.bvhtree import BVHTree
 
@@ -108,6 +128,10 @@ PREVIEW = os.path.join(OUT_DIR, "arms.png")
 PREVIEW_EYE = os.path.join(OUT_DIR, "arms_eye.png")
 PREVIEW_LEFT = os.path.join(OUT_DIR, "arms_left.png")
 PREVIEW_RIGHT = os.path.join(OUT_DIR, "arms_right.png")
+PREVIEW_CLIPS = {"Arms_Walk": os.path.join(OUT_DIR, "arms_walk.png"),
+                 "Arms_Sprint": os.path.join(OUT_DIR, "arms_sprint.png")}
+# The glb the clips were added to: its rest-pose vertices must come back unchanged.
+DEFAULT_GLB = os.path.normpath(os.path.join(HERE, "..", "..", "assets", "characters", "arms.glb"))
 COLLECTION = "Arms"
 MESH = "Arms"
 RIG = "Arms_Rig"
@@ -365,6 +389,40 @@ TICK = (0.0116, 0.0032, 0.0026)   # tick centre radius, radial length, width
 NEEDLE = (0.0105, 0.006, 0.0034, 50.0)  # tip radius, tail radius, width, direction round the face
 LAMP = (0.0131, 0.0018, 135.0)    # centre radius, radius, direction round the face
 
+# ---- clips (desert-arms-walk) ----------------------------------------------
+# A first-person carry, in place: both hands bob twice per stride cycle and
+# counter-swing fore and aft once, the left forward at phase 0; the forearms
+# rock at the elbow with the swing and the hands trail it at the wrist.
+# Phase is time / 1.0 s. The game drives it by the distance walked: `cycle`
+# metres per cycle (two steps). Offsets are each hand joint's head from rest,
+# engine y (up) and z (forward); angles in degrees.
+FPS = 30
+CLIP_FRAMES = 30          # 1.0 s: 31 keys, the last equal to the first
+CLIPS = {
+    "Arms_Walk": dict(cycle=2.0, bob=0.015, swing=0.025, lift=0.0, elbow=4.0, wrist=6.0, fist=0.0),
+    "Arms_Sprint": dict(cycle=3.0, bob=0.025, swing=0.050, lift=0.015, elbow=8.0, wrist=6.0, fist=25.0),
+}
+CLIP_ORDER = ("Arms_Walk", "Arms_Sprint")
+# What the checks hold the clips to (task desert-arms-walk, Assets), kept
+# apart from CLIPS on purpose so a slip in the motion's numbers fails the
+# build: each hand's y offset reaches mean +- bob, its z offset +- swing (m).
+CLIP_TARGETS = {
+    "Arms_Walk": dict(mean=0.0, bob=0.015, swing=0.025),
+    "Arms_Sprint": dict(mean=0.015, bob=0.025, swing=0.050),
+}
+LIMBS = ("shoulder", "upper_arm", "forearm", "hand")   # the joints a clip may turn
+DIGITS = ("thumb", "index", "middle", "ring", "pinky")  # and, curled into a fist, these in Arms_Sprint
+SOLVE_WEIGHT = (1.0, 1.0)  # how hard the shoulder and the upper arm resist turning when placing the wrist
+AMP_TOL = 0.003           # each offset's reach within this of the spec (m)
+TIMING_TOL = 1.0 / 30.0   # each peak within this of its phase
+WRIST_MAX = 30.0          # the test poses' ranges from rest: a hand about each axis,
+FINGER_MAX = 60.0         # a finger or thumb joint,
+ELBOW_SPAN = (-10.0, 30.0)  # an elbow closed (-) or opened (+)
+STEP_MAX = 45.0           # no joint turns more than this between adjacent keys
+ELBOW_CLOSE_TEST = 10.0   # the closed-elbow test pose
+ATTACH_FRAMES = 8         # attachment is checked at this many evenly spaced phases of each clip
+SHEET = (4, 2, 640, 360)  # clip preview sheets: columns, rows, tile size
+
 
 def ring_frame(t, ref):
     t = t.normalized()
@@ -541,7 +599,7 @@ class Piece:
 
 class Builder:
     STEPS = ["start", "arms", "gloves", "fingers", "glove_detail", "wrap_detail", "bracer", "gauge",
-             "bracer_detail", "compass", "rig"]
+             "bracer_detail", "compass", "rig", "animate"]
 
     def __init__(self):
         self.bm = bmesh.new()
@@ -1825,9 +1883,207 @@ class Builder:
         for kind in ("twist", "flex", "sideways"):
             for deg in (30.0, -30.0):
                 poses[f"wrist {kind} {deg:+.0f}"] = wrist(kind, deg)
+        def elbow_closed():
+            for S in "LR":
+                sd = self.sides[S]
+                hinge = sd.au.cross(sd.af).normalized()
+                self.turn(f"forearm.{S}", hinge, ELBOW_CLOSE_TEST)   # closes the elbow (checked in check())
+
         poses["fingers curled 60"] = curl
         poses["elbows opened 30"] = elbow
+        poses[f"elbows closed {ELBOW_CLOSE_TEST:.0f}"] = elbow_closed
         return poses
+
+    # ---- clips ----------------------------------------------------------------
+
+    def rest_np(self):
+        """Each joint's rest matrix (armature space, the world here), as float64."""
+        bones = self.rig_obj.data.bones
+        rest = {n: np.array(bones[n].matrix_local, dtype=np.float64) for n in JOINTS}
+        return rest, {n: np.linalg.inv(m) for n, m in rest.items()}
+
+    def world_quat(self, name, w):
+        """The pose (basis) quaternion that turns joint `name` by the rotation
+        vector w (world axes at rest, radians), after its parent: as turn()."""
+        w = Vector(w)
+        a = w.length
+        if a < 1e-12:
+            return Quaternion()
+        local = self.rig_obj.data.bones[name].matrix_local.to_3x3().inverted() @ (w / a)
+        return Quaternion(local.normalized(), a)
+
+    def chain(self, S, rotvecs):
+        """The wrist (head of hand.S) with the shoulder, upper arm and forearm
+        of side S turned by rotation vectors in world axes at rest (float64,
+        the same composition as Blender's pose)."""
+        rest, inv = self._rest
+        M = rest["root"]
+        prev = "root"
+        for n in (f"shoulder.{S}", f"upper_arm.{S}", f"forearm.{S}", f"hand.{S}"):
+            B = np.eye(4)
+            w = rotvecs.get(n)
+            if w is not None:
+                R = rest[n][:3, :3]
+                B[:3, :3] = R.T @ rodrigues(w) @ R
+            M = M @ inv[prev] @ rest[n] @ B
+            prev = n
+        return M[:3, 3]
+
+    def carry(self, spec, phase, S, guess):
+        """One side's joint turns at `phase` of a clip: the forearm rocks with
+        the swing, the hand trails it, and the shoulder and upper arm turn
+        (least turn, weighted by SOLVE_WEIGHT) to put the wrist on its target.
+        Returns (name -> basis quaternion, the solved rotation vectors)."""
+        sd = self.sides[S]
+        sgn = 1.0 if S == "L" else -1.0
+        c1, s1 = math.cos(2 * math.pi * phase), math.sin(2 * math.pi * phase)
+        dy = spec["lift"] - spec["bob"] * math.cos(4 * math.pi * phase)   # engine y: up
+        dz = sgn * spec["swing"] * c1                                      # engine z: forward
+        target = np.array(sd.W + Vector((0.0, -dz, dy)), dtype=np.float64)
+        # The elbow's hinge: a turn by -a about it opens the elbow by a (the
+        # opened test pose); the hand pitches about the same hinge, in the
+        # arm's plane. The forearm opens as the hand swings forward; the hand
+        # lags the forearm by a quarter cycle's worth of its own swing.
+        hinge = np.array(sd.au.cross(sd.af).normalized(), dtype=np.float64)
+        opened = sgn * spec["elbow"] * c1
+        trail = sgn * spec["wrist"] * s1
+        fixed = {f"forearm.{S}": hinge * math.radians(-opened), f"hand.{S}": hinge * math.radians(-trail)}
+        wgt = np.array([SOLVE_WEIGHT[0]] * 3 + [SOLVE_WEIGHT[1]] * 3)
+
+        def wrist(x):
+            rv = dict(fixed)
+            rv[f"shoulder.{S}"] = x[:3]
+            rv[f"upper_arm.{S}"] = x[3:]
+            return self.chain(S, rv)
+
+        # Least weighted turn that reaches the target: Gauss-Newton steps on
+        # the constraint, each landing on the least-norm point of its linearisation.
+        x = np.array(guess, dtype=np.float64)
+        for _ in range(50):
+            f = wrist(x)
+            r = target - f
+            if np.linalg.norm(r) < 1e-12:
+                break
+            J = np.empty((3, 6))
+            for i in range(6):
+                xe = x.copy()
+                xe[i] += 1e-7
+                J[:, i] = (wrist(xe) - f) / 1e-7
+            Wi = 1.0 / wgt
+            mu = np.linalg.solve((J * Wi) @ J.T, r + J @ x)
+            x = Wi * (J.T @ mu)
+        if np.linalg.norm(target - wrist(x)) > 1e-7:
+            raise RuntimeError(f"{S} wrist misses its target at phase {phase:.3f} by {np.linalg.norm(target - wrist(x))}")
+        q = {f"shoulder.{S}": self.world_quat(f"shoulder.{S}", x[:3]),
+             f"upper_arm.{S}": self.world_quat(f"upper_arm.{S}", x[3:]),
+             f"forearm.{S}": self.world_quat(f"forearm.{S}", fixed[f"forearm.{S}"]),
+             f"hand.{S}": self.world_quat(f"hand.{S}", fixed[f"hand.{S}"])}
+        if spec["fist"]:
+            for name, *_ in FINGERS:
+                hinge_f = sd.fingers[name][2]
+                for i in range(3):
+                    q[f"{name}.{i + 1}.{S}"] = self.world_quat(f"{name}.{i + 1}.{S}", hinge_f * math.radians(spec["fist"]))
+            for i in range(3):
+                q[f"thumb.{i + 1}.{S}"] = self.world_quat(f"thumb.{i + 1}.{S}", sd.thumb[2] * math.radians(spec["fist"]))
+        return q, x
+
+    def clip_keys(self, spec):
+        """The clip's 31 keys: name -> basis quaternion for every joint (rest
+        is the identity). The last key is the first, so it loops."""
+        keys = []
+        guess = {S: np.zeros(6) for S in "LR"}
+        for frame in range(CLIP_FRAMES):
+            qs = {n: Quaternion() for n in JOINTS}
+            for S in "LR":
+                q, guess[S] = self.carry(spec, frame / CLIP_FRAMES, S, guess[S])
+                qs.update(q)
+            for n, qq in qs.items():
+                if qq.w < 0:
+                    qs[n] = -qq
+            keys.append(qs)
+        keys.append(keys[0])
+        return keys
+
+    def set_pose(self, qs):
+        for pb in self.rig_obj.pose.bones:
+            pb.rotation_mode = "QUATERNION"
+            pb.rotation_quaternion = qs[pb.name]
+            pb.location = Vector()
+            pb.scale = Vector((1, 1, 1))
+
+    def animate(self):
+        """The clips, as actions on the rig: every joint keyed on every frame
+        0..30 (rotation, location, scale), linear, the last key the first."""
+        scene = bpy.context.scene
+        scene.render.fps, scene.render.fps_base = FPS, 1.0
+        self._rest = self.rest_np()
+        self.keys = {name: self.clip_keys(CLIPS[name]) for name in CLIP_ORDER}
+        rig = self.rig_obj
+        rig.animation_data_create()
+        for name in CLIP_ORDER:
+            old = bpy.data.actions.get(name)
+            if old:
+                bpy.data.actions.remove(old)
+            act = bpy.data.actions.new(name)
+            act.use_fake_user = True
+            rig.animation_data.action = act
+            for frame, qs in enumerate(self.keys[name]):
+                self.set_pose(qs)
+                for pb in rig.pose.bones:
+                    pb.keyframe_insert("rotation_quaternion", frame=frame, group=pb.name)
+                    pb.keyframe_insert("location", frame=frame, group=pb.name)
+                    pb.keyframe_insert("scale", frame=frame, group=pb.name)
+            for fc in action_fcurves(act):
+                for kp in fc.keyframe_points:
+                    kp.interpolation = "LINEAR"
+                fc.update()
+            act.use_frame_range = True
+            act.frame_start, act.frame_end = 0, CLIP_FRAMES
+            act.use_cyclic = True
+            rig.animation_data.action = None
+        self.clear_pose()
+
+    def sample(self, name, frame):
+        """The clip's pose at `frame` (0..30, fractional between keys), as the
+        engine samples it: each joint's rotation slerped the short way."""
+        keys = self.keys[name]
+        k = min(int(math.floor(frame)), CLIP_FRAMES - 1)
+        f = frame - k
+        out = {}
+        for n in JOINTS:
+            a, c = keys[k][n], keys[k + 1][n]
+            if f == 0.0:
+                out[n] = a.copy()
+                continue
+            if a.dot(c) < 0:
+                c = -c
+            out[n] = a.slerp(c, f)
+        return out
+
+
+def rodrigues(w):
+    """The rotation matrix of rotation vector w (float64)."""
+    w = np.asarray(w, dtype=np.float64)
+    a = np.linalg.norm(w)
+    if a < 1e-15:
+        return np.eye(3)
+    k = w / a
+    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    return np.eye(3) + math.sin(a) * K + (1 - math.cos(a)) * (K @ K)
+
+
+def action_fcurves(act):
+    """An action's F-curves, under Blender 5's slotted actions or older ones."""
+    if hasattr(act, "fcurves") and len(getattr(act, "fcurves")):
+        return list(act.fcurves)
+    out = []
+    for layer in act.layers:
+        for strip in layer.strips:
+            for slot in act.slots:
+                bag = strip.channelbag(slot)
+                if bag:
+                    out += list(bag.fcurves)
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -2222,7 +2478,7 @@ def check(b):
         b.clear_pose()
         setter()
         pts = evaluated_points(b)
-        if name == "elbows opened 30":
+        if name.startswith("elbows "):
             for S in "LR":
                 sd = b.sides[S]
                 pb = b.rig_obj.pose.bones[f"forearm.{S}"]
@@ -2230,9 +2486,15 @@ def check(b):
                 tail = b.rig_obj.matrix_world @ pb.tail
                 before = math.degrees((sd.S - sd.E).angle(sd.W - sd.E))
                 after = math.degrees((sd.S - head).angle(tail - head))
-                m[f"elbow_angle_deg.{S}"] = [round(before, 1), round(after, 1)]
-                if after < before + 25:
-                    problems.append(f"{S} elbow test pose does not open it ({before:.1f} -> {after:.1f})")
+                if name == "elbows opened 30":
+                    m[f"elbow_angle_deg.{S}"] = [round(before, 1), round(after, 1)]
+                    if after < before + 25:
+                        problems.append(f"{S} elbow test pose does not open it ({before:.1f} -> {after:.1f})")
+                else:
+                    m[f"elbow_closed_angle_deg.{S}"] = [round(before, 1), round(after, 1)]
+                    if not before - ELBOW_CLOSE_TEST - 1 <= after <= before - ELBOW_CLOSE_TEST + 1:
+                        problems.append(f"{S} closed-elbow test pose does not close it by {ELBOW_CLOSE_TEST} "
+                                        f"({before:.1f} -> {after:.1f})")
         problems += attachment_problems(b, name, pts, idx, polys)
     b.clear_pose()
     m["poses_checked"] = list(poses)
@@ -2244,6 +2506,199 @@ def check(b):
 
 def to_engine(p):
     return (p[0], p[2], -p[1])
+
+
+def posed_array(b):
+    """The posed mesh's vertex positions as an (n, 3) array (the objects have identity transforms)."""
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = b.obj.evaluated_get(dg)
+    me = ev.to_mesh()
+    arr = np.empty(len(me.vertices) * 3)
+    me.vertices.foreach_get("co", arr)
+    ev.to_mesh_clear()
+    return arr.reshape(-1, 3)
+
+
+def view_extent(P, edges):
+    """Over every vertex and every edge's quarter points in view: the highest
+    NDC y and the nearest depth ahead of the eye (framing()'s rule, vectorised)."""
+    Q = np.concatenate([P] + [P[edges[:, 0]] * (1 - k) + P[edges[:, 1]] * k for k in (0.25, 0.5, 0.75)])
+    d = -Q[:, 1]
+    Q, d = Q[d > 1e-9], d[d > 1e-9]
+    x = -Q[:, 0] / (d * TAN_Y * ASPECT)
+    y = Q[:, 2] / (d * TAN_Y)
+    vis = (np.abs(x) <= 1.0) & (np.abs(y) <= 1.0)
+    return float(y[vis].max()), float(d[vis].min())
+
+
+def forearm_exit(W, E):
+    """Where the forearm's axis, walked from the wrist to the elbow, leaves the view (NDC), or None."""
+    for i in range(1, 401):
+        q = project(W.lerp(E, i / 400))
+        if q is None or abs(q[0]) > 1 or abs(q[1]) > 1:
+            return q
+    return None
+
+
+def quat_deg(q):
+    return math.degrees(2.0 * math.acos(min(1.0, abs(q.w))))
+
+
+def phase_gap(a, c):
+    d = abs(a - c) % 1.0
+    return min(d, 1.0 - d)
+
+
+def clip_checks(b):
+    """Every binding check on the clips (task desert-arms-walk, Assets).
+    Returns (problems, measurements)."""
+    problems, m = [], {}
+    rig = b.rig_obj
+    bones = rig.data.bones
+    idx = piece_indices(b)
+    polys = [tuple(p.vertices) for p in b.obj.data.polygons]
+    edges = np.empty(len(b.obj.data.edges) * 2, dtype=np.int64)
+    b.obj.data.edges.foreach_get("vertices", edges)
+    edges = edges.reshape(-1, 2)
+    if rig.animation_data and rig.animation_data.action:
+        problems.append("the rig has an active action; the checks pose it directly")
+    for name in CLIP_ORDER:
+        spec = CLIPS[name]
+        keys = b.keys[name]
+        cm = {"cycle_m": spec["cycle"], "keys": len(keys)}
+        movers = {f"{j}.{S}" for j in LIMBS for S in "LR"}
+        if spec["fist"]:
+            movers |= {n for n in JOINTS if n.split(".")[0] in DIGITS}
+        if len(keys) != CLIP_FRAMES + 1:
+            problems.append(f"{name} has {len(keys)} keys, wants {CLIP_FRAMES + 1}")
+        # Loops: the last key equals the first, exactly.
+        for n in JOINTS:
+            if tuple(keys[-1][n]) != tuple(keys[0][n]):
+                problems.append(f"{name}: {n}'s last key is not its first")
+        # Joints: everything but the movers keyed at exactly rest.
+        still = [n for n in JOINTS if n not in movers and any(tuple(k[n]) != (1.0, 0.0, 0.0, 0.0) for k in keys)]
+        if still:
+            problems.append(f"{name}: joints that must stay at rest turn: {still}")
+        moved = sorted({n for n in JOINTS if any(tuple(k[n]) != tuple(keys[0][n]) for k in keys)})
+        cm["joints_changing_between_keys"] = moved
+        # The actions as keyed: 31 keys a channel, linear, the last the first.
+        act = bpy.data.actions.get(name)
+        fcs = action_fcurves(act) if act else []
+        if len(fcs) != len(JOINTS) * 10:
+            problems.append(f"{name}: the action has {len(fcs)} F-curves, wants {len(JOINTS) * 10}")
+        for fc in fcs:
+            kps = fc.keyframe_points
+            if len(kps) != CLIP_FRAMES + 1 or any(kp.interpolation != "LINEAR" for kp in kps) \
+                    or kps[0].co[1] != kps[-1].co[1]:
+                problems.append(f"{name}: {fc.data_path}[{fc.array_index}] is not 31 linear keys ending on its first")
+                break
+        # Steps: no joint turns more than STEP_MAX between adjacent keys.
+        step = max(quat_deg(keys[k][n].rotation_difference(keys[k + 1][n])) for n in JOINTS for k in range(CLIP_FRAMES))
+        cm["largest_key_step_deg"] = round(step, 2)
+        if step > STEP_MAX:
+            problems.append(f"{name}: a joint turns {step:.1f} degrees between adjacent keys (max {STEP_MAX})")
+        # Every sampled frame (keys and half-keys, as the engine samples).
+        rest_head = {S: bones[f"hand.{S}"].head_local.copy() for S in "LR"}
+        rest_elbow = {S: math.degrees((b.sides[S].S - b.sides[S].E).angle(b.sides[S].W - b.sides[S].E)) for S in "LR"}
+        off = {S: [] for S in "LR"}
+        tops, nears, exits = [], [], {S: [] for S in "LR"}
+        hand_deg, hand_axes, finger_deg = 0.0, {"twist": 0.0, "flex": 0.0, "sideways": 0.0}, 0.0
+        elbow = {S: [1e9, -1e9] for S in "LR"}
+        for i in range(2 * CLIP_FRAMES + 1):
+            qs = b.sample(name, i / 2)
+            b.set_pose(qs)
+            P = posed_array(b)
+            top, near = view_extent(P, edges)
+            tops.append(top)
+            nears.append(near)
+            for S in "LR":
+                sd = b.sides[S]
+                pbs = rig.pose.bones
+                Wp, Ep, Sp = pbs[f"hand.{S}"].head.copy(), pbs[f"forearm.{S}"].head.copy(), pbs[f"upper_arm.{S}"].head.copy()
+                dlt = Wp - rest_head[S]
+                off[S].append((dlt.z, -dlt.y))
+                q = forearm_exit(Wp, Ep)
+                if q is None or q[1] >= -1.0 or abs(q[0]) > 1.0:
+                    problems.append(f"{name} frame {i / 2}: {S} forearm does not leave through the bottom edge (at {q})")
+                else:
+                    exits[S].append(q[0])
+                ang = math.degrees((Sp - Ep).angle(Wp - Ep)) - rest_elbow[S]
+                elbow[S] = [min(elbow[S][0], ang), max(elbow[S][1], ang)]
+                hq = qs[f"hand.{S}"]
+                hand_deg = max(hand_deg, quat_deg(hq))
+                # The hand's turn as a rotation vector in world axes at rest, about the test poses' axes.
+                ax, a = hq.to_axis_angle()
+                if a > math.pi:
+                    a -= 2 * math.pi
+                wv = bones[f"hand.{S}"].matrix_local.to_3x3() @ ax * math.degrees(a)
+                for kind, axis in (("twist", sd.af), ("flex", sd.t), ("sideways", sd.n)):
+                    hand_axes[kind] = max(hand_axes[kind], abs(wv.dot(axis)))
+                for n in JOINTS:
+                    if n.endswith("." + S) and n.split(".")[0] in DIGITS:
+                        finger_deg = max(finger_deg, quat_deg(qs[n]))
+        b.clear_pose()
+        top, near = max(tops), min(nears)
+        cm["highest_ndc_y_in_view"] = round(top, 3)
+        cm["nearest_in_view_m"] = round(near, 3)
+        cm["forearm_exit_ndc_x"] = {S: [round(min(exits[S]), 3), round(max(exits[S]), 3)] for S in "LR" if exits[S]}
+        if top > FRAME_TOP:
+            problems.append(f"{name}: something in view reaches NDC y {top:.3f}, above {FRAME_TOP} "
+                            f"(at frame {tops.index(top) / 2})")
+        if near < CLEARANCE:
+            problems.append(f"{name}: something in view is only {near:.3f} m ahead of the eye (needs {CLEARANCE})")
+        # Ranges.
+        cm["hand_turn_deg"] = {"total": round(hand_deg, 2), **{k: round(x, 2) for k, x in hand_axes.items()}}
+        cm["elbow_opened_deg"] = {S: [round(x, 2) for x in elbow[S]] for S in "LR"}
+        cm["finger_turn_deg"] = round(finger_deg, 2)
+        if hand_deg > WRIST_MAX:
+            problems.append(f"{name}: a hand turns {hand_deg:.1f} degrees from rest (max {WRIST_MAX} about each axis)")
+        if finger_deg > FINGER_MAX:
+            problems.append(f"{name}: a finger joint turns {finger_deg:.1f} degrees from rest (max {FINGER_MAX})")
+        for S in "LR":
+            if elbow[S][0] < ELBOW_SPAN[0] or elbow[S][1] > ELBOW_SPAN[1]:
+                problems.append(f"{name}: the {S} elbow goes {elbow[S]} degrees from rest (allowed {ELBOW_SPAN})")
+        # Amplitudes and timing.
+        phases = [i / (2 * CLIP_FRAMES) for i in range(2 * CLIP_FRAMES + 1)]
+        tg = CLIP_TARGETS[name]
+        want = {"y": (tg["mean"] + tg["bob"], tg["mean"] - tg["bob"]), "z": (tg["swing"], -tg["swing"])}
+        amp = {}
+        for S in "LR":
+            ys = [o[0] for o in off[S]]
+            zs = [o[1] for o in off[S]]
+            amp[S] = {"y_max": round(max(ys), 4), "y_min": round(min(ys), 4), "y_mean": round(sum(ys[:-1]) / (len(ys) - 1), 4),
+                      "z_max": round(max(zs), 4), "z_min": round(min(zs), 4)}
+            for axis, vals in (("y", ys), ("z", zs)):
+                hi, lo = want[axis]
+                if abs(max(vals) - hi) > AMP_TOL or abs(min(vals) - lo) > AMP_TOL:
+                    problems.append(f"{name}: {S} hand {axis} offset spans {min(vals):.4f}..{max(vals):.4f}, "
+                                    f"wants {lo:.4f}..{hi:.4f} within {AMP_TOL}")
+            if abs(amp[S]["y_mean"] - tg["mean"]) > AMP_TOL:
+                problems.append(f"{name}: {S} hand y mean {amp[S]['y_mean']}, wants {tg['mean']}")
+            zpeak = phases[zs.index(max(zs))]
+            want_z = 0.0 if S == "L" else 0.5
+            low = {}
+            for centre in (0.0, 0.5):
+                half = [k for k, ph in enumerate(phases) if phase_gap(ph, centre) < 0.25]
+                kk = min(half, key=lambda k: ys[k])
+                low[centre] = phases[kk]
+            amp[S]["z_peak_phase"] = round(zpeak, 4)
+            amp[S]["y_low_phases"] = [round(low[0.0], 4), round(low[0.5], 4)]
+            if phase_gap(zpeak, want_z) > TIMING_TOL + 1e-9:
+                problems.append(f"{name}: {S} hand furthest forward at phase {zpeak:.3f}, wants {want_z} +- 1/30")
+            for centre, ph in low.items():
+                if phase_gap(ph, centre) > TIMING_TOL + 1e-9:
+                    problems.append(f"{name}: {S} hand lowest near phase {centre} at {ph:.3f}, wants within 1/30")
+        cm["hand_offsets_m"] = amp
+        # Attachment at evenly spaced phases.
+        for k in range(ATTACH_FRAMES):
+            b.set_pose(b.sample(name, CLIP_FRAMES * k / ATTACH_FRAMES))
+            pts = evaluated_points(b)
+            problems += attachment_problems(b, f"{name} phase {k}/{ATTACH_FRAMES}", pts, idx, polys)
+        b.clear_pose()
+        cm["attachment_phases"] = [f"{k}/{ATTACH_FRAMES}" for k in range(ATTACH_FRAMES)]
+        m[name] = cm
+    return problems, m
 
 
 # --------------------------------------------------------------------------
@@ -2269,10 +2724,85 @@ def export():
     print("wrote", OUT)
 
 
+def add_clips(path, b):
+    """Append the clips to the exported glb, which holds the mesh, skin and
+    materials exactly as before. Every joint gets a translation, rotation and
+    scale channel of 31 LINEAR keys at 0, 1/30 ... 1.0 s. Translation and
+    scale keys, and the rotation keys of every joint the clip doesn't turn,
+    are the joint node's own rest values, so they equal rest exactly. A turned
+    joint's key is its node rotation times its pose quaternion (the glTF
+    exporter's own composition, checked against it: bone axes are kept).
+    Blender's exporter samples the same actions to within 2 float steps of
+    rest, not exactly, so the build writes the clips itself."""
+    with open(path, "rb") as fh:
+        gj, binc = read_glb(fh.read())
+    if gj.get("animations"):
+        raise RuntimeError("the exported glb already has animations")
+    nodes = gj["nodes"]
+    joints = gj["skins"][0]["joints"]
+    blob = bytearray(binc)
+    while len(blob) % 4:
+        blob.append(0)
+    view = len(gj["bufferViews"])
+    start = len(blob)
+    accessors = gj["accessors"]
+
+    def put(rows, kind):
+        arr = np.asarray(rows, dtype="<f4")
+        offset = len(blob) - start
+        blob.extend(arr.tobytes())
+        acc = {"bufferView": view, "byteOffset": offset, "componentType": 5126,
+               "count": int(arr.shape[0]), "type": kind}
+        if kind == "SCALAR":
+            acc["min"], acc["max"] = [float(arr.min())], [float(arr.max())]
+        accessors.append(acc)
+        return len(accessors) - 1
+
+    times = put([k / CLIP_FRAMES for k in range(CLIP_FRAMES + 1)], "SCALAR")
+    anims = []
+    for name in CLIP_ORDER:
+        channels, samplers = [], []
+        keys = b.keys[name]
+        for j in joints:
+            nd = nodes[j]
+            jn = nd["name"]
+            t = nd.get("translation", [0.0, 0.0, 0.0])
+            sc = nd.get("scale", [1.0, 1.0, 1.0])
+            x, y, z, w = nd.get("rotation", [0.0, 0.0, 0.0, 1.0])
+            rows = []
+            for k in range(CLIP_FRAMES + 1):
+                qb = keys[k][jn]
+                if tuple(qb) == (1.0, 0.0, 0.0, 0.0):
+                    rows.append([x, y, z, w])
+                    continue
+                q = (Quaternion((w, x, y, z)) @ qb).normalized()
+                if rows and np.dot(rows[-1], [q.x, q.y, q.z, q.w]) < 0:
+                    q = -q
+                rows.append([q.x, q.y, q.z, q.w])
+            if rows[-1] != rows[0]:
+                rows[-1] = list(rows[0])   # the last key is the first (keys[30] is keys[0])
+            for target, data, kind in (("translation", [t] * (CLIP_FRAMES + 1), "VEC3"), ("rotation", rows, "VEC4"),
+                                       ("scale", [sc] * (CLIP_FRAMES + 1), "VEC3")):
+                samplers.append({"input": times, "interpolation": "LINEAR", "output": put(data, kind)})
+                channels.append({"sampler": len(samplers) - 1, "target": {"node": j, "path": target}})
+        anims.append({"name": name, "channels": channels, "samplers": samplers})
+    gj["bufferViews"].append({"buffer": 0, "byteOffset": start, "byteLength": len(blob) - start})
+    gj["animations"] = anims
+    gj["buffers"][0]["byteLength"] = len(blob)
+    js = json.dumps(gj, separators=(",", ":")).encode()
+    js += b" " * (-len(js) % 4)
+    out = struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(js) + 8 + len(blob))
+    out += struct.pack("<II", len(js), 0x4E4F534A) + js
+    out += struct.pack("<II", len(blob), 0x004E4942) + bytes(blob)
+    with open(path, "wb") as fh:
+        fh.write(out)
+    print("added", ", ".join(CLIP_ORDER), "to", path)
+
+
 def check_glb(path, tris_expected):
     """Read the glb back: one skinned mesh, 39 named joints, the 14
     materials in order with their colours, only the glow and amber emissive,
-    no clips."""
+    and the two clips (checked further by check_glb_clips)."""
     with open(path, "rb") as fh:
         data = fh.read()
     magic, _, _ = struct.unpack_from("<III", data, 0)
@@ -2302,8 +2832,9 @@ def check_glb(path, tris_expected):
         got[name] = {"srgb": back, "glow": glows}
         if back != srgb or glows != glow:
             problems.append(f"glb {name}: {back} glow {glows}, wants {srgb} glow {glow}")
-    if gj.get("animations"):
-        problems.append(f"glb has {len(gj['animations'])} animations, wants none")
+    anims = sorted(a.get("name", "") for a in gj.get("animations", []))
+    if anims != sorted(CLIP_ORDER):
+        problems.append(f"glb animations {anims}, wants {sorted(CLIP_ORDER)}")
     tris = 0
     for mesh in meshes:
         for prim in mesh["primitives"]:
@@ -2315,6 +2846,173 @@ def check_glb(path, tris_expected):
         problems.append(f"glb has {tris} triangles, the build {tris_expected}")
     m.update({"glb_triangles": tris, "glb_joints": len(joints), "glb_materials": got,
               "glb_nodes": sorted(n.get("name", "") for n in gj["nodes"] if "mesh" in n or "skin" in n)})
+    return problems, m
+
+
+def read_glb(data):
+    """A glb's JSON and binary chunk, from its bytes."""
+    magic, _, _ = struct.unpack_from("<III", data, 0)
+    clen, ctype = struct.unpack_from("<II", data, 12)
+    if magic != 0x46546C67 or ctype != 0x4E4F534A:
+        raise RuntimeError("not a glb")
+    gj = json.loads(data[20:20 + clen])
+    off = 20 + clen
+    binc = b""
+    if off + 8 <= len(data):
+        blen, _ = struct.unpack_from("<II", data, off)
+        binc = data[off + 8:off + 8 + blen]
+    return gj, binc
+
+
+def read_accessor(gj, binc, i):
+    """Accessor i as an (count, components) float64 array of its stored values."""
+    acc = gj["accessors"][i]
+    bv = gj["bufferViews"][acc["bufferView"]]
+    comps = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}[acc["type"]]
+    dt = np.dtype({5126: "<f4", 5125: "<u4", 5123: "<u2", 5121: "u1"}[acc["componentType"]])
+    stride = bv.get("byteStride", comps * dt.itemsize)
+    start = bv.get("byteOffset", 0) + acc.get("byteOffset", 0)
+    rows = [np.frombuffer(binc, dt, comps, start + k * stride) for k in range(acc["count"])] \
+        if stride != comps * dt.itemsize else [np.frombuffer(binc, dt, comps * acc["count"], start)]
+    return np.concatenate(rows).astype(np.float64).reshape(acc["count"], comps)
+
+
+def f32(xs):
+    return tuple(float(np.float32(x)) for x in xs)
+
+
+def node_trs(node):
+    return (f32(node.get("translation", (0.0, 0.0, 0.0))), f32(node.get("rotation", (0.0, 0.0, 0.0, 1.0))),
+            f32(node.get("scale", (1.0, 1.0, 1.0))))
+
+
+def trs_matrix(t, r, sc):
+    x, y, z, w = r
+    R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                  [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                  [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    M = np.eye(4)
+    M[:3, :3] = R * np.array(sc)
+    M[:3, 3] = t
+    return M
+
+
+def check_glb_clips(data, before, b):
+    """Read the clips back from the glb's bytes: exactly the two, each 1.0 s
+    with 31 keys a channel, LINEAR, on every joint; the last key the first;
+    translation and scale keys, and every joint a clip doesn't animate, at
+    exactly the node's rest transform; the hands where the build put them;
+    and the rest pose (vertex positions, joint nodes, inverse bind matrices)
+    equal to `before`, the glb the clips were added to."""
+    problems, m = [], {}
+    gj, binc = read_glb(data)
+    nodes = gj["nodes"]
+    skin = gj["skins"][0]
+    joint_of = {j: nodes[j]["name"] for j in skin["joints"]}
+    by_name = {nm: j for j, nm in joint_of.items()}
+    parent = {}
+    for i, nd in enumerate(nodes):
+        for c in nd.get("children", []):
+            parent[c] = i
+    rest = {j: node_trs(nodes[j]) for j in joint_of}
+
+    def world(j, trs):
+        M = trs_matrix(*trs[j]) if j in trs else trs_matrix(*node_trs(nodes[j]))
+        return world(parent[j], trs) @ M if j in parent else M
+
+    anims = {a.get("name", ""): a for a in gj.get("animations", [])}
+    if sorted(anims) != sorted(CLIP_ORDER):
+        problems.append(f"glb animations {sorted(anims)}, wants {sorted(CLIP_ORDER)}")
+    for name in CLIP_ORDER:
+        a = anims.get(name)
+        if a is None:
+            continue
+        spec = CLIPS[name]
+        movers = {f"{j}.{S}" for j in LIMBS for S in "LR"}
+        if spec["fist"]:
+            movers |= {n for n in JOINTS if n.split(".")[0] in DIGITS}
+        chans = {}
+        for ch in a["channels"]:
+            node, path = ch["target"].get("node"), ch["target"]["path"]
+            if node not in joint_of:
+                problems.append(f"glb {name}: a {path} channel on node {nodes[node].get('name') if node is not None else None}, not a joint")
+                continue
+            smp = a["samplers"][ch["sampler"]]
+            times = read_accessor(gj, binc, smp["input"])[:, 0]
+            vals = read_accessor(gj, binc, smp["output"])
+            chans[(joint_of[node], path)] = (smp.get("interpolation", "LINEAR"), times, vals)
+        durations = set()
+        for n in JOINTS:
+            for path, k in (("translation", 0), ("rotation", 1), ("scale", 2)):
+                c = chans.get((n, path))
+                if c is None:
+                    problems.append(f"glb {name}: {n} has no {path} channel")
+                    continue
+                interp, times, vals = c
+                durations.add(round(float(times[-1]), 6))
+                if interp != "LINEAR" or len(times) != CLIP_FRAMES + 1 or len(vals) != CLIP_FRAMES + 1:
+                    problems.append(f"glb {name}: {n} {path} is {interp} with {len(times)} keys")
+                    continue
+                if times[0] != 0.0 or abs(times[-1] - 1.0) > 1e-6 or np.any(np.diff(times) <= 0):
+                    problems.append(f"glb {name}: {n} {path} times run {times[0]}..{times[-1]}")
+                if tuple(vals[0]) != tuple(vals[-1]):
+                    problems.append(f"glb {name}: {n} {path}'s last key is not its first")
+                if path != "rotation" or n not in movers:
+                    if any(tuple(v) != rest[by_name[n]][k] for v in vals):
+                        problems.append(f"glb {name}: {n} {path} keys are not exactly its rest {path}")
+        m[f"{name}_duration_s"] = sorted(durations)
+        m[f"{name}_channels"] = len(chans)
+        # The hands where the build put them: each key's hand.L/R head offset,
+        # computed from the glb's own transforms, against the build's (engine axes).
+        worst = 0.0
+        for kf in (0, 7, 15, 22):
+            trs = {}
+            for j, nm in joint_of.items():
+                t = chans[(nm, "translation")][2][kf]
+                r = chans[(nm, "rotation")][2][kf]
+                sc = chans[(nm, "scale")][2][kf]
+                trs[j] = (tuple(t), tuple(r), tuple(sc))
+            b.set_pose(b.keys[name][kf])
+            bpy.context.view_layer.update()
+            for S in "LR":
+                j = by_name[f"hand.{S}"]
+                got = world(j, trs)[:3, 3] - world(j, {})[:3, 3]
+                d = b.rig_obj.pose.bones[f"hand.{S}"].head - b.rig_obj.data.bones[f"hand.{S}"].head_local
+                worst = max(worst, float(np.abs(got - np.array(to_engine(d))).max()))
+        b.clear_pose()
+        m[f"{name}_hand_offset_vs_build_m"] = worst
+        if worst > 1e-5:
+            problems.append(f"glb {name}: the hands are {worst:.2e} m from where the build put them")
+    # The rest pose against the glb before the clips.
+    if before is None:
+        problems.append("no earlier glb to compare the rest pose with")
+        return problems, m
+    gb, bb = read_glb(before)
+
+    def positions(g, bc):
+        mesh = g["meshes"][0]
+        return np.concatenate([read_accessor(g, bc, p["attributes"]["POSITION"]) for p in mesh["primitives"]])
+    pa, pb_ = positions(gj, binc), positions(gb, bb)
+    if pa.shape != pb_.shape:
+        problems.append(f"rest-pose vertices: {pa.shape[0]} now, {pb_.shape[0]} before")
+    else:
+        dmax = float(np.abs(pa - pb_).max())
+        m["rest_vertices"] = pa.shape[0]
+        m["rest_vertex_max_diff_m"] = dmax
+        if dmax > 1e-7:
+            problems.append(f"rest-pose vertices moved by up to {dmax:.3g} m from the glb before the clips")
+    nb = {nd.get("name"): nd for nd in gb["nodes"]}
+    moved = [nodes[j]["name"] for j in joint_of if node_trs(nodes[j]) != node_trs(nb.get(nodes[j]["name"], {}))]
+    ibm_a = read_accessor(gj, binc, skin["inverseBindMatrices"])
+    ibm_b = read_accessor(gb, bb, gb["skins"][0]["inverseBindMatrices"])
+    order_b = [gb["nodes"][j]["name"] for j in gb["skins"][0]["joints"]]
+    order_a = [joint_of[j] for j in skin["joints"]]
+    m["rest_joint_nodes_changed"] = moved
+    if moved:
+        problems.append(f"joint nodes' rest transforms changed: {moved}")
+    if order_a != order_b or ibm_a.shape != ibm_b.shape or float(np.abs(ibm_a - ibm_b).max()) != 0.0:
+        problems.append("the skin's joints or inverse bind matrices changed")
+    m["rest_ibm_max_diff"] = float(np.abs(ibm_a - ibm_b).max()) if ibm_a.shape == ibm_b.shape else None
     return problems, m
 
 
@@ -2371,6 +3069,38 @@ def render_previews(b):
     cam_data.clip_start = 0.01
     cam_data.angle_y = math.radians(38.0)
     shoot(PREVIEW, (0.62, -0.98, 0.12), (0.03, -0.20, -0.20), (960, 720))
+    # The clips: a 2x4 sheet of the eye view at phases 0, 1/8 ... 7/8 (top
+    # row 0..3/8 left to right, bottom row 4/8..7/8), each sampled as the engine does.
+    cam_data.clip_start = NEAR
+    cam_data.angle_y = FOV_Y
+    cols, rows, tw, th = SHEET
+    tmp = os.path.join(OUT_DIR, ".arms_tile.png")
+    for name in CLIP_ORDER:
+        sheet = np.zeros((rows * th, cols * tw, 4), dtype=np.float32)
+        for k in range(cols * rows):
+            b.set_pose(b.sample(name, CLIP_FRAMES * k / (cols * rows)))
+            shoot(tmp, (0.0, 0.0, 0.0), (0.0, -1.0, 0.0), (tw, th))
+            img = bpy.data.images.load(tmp)
+            px = np.empty(tw * th * 4, dtype=np.float32)
+            img.pixels.foreach_get(px)
+            bpy.data.images.remove(img)
+            r, c = divmod(k, cols)
+            y0 = (rows - 1 - r) * th   # pixel rows run bottom up
+            sheet[y0:y0 + th, c * tw:(c + 1) * tw] = px.reshape(th, tw, 4)
+        b.clear_pose()
+        # A 2 px dark line between the tiles.
+        for c in range(1, cols):
+            sheet[:, c * tw - 1:c * tw + 1, :3] = 0.1
+        for r in range(1, rows):
+            sheet[r * th - 1:r * th + 1, :, :3] = 0.1
+        out = bpy.data.images.new(name + "_sheet", cols * tw, rows * th, alpha=False)
+        out.pixels.foreach_set(sheet.ravel())
+        out.filepath_raw = PREVIEW_CLIPS[name]
+        out.file_format = "PNG"
+        out.save()
+        bpy.data.images.remove(out)
+        print("wrote", PREVIEW_CLIPS[name])
+    os.remove(tmp)
     for o in (ground, cam):
         bpy.data.objects.remove(o)
     bpy.data.meshes.remove(gm)
@@ -2384,12 +3114,28 @@ def main():
     b.build_all()
     problems, m = check(b)
     print("arms:", json.dumps(m, indent=1))
+    cp, cm = clip_checks(b)
+    print("clips:", json.dumps(cm, indent=1))
+    problems += cp
     if problems:
         raise RuntimeError("the arms fail their checks:\n  " + "\n  ".join(problems))
     if os.environ.get("PXE_SKIP_EXPORT"):
         return
+    # The glb the clips are added to, read before it is overwritten.
+    before = None
+    for path in (os.environ.get("PXE_ARMS_BEFORE"), OUT, DEFAULT_GLB):
+        if path and os.path.exists(path):
+            with open(path, "rb") as fh:
+                before = fh.read()
+            print("rest pose compared with", path)
+            break
     export()
+    add_clips(OUT, b)
     gp, gm = check_glb(OUT, m["triangles"])
+    with open(OUT, "rb") as fh:
+        ap, am = check_glb_clips(fh.read(), before, b)
+    gp += ap
+    gm.update(am)
     print("arms.glb:", json.dumps(gm))
     if gp:
         raise RuntimeError("arms.glb fails its checks:\n  " + "\n  ".join(gp))
