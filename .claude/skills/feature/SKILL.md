@@ -31,14 +31,14 @@ Every new feature or fix starts with an interview. Don't write a spec from the o
 6. **Engine or game.** Decide where each piece of the feature lives, following `docs/architecture.md`. Settle it yourself where the rules settle it. Ask the user only when it's a real judgement call: a new engine capability whose scope is unclear, or a feature in an area the doc marks misplaced. If an answer sets a standing rule, add it to `docs/architecture.md`.
 7. If the task needs new or changed assets, cover them in the interview:
    - **Style:** each game owns its art style doc (`<game>/docs/art-style.md`). Read the one for the game the task is about first, and only ask about what it doesn't settle. For a new game, start its doc from an existing game's and ask what changes. It holds the game's standing style, so the user isn't asked the same questions on every task. What the engine requires of every asset file is the asset contract in `docs/engine-guide.md`.
-   - **Each asset:** what it is, its proportions, level of detail and references. The designer can't ask during the run, so settle everything its `NEEDS INPUT` questions would cover: shading, triangle budget, texture size, which existing nodes must stay byte-identical.
+   - **Each asset:** what it is, its proportions, level of detail and references. The designer can't ask during the run, so settle everything its `NEEDS INPUT` questions would cover: shading, triangle budget, texture size, which existing nodes must stay byte-identical. Give every visual requirement in Decisions or Verification a matching build check, define every point and axis a check measures ("hand centre", "turned 30°" about which axis), and check any guide (a pose, a layout) against the binding checks that also constrain it, roughly with numbers, so the two can't contradict each other.
    - **Technical needs:** check the engine code for the format, units, axes and limits the loader expects. Ask the user only about what the code doesn't settle.
 8. Think about what you'd ask the user in the middle of the run, and ask it now: a tuning value, a fallback if an approach doesn't work out, how far a fix should reach. A question left open turns into a blocked task.
 
 ## 2. Design the architecture
 Before you write the specs, work out how the feature will be built, from the code:
 - The engine capabilities and game code it needs, their names, and the types, functions and data that cross the boundary between them.
-- Each file that changes and what changes in it. Read those files: the spec names real functions, not guesses.
+- Each file that changes and what changes in it. Read those files: the spec names real functions, not guesses. The engine loads its own GL entry points: grep every GL call the spec's engine code adds in `engine/src/gl.hpp` (`PXE_GL_EACH`), and if one is missing, name the table entry and the file in the spec.
 - The order the work has to happen in, and which parts can be built independently.
 - How the result is verified: which `--capture` views, which byte-identical cases, which grep.
 
