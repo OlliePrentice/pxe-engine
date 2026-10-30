@@ -134,4 +134,4 @@ None.
 ## Cycle log
 - Cycle 1, 2026-10-30: base 010f23d
 - Cycle 1 review: fresh build clean; Verification 2, 3, 6 and the interrupt (scripts/interrupt-test.py: exit 130, restored, touched) rerun by the reviewer and pass. ISSUE-001 opened.
-- Cycle 2, 2026-10-30: base BASEHASH; outstanding ISSUE-001
+- Cycle 2, 2026-10-30: base 4968c17; outstanding ISSUE-001
