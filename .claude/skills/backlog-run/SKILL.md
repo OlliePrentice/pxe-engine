@@ -35,7 +35,7 @@ The same rules hold when the user runs `/backlog-run` in a session. Report the q
 1. The run's branch is the branch the main working tree is on. If it is `main`, stop with status `stop`: runs never commit to `main`.
 2. If the main working tree has uncommitted changes, stop with status `stop` and name the files. Don't stash or discard them.
 3. Read `docs/backlog.md`, `docs/architecture.md` and `docs/engine-guide.md`.
-4. List existing worktrees (`git worktree list`). A task that is `in-progress` was cut short by an earlier batch. Its worktree and branch hold its work. It resumes from its `task.md` cycle log and `issues.md`.
+4. List existing worktrees (`git worktree list`). A task that is `in-progress` was cut short by an earlier batch. Its worktree and branch hold its work. It resumes from its `task.md` cycle log and `issues.md`. If its branch is already merged into the run's branch (`git branch --merged`, or a `Merge <task-id>` commit in `git log`), the batch was cut short after the merge: don't run cycles. Resume at step 6 after the merge (the fresh build check, the alignment review of the merged diff, the docs, `done` and the worktree's removal), then go on to the retro.
 
 ## 2. Pick the batch
 1. Candidates are, in backlog order: every `in-progress` task, then every `queued` task whose `Depends on` tasks are all `done`. If `$ARGUMENTS` names tasks, only those.
@@ -138,7 +138,7 @@ git merge --no-ff <task-id>
 ```
 - If the merge conflicts, run `git merge --abort`. Then delegate to **game-developer** in the task's worktree: merge the run's branch into the task branch, resolve the conflicts, build and commit. Treat it as a new cycle, with your build check and review. Then merge again.
 - After each merge, do a fresh build check of the run's branch in the main working tree, because two tasks can build on their own and fail together. Then run the alignment review in `CLAUDE.md` on the merged diff (`git diff <branch before merge>..HEAD`). Code that only goes wrong in combination becomes a new alignment task.
-- **Docs.** Bring `docs/architecture.md` (the "Where things live" table, and any new standing rule the spec records), `docs/engine-guide.md` (APIs, contracts, snippets, which must still match `examples/minimal/main.cpp` word for word) and `README.md` (features, build, flags) up to date with the merged code. You make these edits, after the merge, so parallel tasks never conflict on them. Commit: `<task-id>: docs`.
+- **Docs.** Bring `docs/architecture.md` (the "Where things live" table, and any new standing rule the spec records), `docs/engine-guide.md` (APIs, contracts, snippets, which must still match `examples/minimal/main.cpp` word for word) and `README.md` (features, build, flags) up to date with the merged code. When a task adds or changes a binary's flags, update the flag lists in `CLAUDE.md`'s "Verifying a change" too. You make these edits, after the merge, so parallel tasks never conflict on them. Commit: `<task-id>: docs`.
 - Set the task to `done` in the backlog with the merge commit hash, and commit.
 - Remove its worktree and branch: `git worktree remove ../<repo-dir>-<task-id>` and `git branch -d <task-id>`. Never force either. If git refuses, something is unmerged or uncommitted: find out what before going on.
 
