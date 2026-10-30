@@ -15,7 +15,8 @@ namespace desert {
 // the view's own transform places it. They are held in the rest pose while
 // the player stands still, and walk with the player: two looping clips,
 // Arms_Walk and Arms_Sprint, played by the distance the eye moves and blended
-// in by its speed. The game owns it.
+// in by its speed. The settings menu can also hold them in one clip at one
+// stride phase (hold), to inspect it. The game owns it.
 class Arms {
  public:
   // Actor-material slots 0-14: Arms_Wrap, Arms_Glove, Arms_Strap, Arms_Brass,
@@ -28,8 +29,16 @@ class Arms {
   // or lacks the Arms_Walk or Arms_Sprint clip.
   void load();
   // Advances the walk by the ground distance the eye moved over the last
-  // dt seconds (Player::moved, 0 while the player isn't moving).
-  void walk(float moved, float dt);
+  // dt seconds (Player::moved, 0 while the player isn't moving), at the
+  // player's walk and sprint speeds (Player::walkSpeed, sprintSpeed), which
+  // blend the clips by speed. sprintSpeed > walkSpeed.
+  void walk(float moved, float dt, float walkSpeed, float sprintSpeed);
+  // Holds the arms in one clip at full weight, at stride phase `phase`
+  // (0..1): the sprint if `sprint`, else the walk, whatever walk() is told,
+  // until release(). walk() keeps easing its weights meanwhile. For
+  // inspecting the clips from the settings menu.
+  void hold(bool sprint, float phase);
+  void release();
   // Places the arms at `view`, walking or at rest, and adds them to the
   // frame: params.viewModel and their actor materials. Their joints stay
   // valid until the next pose().
@@ -44,6 +53,9 @@ class Arms {
   float phase_ = 0.f;      // 0..1 through the stride cycle
   float moving_ = 0.f;     // the walk's eased weight over rest, 0..1
   float sprinting_ = 0.f;  // the sprint's eased weight over the walk, 0..1
+  bool held_ = false;      // hold(): one clip at full weight, at heldPhase_
+  bool heldSprint_ = false;
+  float heldPhase_ = 0.f;
 };
 
 }  // namespace desert
