@@ -80,7 +80,7 @@ Assets: yes
 Merged: bc94943
 
 ## glb-tool: A shared glb reader and checker
-Status: queued
+Status: in-progress
 Type: tooling
 Spec: docs/tasks/glb-tool/task.md
 Depends on: none
