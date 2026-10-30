@@ -1,7 +1,7 @@
 # The desert's settings menu
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Give `pxe_desert` a Tab settings menu like the ruins game's (`game::SettingsMenu`). The desert gets its own menu on `pxe::Overlay`, with controls only for what the desert actually uses: a running clock, cloud shadows and wind, the player's speeds, field of view and mouse sensitivity, the arms (show or hide, preview the walk and sprint clips, hold a pose), and the rendering switches the perspective frame already has. While the menu is open the cursor is free and the player doesn't look or walk. Every setting defaults to what the desert does today, so play opens unchanged and captures stay byte-identical.
@@ -291,3 +291,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 1722db0
