@@ -104,13 +104,13 @@ Run in the task's worktree, against the cycle base:
 2. `tools/ortho-check.sh <cycle base>`: 6/6 identical. `tools/perspective-check.sh <cycle base>`: **3/3 identical**.
 3. `git diff <cycle base> -- engine/shaders/mesh.frag engine/shaders/common.glsl engine/shaders/edge.frag engine/shaders/edge_perspective.frag engine/src/renderer_orthographic.cpp game desert examples`: no output.
 4. On, by temporary edits in `desert/src/world.cpp` at the end of `buildWorld` (the scene variable's real name):
-   - **Edit A:** `scene.ripples.surface = pxe::kSurfSand; scene.ripples.headingDegrees = 200.f;` → capture `pxe_desert --hour 18 --capture ripples.png`.
-   - **Edit B:** replace edit A with `scene.terminator[pxe::kSurfSand] = 0.35f;` → capture `terminator.png`.
-   - **Restore** with `git checkout -- desert/src/world.cpp` and `touch` it, rebuild, and capture `off.png`.
+   - **Edit A:** `scene.ripples.surface = pxe::kSurfSand; scene.ripples.headingDegrees = 200.f;` → capture `pxe_desert --hour 17.5 --capture ripples.png`.
+   - **Edit B:** replace edit A with `scene.terminator[pxe::kSurfSand] = 0.35f;` → capture `terminator.png` (also `--hour 17.5`).
+   - **Restore** with `git checkout -- desert/src/world.cpp` and `touch` it, rebuild, and capture `off.png` (`--hour 17.5`).
 
    Then:
    - the three are pairwise different (`cmp`);
-   - `off.png` equals the base's `pxe_desert --hour 18 --capture`;
+   - `off.png` equals the base's `pxe_desert --hour 17.5 --capture`;
    - `ripples.png` shows fine stripes on the sand near the eye, running across the wind and wandering slightly, gone by 20 m and absent on the steep downwind faces;
    - `terminator.png` shows tighter light/shadow edges along the crests, with lit slopes still graded.
 
@@ -135,7 +135,7 @@ None.
 - The desert's values and menu (`desert-ground`).
 
 ## Spec revisions
-None.
+- Revision 1, 2026-10-30: Verification 4 captures at `--hour 17.5` instead of 18, because at 18 the sun is exactly on the horizon and the direct term (where the terminator acts) is skipped, so the edits can't show; see replan-1.md.
 
 ## Cycle log
 - Cycle 1, 2026-10-30, base c2c6add
