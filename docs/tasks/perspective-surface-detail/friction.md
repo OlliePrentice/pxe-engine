@@ -1,0 +1,4 @@
+## game-developer cycle 1
+- instruction-gap: Verification 4 names `--hour 18`, where the desert's sun is exactly on the horizon (lighting.cpp `sunDirection`, y = 0), so neither feature can show. Found by comparing md5s and then testing other hours. Reported as spec infeasible for that step only.
+- tool: tools/captures.sh --edit run twice back to back (edit A, restore, edit B) built edit B's capture from a stale world.cpp.o once (terminator.png equalled ripples.png). A `sleep 2` between runs fixed it (cause not confirmed, probably timestamp granularity after the restore's touch). Script wrapping the three runs: docs/tasks/perspective-surface-detail/scripts/run-captures.sh.
+- doc-gap: `bindLit` had no access to the camera eye; I added a parameter. Found by reading renderer_perspective.cpp; the spec said "camera.eye" without noting the signature change.

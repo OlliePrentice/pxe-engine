@@ -71,7 +71,7 @@ glm::vec3 toLinear(glm::vec3 c) {
 // With `testColours` every albedo is white, the sun light pure red, the sky
 // fill pure green and the bounce pure blue, so each term shows on its own.
 void bindLit(unsigned prog, const Lighting& lighting, const Scene& scene, const FrameParams& params,
-             const LightFit& light, const LightFit& flash, float normalBias, bool testColours) {
+             const LightFit& light, const LightFit& flash, float normalBias, glm::vec3 eye, bool testColours) {
   const glm::vec3 sunDir = glm::normalize(lighting.lightDir);
   u3f(prog, "uSunDir", sunDir.x, sunDir.y, sunDir.z);
   const glm::vec3 sun = testColours ? glm::vec3{1.f, 0.f, 0.f} : lighting.sunLight;
@@ -120,6 +120,22 @@ void bindLit(unsigned prog, const Lighting& lighting, const Scene& scene, const 
   u3f(prog, "uFlashDir", flashDir.x, flashDir.y, flashDir.z);
   umat(prog, "uFlashViewProj", flash.viewProj);
   u1i(prog, "uFlashShadowMap", 6);
+
+  // Surface shading: each surface's terminator sharpness, and the ripples.
+  // Test colours show the plain light terms, so neither applies.
+  std::vector<float> terminator(kSurfCount, 0.f);
+  if (!testColours) std::copy(scene.terminator, scene.terminator + kSurfCount, terminator.begin());
+  glUniform1fv(uloc(prog, "uTerminator"), kSurfCount, terminator.data());
+  const SurfaceRipples& r = scene.ripples;
+  const float heading = glm::radians(r.headingDegrees);
+  glUniform1i(uloc(prog, "uRippleSurface"), testColours ? -1 : r.surface);
+  u1f(prog, "uRippleWavelength", r.wavelength);
+  u1f(prog, "uRippleDepth", r.depth);
+  u1f(prog, "uRippleFadeStart", r.fadeStart);
+  u1f(prog, "uRippleFadeEnd", r.fadeEnd);
+  u1f(prog, "uRippleMaxSlope", glm::radians(r.maxSlopeDegrees));
+  u2f(prog, "uRippleWind", std::sin(heading), std::cos(heading));
+  u3f(prog, "uEye", eye.x, eye.y, eye.z);
 }
 
 // The sky's colours greyed under rain cloud, as a room's window panes are.
@@ -242,7 +258,7 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
   // Program state shared by every mesh draw this frame.
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
-  bindLit(progMesh_, lighting, scene, params, light, flash, normalBias, params.testColours);
+  bindLit(progMesh_, lighting, scene, params, light, flash, normalBias, camera.eye, params.testColours);
 
   // No water to reflect.
   beginPass(PassTimes::kReflection);
