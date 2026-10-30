@@ -123,7 +123,7 @@ Kind: tool
 Status: open
 Seen: desert-arms (2026-10-29), desert-arms-walk (2026-10-30)
 Detail: docs/tasks/desert-arms/scripts/verify_arms_glb.py (build_arms.py also reads its glb back after export). desert-arms-walk: docs/tasks/desert-arms-walk/scripts/reimport_glb.py re-imports a glb and lists its skinned meshes, armatures and actions.
-Action: none yet (two sightings). The glb-tool task (F-026) reads glbs directly; it doesn't re-import through Blender's importer.
+Action: none yet (two sightings). The glb-tool task (F-026) reads glbs directly; it doesn't re-import through Blender's importer. Since glb-tool (0476111), designer.md tells the designer to check an export with `tools/glb.py info`/`compare` and re-import only for what the glb's data can't show, which should make re-imports rarer.
 
 ## F-016: Checks on parts at the screen edge, and first-hit checks without a tolerance
 Kind: instruction-gap
@@ -151,7 +151,7 @@ Kind: tool
 Status: actioned
 Seen: desert-arms-detail (2026-10-29), desert-arms-walk (2026-10-30, `check_glb_clips` in build_arms.py compares the rest-pose vertices, joint nodes and inverse bind matrices with the glb before the clips)
 Detail: docs/tasks/desert-arms-detail/scripts/compare_joints.py compares joint names, node transforms and inverse bind matrices of two glbs, to prove a rebuild kept the rig. Related to F-015 (re-importing a glb to verify it).
-Action: folded into the glb-tool tooling task (F-026) as `tools/glb.py compare`.
+Action: folded into the glb-tool tooling task (F-026) as `tools/glb.py compare`. Done in glb-tool (0476111).
 
 ## F-020: Temporary-edit verifications without the line to edit
 Kind: instruction-gap
@@ -200,7 +200,7 @@ Kind: tool
 Status: actioned
 Seen: desert-arms (2026-10-29, docs/tasks/desert-arms/scripts/verify_arms_glb.py), desert-arms-detail (2026-10-29, docs/tasks/desert-arms-detail/scripts/compare_joints.py), desert-arms-walk (2026-10-30, `read_glb` and `read_accessor` in desert/tools/blender/build_arms.py, and docs/tasks/desert-arms-walk/scripts/key_diffs.py)
 Detail: Four copies of the same glb JSON-chunk, binary-chunk and accessor decoding with `struct`, in three tasks. tools/ has no shared glb reader.
-Action: tooling task glb-tool queued (`tools/glb.py`: `read`, `accessor`, `node_trs`; `info` and `compare`), with F-019 folded in.
+Action: tooling task glb-tool queued (`tools/glb.py`: `read`, `accessor`, `node_trs`; `info` and `compare`), with F-019 folded in. glb-tool merged (0476111): `tools/glb.py` is in tools/README.md and README.md, and .claude/agents/designer.md's export check now points to it (retro commit).
 
 ## F-027: Where the view model is in a capture
 Kind: tool
@@ -222,3 +222,24 @@ Status: actioned
 Seen: desert-arms-walk (2026-10-30, orchestrator)
 Detail: CLAUDE.md's "Verifying a change" lists pxe_desert's flags ("has only `--help`, `--capture` ..."). The task added `--walk` and `--sprint`, and neither the developer's docs notes nor the merge's docs step named that list. Fixed in the desert-arms-walk docs commit.
 Action: .claude/skills/backlog-run/SKILL.md, step 6 "Docs": when a task changes a binary's flags, update CLAUDE.md's flag lists under "Verifying a change" too (retro workflow commit).
+
+## F-030: Importing a module from tools/ leaves `__pycache__/` untracked
+Kind: doc-gap
+Status: actioned
+Seen: glb-tool (2026-10-30, orchestrator: `tools/__pycache__/` showed in `git status` after Verification 7 and 8)
+Detail: `.gitignore` has no `__pycache__/` entry, so importing `tools/glb.py` leaves the tree dirty, which stops `/backlog-run` at preflight. The fix lay outside glb-tool's allowed files (ISSUE-001, wont-fix there).
+Action: fix task gitignore-pycache queued (adds `__pycache__/` to `.gitignore`).
+
+## F-031: Where a glb's binary chunk starts
+Kind: doc-gap
+Status: actioned
+Seen: glb-tool (2026-10-30, developer: Verification 7's byte patch)
+Detail: The hand-written copies found the bin chunk's data at `20 + json length + 8`, which is right only when the JSON chunk's length is already a multiple of 4. Chunks are 4-byte aligned, so it starts at `20 + pad4(json length) + 8`.
+Action: `glb.read` in `tools/glb.py` walks the chunks with the padding, and designer.md now points build scripts to it instead of decoding by hand (retro commit). Only a script that patches raw bytes still needs the offset: `docs/tasks/glb-tool/scripts/perturb_position.py` shows it.
+
+## F-032: A spec's sketch that disagrees with its text
+Kind: instruction-gap
+Status: actioned
+Seen: glb-tool (2026-10-30, developer and orchestrator: the `info` example listed the animations in a different order from the text's "in file order")
+Detail: The developer kept file order, rightly, since the sketch wasn't binding, but had to decide which one wins.
+Action: .claude/skills/feature/SKILL.md: a sketch must agree with the rules written around it (retro workflow commit).
