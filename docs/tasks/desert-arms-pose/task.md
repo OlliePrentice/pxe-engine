@@ -1,7 +1,7 @@
 # Arms: pointing forward, closer to the body, chunkier gloves
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Re-pose the desert player's arms (`desert/tools/blender/build_arms.py`, `desert/assets/characters/arms.glb`) toward `desert/docs/concept/wanderers.png`:
@@ -89,3 +89,4 @@ Run in the task's worktree, against the cycle base:
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 010f23d
