@@ -71,9 +71,10 @@ Assets: yes
 Merged: b9c8d7a
 
 ## desert-arms-walk: The arms walk with the player
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-arms-walk/task.md
 Depends on: desert-arms-detail
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/src/arms.hpp, desert/src/arms.cpp, desert/src/player.hpp, desert/src/player.cpp, desert/src/main.cpp, desert/docs/art-style.md, docs/tasks/desert-arms-walk/
 Assets: yes
+Merged: bc94943
