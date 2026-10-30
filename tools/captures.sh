@@ -240,8 +240,11 @@ fi
 
 # Temporary edit, applied to the working tree only.
 if [[ -n "$edit_file" ]]; then
-  edit_backup="$(mktemp "${TMPDIR:-/tmp}/pxe-captures-edit.XXXXXX")"
-  cp "$root/$edit_file" "$edit_backup"
+  # Arm the restore only once the backup is complete: an interrupt before that
+  # leaves the file untouched (and a stray scratch file, which is harmless).
+  backup_tmp="$(mktemp "${TMPDIR:-/tmp}/pxe-captures-edit.XXXXXX")"
+  cp "$root/$edit_file" "$backup_tmp"
+  edit_backup="$backup_tmp"
   python3 -I -c "$edit_py" apply "$root/$edit_file" "$edit_old" "$edit_new"
   touch "$root/$edit_file"
   echo "edit: $edit_file (restored on exit)"

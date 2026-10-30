@@ -6,3 +6,6 @@
 ## orchestrator cycle 1
 - instruction-gap: Verification 7 ("start in the background, kill -INT it") can't work as written from a non-interactive shell: background jobs start with SIGINT ignored and bash can't trap a signal ignored on entry. Specs that test signal handling should send the signal to a child started with the default disposition (e.g. python's subprocess), as scripts/interrupt-test.py does.
 - tool: parallel tasks running tools/*-check.sh against the same base commit race on ${TMPDIR}/pxe-render-check/<sha> (each rm -rf's and rebuilds it if the binary is missing). The orchestrator pre-built the base before delegating.
+
+## game-developer cycle 2
+- none

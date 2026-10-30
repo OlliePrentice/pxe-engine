@@ -37,3 +37,32 @@ Build: pass
 - Case names are limited to letters, digits, `.`, `_` and `-`, and must be unique (exit 2 otherwise); the spec didn't say, and the name becomes a file name.
 - Per-case logs (`<name>.log`, and in `base/` and the scratch directory) are written next to the PNGs for diagnosing a failed case.
 - Summary reads "1 checks failed" for one failure (the spec's wording).
+
+## Cycle 2
+Build: pass
+
+### Changes
+- tools/captures.sh: "Temporary edit" copies the file into `backup_tmp` and sets `edit_backup` (which arms the EXIT-trap restore) only after the `cp` has finished, before the edit is applied. Nothing else changed.
+- docs/tasks/capture-tool/issues.md: ISSUE-001 set to fixed with fix notes.
+
+### Issues addressed
+- ISSUE-001: the restore is armed only once the backup is complete.
+
+### Layering
+- Engine: none
+- Game: none
+- Misplaced code touched: none
+
+### How to playtest
+- Not a runtime feature. Verification re-run after the fix (all in the worktree, `--base HEAD`, cases file from the spec):
+  - Verification 5 (edit against base, `--expect differ`): `d1630` and `d21` differ from base, `fp` identical, summary "3 cases, 1 checks failed", exit 1. Afterwards `git status --porcelain` shows only `tools/captures.sh` (the uncommitted fix), `desert/src/world.cpp` passes `git diff --quiet`, and its mtime moved from 1793372328 to 1793372409.
+  - Verification 6: `--edit ... 'no such text' 'x'` exits 2, file clean; `--edit ... 'scene.groundBounce['` (4 occurrences) exits 2, file clean.
+  - Interrupt check, `scripts/interrupt-test.py` with INT (exit status 130) and TERM (143): edited while running True, restored True, mtime newer True, `desert/src/world.cpp` clean afterwards.
+  - `bash -n tools/captures.sh` passes. The base directory `${TMPDIR}/pxe-render-check/06c765a...` was built for this run and kept.
+- Verification 1-4, 7-9 were not re-run: the change touches only the edit block, which none of them reach (no `--edit`) beyond 7, which the interrupt script covers.
+
+### Docs
+- None.
+
+### Known limitations
+- An interrupt between `mktemp` and the end of `cp` leaves a stray `pxe-captures-edit.*` file in the temp directory (by design, harmless).
