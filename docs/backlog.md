@@ -107,7 +107,7 @@ Assets: yes
 Merged: 451ab12
 
 ## desert-settings-menu: The desert's settings menu
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-settings-menu/task.md
 Depends on: none
@@ -115,7 +115,7 @@ Touches: desert/src/settings.hpp, desert/src/settings.cpp, desert/src/main.cpp, 
 Assets: no
 
 ## perspective-smooth-lighting: Smooth lighting in perspective mode
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/perspective-smooth-lighting/task.md
 Depends on: none
