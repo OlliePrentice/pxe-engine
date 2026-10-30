@@ -28,6 +28,7 @@ constexpr int kGrime = 10;
 [[maybe_unused]] constexpr int kDial = 11;
 [[maybe_unused]] constexpr int kPaint = 12;
 [[maybe_unused]] constexpr int kAmber = 13;
+[[maybe_unused]] constexpr int kScreen = 14;
 
 // Metres walked per cycle of each clip (two steps), and how fast the walk's
 // weights follow the speed: a time constant, seconds.
