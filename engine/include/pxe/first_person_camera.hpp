@@ -47,8 +47,8 @@ class FirstPersonCamera {
   // Vertical field of view, radians, between 1 and 170 degrees.
   void setFovYRadians(float fovY);
   // How far the view reaches, metres (at least a metre past the near
-  // plane). Surfaces fade into the sky's horizon colour over the last 40%
-  // of it.
+  // plane). Surfaces fade into the sky's horizon colour with distance
+  // (Scene::hazeDensity), fully by the far plane.
   void setFarPlane(float far);
 
   glm::vec3 eye() const { return eye_; }

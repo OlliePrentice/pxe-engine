@@ -51,7 +51,72 @@ LightFit fitLightAhead(const Scene& scene, glm::vec3 lightDir, const Perspective
   const float back = radius + glm::length(centre - sceneCentre) + sceneRadius + 10.f;
   const glm::mat4 view = glm::lookAt(centre + L * back, centre, up);
   fit.viewProj = glm::ortho(-radius, radius, -radius, radius, 1.f, back + radius + 10.f) * view;
+  fit.depthSpan = (back + radius + 10.f) - 1.f;
   return fit;
+}
+
+// A display (sRGB) colour in linear light, by the exact sRGB curve per
+// channel. (lighting.cpp keeps its own copy.)
+glm::vec3 toLinear(glm::vec3 c) {
+  auto one = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+  return glm::vec3{one(c.x), one(c.y), one(c.z)};
+}
+
+// Everything the smooth lit mesh program (mesh_perspective.frag) reads: the
+// light and its shadows, the albedo of every surface and character
+// material. The sun's shadow map is on unit 1 and lightning's on unit 6.
+// With `testColours` every albedo is white, the sun light pure red, the sky
+// fill pure green and the bounce pure blue, so each term shows on its own.
+void bindLit(unsigned prog, const Lighting& lighting, const Scene& scene, const FrameParams& params,
+             const LightFit& light, const LightFit& flash, float normalBias, bool testColours) {
+  const glm::vec3 sunDir = glm::normalize(lighting.lightDir);
+  u3f(prog, "uSunDir", sunDir.x, sunDir.y, sunDir.z);
+  const glm::vec3 sun = testColours ? glm::vec3{1.f, 0.f, 0.f} : lighting.sunLight;
+  const glm::vec3 fill = testColours ? glm::vec3{0.f, 1.f, 0.f} : lighting.skyFillLight;
+  const glm::vec3 bounce = testColours ? glm::vec3{0.f, 0.f, 1.f} : lighting.bounceLight;
+  u3f(prog, "uSunLight", sun.x, sun.y, sun.z);
+  u3f(prog, "uSkyFillLight", fill.x, fill.y, fill.z);
+  u3f(prog, "uBounceLight", bounce.x, bounce.y, bounce.z);
+  u1f(prog, "uExposure", lighting.exposure);
+
+  std::vector<float> albedo;
+  albedo.reserve(kSurfCount * 3);
+  for (int s = 0; s < kSurfCount; ++s) {
+    const glm::vec3 c = testColours ? glm::vec3{1.f} : toLinear(scene.albedo[s]);
+    albedo.insert(albedo.end(), {c.x, c.y, c.z});
+  }
+  u3fv(prog, "uAlbedo", kSurfCount, albedo.data());
+  std::vector<float> colour, actorAlbedo;
+  std::vector<int> flags;  // per slot: 1 glows, 2 creases (mesh_perspective.frag)
+  for (const ActorMaterial& m : params.actorMaterials) {
+    const glm::vec3 c = testColours ? glm::vec3{1.f} : toLinear(m.colour);
+    colour.insert(colour.end(), {m.colour.x, m.colour.y, m.colour.z});
+    actorAlbedo.insert(actorAlbedo.end(), {c.x, c.y, c.z});
+    flags.push_back((m.glow ? 1 : 0) | (m.crease ? 2 : 0));
+  }
+  u3fv(prog, "uActorColour", kActorMaterials, colour.data());
+  u3fv(prog, "uActorAlbedo", kActorMaterials, actorAlbedo.data());
+  glUniform1iv(uloc(prog, "uActorFlags"), kActorMaterials, flags.data());
+
+  umat(prog, "uLightViewProj", light.viewProj);
+  u1i(prog, "uShadowMap", 1);
+  u1f(prog, "uNormalBias", normalBias);
+  // Half the penumbra, in the map's UV (the map spans 2 * kShadowReach
+  // metres) and in its depth units. The flash map shares the fit's size.
+  u1f(prog, "uPenumbraUV", lighting.shadowPenumbra * 0.5f / (2.f * kShadowReach));
+  u1f(prog, "uPenumbraDepth", lighting.shadowPenumbra * 0.5f / light.depthSpan);
+  glUniform4f(uloc(prog, "uHorizon"), lighting.horizon.x, lighting.horizon.y, lighting.horizon.z, lighting.horizon.w);
+  u1f(prog, "uHorizonRelief", lighting.horizonRelief);
+  u1f(prog, "uCloudCover", lighting.cloudCover);
+  u2f(prog, "uCloudOffset", lighting.cloudOffset.x, lighting.cloudOffset.y);
+  u1f(prog, "uCloudStrength", lighting.cloudStrength);
+  u1f(prog, "uOvercast", lighting.overcast);
+  u1f(prog, "uRain", lighting.rain);
+  u1f(prog, "uFlash", lighting.flash);
+  const glm::vec3 flashDir = glm::normalize(lighting.flashDir);
+  u3f(prog, "uFlashDir", flashDir.x, flashDir.y, flashDir.z);
+  umat(prog, "uFlashViewProj", flash.viewProj);
+  u1i(prog, "uFlashShadowMap", 6);
 }
 
 // The sky's colours greyed under rain cloud, as a room's window panes are.
@@ -74,6 +139,10 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
     lighting.cloudStrength = 0.f;
     lighting.rays = 0.f;
   }
+  // Toward the sun for the sky's glow and disc and the haze's glow, which
+  // rain cloud fades.
+  const glm::vec3 sunDir = glm::normalize(lighting.sunDir);
+  const float sunGlow = lighting.sunGlow * (1.f - lighting.overcast);
   const LightFit light = fitLightAhead(scene, lighting.lightDir, camera);
   const LightFit flash = fitLightAhead(scene, lighting.flashDir, camera);
   const float normalBias = 3.f * light.texel;
@@ -149,11 +218,10 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
   // No grass, water, fire or grass fire here, so no wind phase, no firelights
-  // and no fire grid: the mesh programs without firelights, and the
-  // perspective edge pass.
+  // and no fire grid: the smooth lit mesh program, and the perspective edge
+  // pass.
   progEdge_ = edgePerspective_;
-  progMesh_ = toon_[0][0].mesh;
-  const FireUniforms fireLight;
+  progMesh_ = progMeshLit_;
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
   glViewport(0, 0, rtW(), rtH());
@@ -171,28 +239,7 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
   // Program state shared by every mesh draw this frame.
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
-  u1f(progMesh_, "uTime", params.time);
-  bindToon(progMesh_, lighting, scene, light.viewProj, flash.viewProj, fireLight, normalBias,
-           params.testColours);
-  if (!params.actors.empty() || !params.actorEffects.empty() || !params.viewModel.empty()) {
-    // The stone's ramp now, over its mid colour by day: the light a character stands in.
-    const glm::vec3 day = glm::max(scene.palette[kPhaseDay][kSurfStone].band[1], glm::vec3{0.02f});
-    std::vector<float> tint, colour;
-    std::vector<int> flags;  // per slot: 1 glows, 2 creases (mesh.frag)
-    for (int b = 0; b < 3; ++b) {
-      const glm::vec3 t = params.testColours ? glm::vec3(b == 2, b == 1, b == 0) : lighting.palette[kSurfStone].band[b] / day;
-      tint.insert(tint.end(), {t.x, t.y, t.z});
-    }
-    for (const ActorMaterial& m : params.actorMaterials) {
-      colour.insert(colour.end(), {m.colour.x, m.colour.y, m.colour.z});
-      flags.push_back((m.glow ? 1 : 0) | (m.crease ? 2 : 0));
-    }
-    u3fv(progMesh_, "uActorTint", 3, tint.data());
-    u3fv(progMesh_, "uActorColour", kActorMaterials, colour.data());
-    glUniform1iv(uloc(progMesh_, "uActorFlags"), kActorMaterials, flags.data());
-    const glm::vec3 fire = lighting.fireBand[kSurfStone] / day;
-    u3f(progMesh_, "uActorFire", fire.x, fire.y, fire.z);
-  }
+  bindLit(progMesh_, lighting, scene, params, light, flash, normalBias, params.testColours);
 
   // No water to reflect.
   beginPass(PassTimes::kReflection);
@@ -219,6 +266,10 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
     u2f(progBackdrop_, "uTanHalf", 1.f / camera.proj[0][0], 1.f / camera.proj[1][1]);
     u3f(progBackdrop_, "uHorizon", horizon.x, horizon.y, horizon.z);
     u3f(progBackdrop_, "uZenith", zenith.x, zenith.y, zenith.z);
+    u3f(progBackdrop_, "uSunDir", sunDir.x, sunDir.y, sunDir.z);
+    u3f(progBackdrop_, "uSunColour", lighting.sunGlowColour.x, lighting.sunGlowColour.y, lighting.sunGlowColour.z);
+    u1f(progBackdrop_, "uSunGlow", sunGlow);
+    u1f(progBackdrop_, "uOvercastDisc", lighting.overcast);
     glBindVertexArray(presentVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
@@ -314,7 +365,10 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
     u1f(progEdge_, "uRefTexel", 1.f / RenderConfig::kPixelsPerUnit);
     const glm::vec3 haze = overcastSky(lighting.skyHorizon, lighting.overcast);
     u3f(progEdge_, "uHaze", haze.x, haze.y, haze.z);
-    u2f(progEdge_, "uHazeSpan", 0.6f * camera.farPlane, camera.farPlane);
+    u1f(progEdge_, "uHazeDensity", lighting.hazeDensity);
+    u3f(progEdge_, "uSunDir", sunDir.x, sunDir.y, sunDir.z);
+    u3f(progEdge_, "uSunColour", lighting.sunGlowColour.x, lighting.sunGlowColour.y, lighting.sunGlowColour.z);
+    u1f(progEdge_, "uSunGlow", sunGlow);
   }
   glBindVertexArray(presentVao_);
   glDrawArrays(GL_TRIANGLES, 0, 3);

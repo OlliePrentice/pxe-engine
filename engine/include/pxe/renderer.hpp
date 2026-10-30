@@ -180,13 +180,19 @@ class Renderer {
   // Throws std::invalid_argument, before drawing anything, if params.present
   // is set without a positive framebuffer size, or in perspective mode.
   void render(const Scene& scene, const CameraFrame& camera, const FrameParams& params);
-  // Draw a frame through FirstPersonCamera, in perspective mode. The sky
-  // fills the background and surfaces fade into its horizon colour toward
-  // the far plane; the sun's shadow map covers 60 m round the eye, pushed
-  // ahead along the view, and nothing beyond it is shadowed. Not yet
-  // supported, and skipped whatever params says: grass and leaf sprites,
-  // water and its reflections, god rays, rain, fires (their flames and
-  // light) and the grass fire, fireflies and point lights. The same
+  // Draw a frame through FirstPersonCamera, in perspective mode. Surfaces
+  // are lit smoothly (not by the toon ramp): by the sun or moon with soft
+  // shadows, a sky fill from above and a bounce from the ground, and
+  // lightning as a second light with its own shadows. Haze is continuous and
+  // exponential, fading surfaces into the sky's horizon colour, fully by the
+  // far plane, and glowing toward the sun. The sky behind is a continuous
+  // gradient with a glow round the sun and a soft sun disc. The sun's shadow
+  // map covers 60 m round the eye, pushed ahead along the view, and nothing
+  // beyond it is shadowed. Not yet supported, and skipped whatever params
+  // says: grass and leaf sprites, water and its reflections, god rays, rain
+  // (as falling drops; its overcast does fade the direct light), fires
+  // (their flames and light) and the grass fire, fireflies and point lights,
+  // indoor window and fill light, dark regions, firelight. The same
   // contract on `scene` and params.present as the orthographic render.
   // Throws std::invalid_argument, before drawing anything, in orthographic
   // mode.
@@ -304,6 +310,8 @@ class Renderer {
 
   // The toon programs this frame: one of toon_, by how many firelights.
   unsigned progMesh_ = 0;
+  // the perspective mode's mesh program (mesh_perspective.frag): the smooth lit model; perspective mode only
+  unsigned progMeshLit_ = 0;
   unsigned progGrass_ = 0;
   unsigned progShadow_ = 0;
   unsigned progShadowGrid_ = 0;  // crowns burning away: reads the grass fire's burn texture

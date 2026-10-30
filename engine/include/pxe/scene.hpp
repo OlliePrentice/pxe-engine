@@ -128,11 +128,32 @@ struct Scene {
   glm::vec3 rim[kPhaseCount]{};
   glm::vec3 ink[kPhaseCount]{};
   // The sky behind a perspective view (FirstPersonCamera) per phase: a
-  // gradient from the horizon colour to the zenith colour, in flat bands.
+  // continuous gradient from the horizon colour to the zenith colour.
   // Surfaces fade into the horizon colour toward the far plane. Default to
   // the reference style's, like `palette`. Not drawn under Camera.
   glm::vec3 skyHorizon[kPhaseCount]{};
   glm::vec3 skyZenith[kPhaseCount]{};
+  // Perspective mode's light (FirstPersonCamera), a smooth lit model rather
+  // than the toon ramp. Per phase, blended by sun elevation as the palettes
+  // are: the direct light (the sun's; in kPhaseNight the moon's), the sky's
+  // fill from above and the light bounced up from the ground, each a display
+  // (sRGB) colour and a linear strength. Not used under Camera.
+  glm::vec3 sunColour[kPhaseCount]{};
+  float sunStrength[kPhaseCount]{};
+  glm::vec3 skyFill[kPhaseCount]{};
+  float skyFillStrength[kPhaseCount]{};
+  glm::vec3 groundBounce[kPhaseCount]{};
+  float groundBounceStrength[kPhaseCount]{};
+  // Each surface's base colour (albedo, display sRGB) under perspective
+  // mode's light: how it looks facing the noon sun. The constructor sets it
+  // to each surface's day mid band (palette[kPhaseDay][s].band[1]); a game
+  // that changes that band afterwards sets the albedo itself.
+  glm::vec3 albedo[kSurfCount]{};
+  // Perspective mode's air and exposure, the same at every hour.
+  float hazeDensity = 0.006f;   // per metre: haze is 1 - exp(-density * distance), full at the far plane
+  float sunGlow = 0.6f;         // 0..1: how far haze and sky toward the sun take its colour
+  float shadowPenumbra = 0.3f;  // metres across a soft shadow's edge
+  float exposure = 1.f;         // multiplies the light before it is clamped
 
   // N·L thresholds for the toon ramp with the sun high. They scale down as
   // the sun drops so a low sun still lights flat ground.
