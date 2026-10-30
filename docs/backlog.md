@@ -161,12 +161,13 @@ Assets: no
 Merged: 087a0f1
 
 ## captures-edit-stale-build: captures.sh rebuilds the edited file after its edit and restore
-Status: in-progress
+Status: done
 Type: fix
 Spec: docs/tasks/captures-edit-stale-build/task.md
 Depends on: none
 Touches: tools/captures.sh, tools/README.md, docs/tasks/captures-edit-stale-build/
 Assets: no
+Merged: b36de25
 
 ## png-diff-tool: A PNG difference reporter
 Status: queued
