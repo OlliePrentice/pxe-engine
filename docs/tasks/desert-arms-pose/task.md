@@ -1,7 +1,7 @@
 # Arms: pointing forward, closer to the body, chunkier gloves
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 Re-pose the desert player's arms (`desert/tools/blender/build_arms.py`, `desert/assets/characters/arms.glb`) toward `desert/docs/concept/wanderers.png`:
@@ -96,3 +96,4 @@ Run in the task's worktree, against the cycle base:
 - Cycle 1, 2026-10-30: base 010f23d
 - Cycle 1, 2026-10-30: designer returned NEEDS INPUT (5f8386c): four binding checks fail at the spec's values and its fallbacks can't recover them (gauge readout, compass in view, palm vs cuff, sprint framing); reproduced by the orchestrator. Fixes change Decisions: blocked, see replan-1.md.
 - Unblocked: 2026-10-30, replan 1 answered by the user; values fixed from a full-check trial (build_arms-unblock.patch)
+- Cycle 2, 2026-10-30: base e9a5b3c (run branch merged in at e9a5b3c so captures show today's desert; build_arms.py unchanged by the merge)
