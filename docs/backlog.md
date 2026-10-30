@@ -107,12 +107,13 @@ Assets: yes
 Merged: 451ab12
 
 ## desert-settings-menu: The desert's settings menu
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-settings-menu/task.md
 Depends on: none
 Touches: desert/src/settings.hpp, desert/src/settings.cpp, desert/src/main.cpp, desert/src/player.hpp, desert/src/player.cpp, desert/src/arms.hpp, desert/src/arms.cpp, desert/CMakeLists.txt
 Assets: no
+Merged: 60b20f7
 
 ## perspective-smooth-lighting: Smooth lighting in perspective mode
 Status: in-progress
