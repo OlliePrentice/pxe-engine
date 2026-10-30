@@ -133,12 +133,13 @@ Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp,
 Assets: no
 
 ## perspective-sky-clouds: Sky clouds in perspective mode
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/perspective-sky-clouds/task.md
 Depends on: perspective-smooth-lighting
 Touches: engine/include/pxe/scene.hpp, engine/src/scene.cpp, engine/include/pxe/lighting.hpp, engine/src/lighting.cpp, engine/src/renderer_perspective.cpp, engine/shaders/backdrop.frag, docs/tasks/perspective-sky-clouds/
 Assets: no
+Merged: 3eaf280
 
 ## perspective-dust: Airborne dust in perspective mode
 Status: queued
