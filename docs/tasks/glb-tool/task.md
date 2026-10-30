@@ -1,7 +1,7 @@
 # A shared glb reader and checker
 Type: tooling
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Asset tasks keep reading glb files by hand to check what a build exported: the JSON chunk, the binary chunk and accessors, decoded with `struct`. There are four hand-written copies so far, across three tasks: `docs/tasks/desert-arms/scripts/verify_arms_glb.py`, `docs/tasks/desert-arms-detail/scripts/compare_joints.py`, `read_glb` and `read_accessor` in `desert/tools/blender/build_arms.py`, and `docs/tasks/desert-arms-walk/scripts/key_diffs.py` (friction log F-026, with F-019). Turn them into one tool, `tools/glb.py`. It is an importable module for build scripts and checks, and a command line with two jobs: `info` lists what a glb holds, and `compare` proves a rebuild kept a model's rig, materials and rest mesh.
@@ -157,3 +157,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 5548df0.
