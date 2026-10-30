@@ -22,6 +22,8 @@ struct Lighting {
   float cloudCover = 0.f;
   float cloudStrength = 0.6f;  // how far a thick cloud pulls toward shadow
   glm::vec2 cloudOffset{0.f};
+  // Metres the perspective sky clouds have drifted (Scene::skyClouds).
+  glm::vec2 skyCloudOffset{0.f};
   // Horizon ridge, copied from the scene: centre xz, radius, height, relief.
   glm::vec4 horizon{0.f};
   float horizonRelief = 0.f;
@@ -99,6 +101,7 @@ struct Weather {
   // cloud-texture units, and how far a thick cloud pulls toward shadow.
   float cloudCover = 0.f;
   glm::vec2 cloudOffset{0.f};
+  glm::vec2 skyCloudOffset{0.f};  // metres the sky clouds have drifted (Scene::skyClouds), advanced by the game
   float cloudStrength = 0.6f;
   // Horizontal direction the wind blows toward (unit, world XZ), and how
   // hard it blows (1 by default).

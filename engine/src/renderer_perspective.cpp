@@ -270,6 +270,31 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
     u3f(progBackdrop_, "uSunColour", lighting.sunGlowColour.x, lighting.sunGlowColour.y, lighting.sunGlowColour.z);
     u1f(progBackdrop_, "uSunGlow", sunGlow);
     u1f(progBackdrop_, "uOvercastDisc", lighting.overcast);
+    // The sky clouds: the wind they stream along, and each layer's plane.
+    u3f(progBackdrop_, "uEye", camera.eye.x, camera.eye.y, camera.eye.z);
+    glm::vec2 windDir = lighting.windDir;
+    windDir = glm::length(windDir) < 1e-4f ? glm::vec2{1.f, 0.f} : glm::normalize(windDir);
+    u2f(progBackdrop_, "uWindDir", windDir.x, windDir.y);
+    float cloudHeight[Scene::kSkyCloudLayers], cloudCover[Scene::kSkyCloudLayers];
+    float cloudOpacity[Scene::kSkyCloudLayers], cloudLength[Scene::kSkyCloudLayers];
+    float cloudWidth[Scene::kSkyCloudLayers];
+    glm::vec2 cloudOffset[Scene::kSkyCloudLayers];
+    for (int i = 0; i < Scene::kSkyCloudLayers; ++i) {
+      const SkyCloudLayer& layer = scene.skyClouds[i];
+      cloudHeight[i] = layer.height;
+      cloudCover[i] = layer.cover;
+      cloudOpacity[i] = layer.opacity;
+      cloudLength[i] = layer.length;
+      cloudWidth[i] = layer.width;
+      cloudOffset[i] = lighting.skyCloudOffset * layer.drift;
+    }
+    glUniform1fv(uloc(progBackdrop_, "uCloudHeight"), Scene::kSkyCloudLayers, cloudHeight);
+    glUniform1fv(uloc(progBackdrop_, "uCloudCover"), Scene::kSkyCloudLayers, cloudCover);
+    glUniform1fv(uloc(progBackdrop_, "uCloudOpacity"), Scene::kSkyCloudLayers, cloudOpacity);
+    glUniform1fv(uloc(progBackdrop_, "uCloudLength"), Scene::kSkyCloudLayers, cloudLength);
+    glUniform1fv(uloc(progBackdrop_, "uCloudWidth"), Scene::kSkyCloudLayers, cloudWidth);
+    glUniform2fv(uloc(progBackdrop_, "uCloudOffset"), Scene::kSkyCloudLayers, &cloudOffset[0].x);
+    u1f(progBackdrop_, "uCloudBrightness", scene.skyCloudBrightness);
     glBindVertexArray(presentVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);
