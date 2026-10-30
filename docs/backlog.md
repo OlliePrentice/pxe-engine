@@ -170,7 +170,7 @@ Assets: no
 Merged: b36de25
 
 ## png-diff-tool: A PNG difference reporter
-Status: queued
+Status: in-progress
 Type: tooling
 Spec: docs/tasks/png-diff-tool/task.md
 Depends on: none
