@@ -1,6 +1,6 @@
 # The desert's settings menu
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -266,15 +266,15 @@ Run in the task's worktree, against the cycle base:
 - Edges, N·L and Test colours toggle as expected. The fps line updates.
 
 ## Acceptance criteria
-- [ ] `desert/src/settings.hpp` declares `Clock`, `PlayerSettings`, `ViewSettings` and `SettingsMenu` with the binding names, types and defaults. `settings.cpp` implements them as the Approach describes, with the sections in the given order and no rain, lightning, sound, brush or fire controls.
-- [ ] `Player` has `walkSpeed` and `sprintSpeed` defaulting to the constants, and `update` uses them.
-- [ ] `Arms::walk` takes the speeds and is otherwise unchanged. `hold` and `release` work as specified, and `pose()` draws the held clip at full weight while held.
-- [ ] `main.cpp` implements Tab, Start, Escape, click and close-button behaviour exactly as Decisions ("Behaviour") says. The player doesn't look or walk while the menu is open, and the clock advances every play frame.
-- [ ] Every setting is applied in interactive frames as the Approach lists. The headless path uses `opt.hour`, `pxe::Weather{}` and the default camera and `FrameParams`.
-- [ ] `--menu` parses, appears in `--help`, starts with the menu open and the cursor free, and is rejected with `--capture` or `--window-png`.
-- [ ] Verification 2–7 pass: perspective 3/3, the three walk captures identical to base, the diff empty, ortho 6/6, the flags and greps as stated.
-- [ ] No file under `engine/`, `game/` or `examples/` changed.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `desert/src/settings.hpp` declares `Clock`, `PlayerSettings`, `ViewSettings` and `SettingsMenu` with the binding names, types and defaults. `settings.cpp` implements them as the Approach describes, with the sections in the given order and no rain, lightning, sound, brush or fire controls. — `desert/src/settings.hpp` declarations match the binding block; `settings.cpp` `SettingsMenu::draw` has the seven sections in order, no rain/lightning/sound/brush/fire controls.
+- [x] `Player` has `walkSpeed` and `sprintSpeed` defaulting to the constants, and `update` uses them. — `desert/src/player.hpp` `Player::walkSpeed`/`sprintSpeed`; `player.cpp` `Player::update` uses them.
+- [x] `Arms::walk` takes the speeds and is otherwise unchanged. `hold` and `release` work as specified, and `pose()` draws the held clip at full weight while held. — `desert/src/arms.cpp` `Arms::walk` (only the two clamps changed), `hold`, `release`, and `pose()`'s `held_` branch.
+- [x] `main.cpp` implements Tab, Start, Escape, click and close-button behaviour exactly as Decisions ("Behaviour") says. The player doesn't look or walk while the menu is open, and the clock advances every play frame. — `desert/src/main.cpp` interactive loop: Tab/Start toggle, Escape with `escapeClosed`, click guarded by `!menu.open()`, close button via `openBeforeDraw`; `playing` gates `player.update`; `clock.advance(dt)` every frame.
+- [x] Every setting is applied in interactive frames as the Approach lists. The headless path uses `opt.hour`, `pxe::Weather{}` and the default camera and `FrameParams`. — `main.cpp`: FOV, far plane, edges/showNdl/testColours, `clock.weather()`, `showArms` applied in play; headless passes `opt.hour`, `pxe::Weather{}`, nothing else touched.
+- [x] `--menu` parses, appears in `--help`, starts with the menu open and the cursor free, and is rejected with `--capture` or `--window-png`. — `--help` lists `--menu`; `--menu --capture` and `--menu --window-png` exit 1 (orchestrator ran both).
+- [x] Verification 2–7 pass: perspective 3/3, the three walk captures identical to base, the diff empty, ortho 6/6, the flags and greps as stated. — Orchestrator: perspective-check 3/3 identical, ortho-check 6/6, walk-compare w/s/n IDENTICAL, diff over engine/game/examples/world/assets/tools empty, greps as stated.
+- [x] No file under `engine/`, `game/` or `examples/` changed. — `git diff 1722db0..HEAD --stat` touches only `desert/` and the task folder.
+- [x] Project builds cleanly from a fresh build directory with CMake — Orchestrator fresh `check` build: only the stb_image_write `sprintf` warning.
 
 ## Assets
 None.
@@ -292,3 +292,15 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-30: base 1722db0
+- Cycle 1 review, 2026-10-30: no issues; build, verification 2-8 pass.
+
+## Playtest checklist
+- Play starts exactly as before: cursor held, 16:30, no clouds, arms at rest. `pxe_desert --menu` starts with the menu open and the cursor free.
+- Tab opens the menu and frees the cursor; mouse look and WASD stop. Tab closes it and the cursor is held again. Same with the pad's Start. The menu window's ✕ closes it and recaptures the cursor.
+- Escape with the menu open closes it and leaves the cursor free. Escape again quits; a click instead recaptures. Clicking menu widgets never recaptures.
+- Unpause the clock: the light moves through the day; hour presets and speed buttons work.
+- Raise cloud cover: cloud shadows cross the sand and palm, drifting with the wind direction and strength.
+- Change walk and sprint speed and walk: speed changes and the arms still swing in step. The sprint slider can't go below walk + 0.5.
+- Field of view, mouse sensitivity and view distance (haze moves in) each take effect live.
+- Arms: hide/show; preview Walk and Sprint standing still; Hold pose and scrub the phase; Preview Off returns to rest.
+- Edges, N·L and Test colours toggle; the fps line updates.
