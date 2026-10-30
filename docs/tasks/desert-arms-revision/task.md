@@ -1,6 +1,6 @@
 # Arms: hands held with intent, an LCD gauge, quieter stitching
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -160,16 +160,16 @@ Run in the task's worktree. `<base>` is the cycle base.
    - in the sprint, the fingers curl into loose fists and nothing is above row 351.
 
 ## Acceptance criteria
-- [ ] `HAND_ROLL` is 90.0, or the first of 85/80/75 at which the compass face is wholly seen (recorded in assets.md). `HAND_YAW`, `HAND_PITCH`, `FINGERS`, `THUMB_*`, `WRIST`, `SHOULDER` and `ELBOW_SWING` are unchanged. `KNUCKLE_Y` is (-0.70, -0.40).
-- [ ] `MATERIALS` has `Arms_Glow` (70, 255, 110) emissive, `Arms_Thread` (132, 100, 70), and `Arms_Screen` (30, 46, 36) emissive appended last. Every other entry is unchanged.
-- [ ] `BAR`, `BAR_GAP`, `BAR_MIN_PX` and the bar pieces are gone. `LCD_PANEL`, `LCD_DOT`, `LCD_PROUD`, `LCD_TEXT` and `LCD_MIN_PX` are as binding. `gauge()` builds `L.screen` and one `L.lcd.<g>.<r><c>` piece per lit dot (38 dots).
-- [ ] `framing()` runs the binding readout checks (in view, seen, ≥3 px both ways, facing ≥ `FACE_COS`, reading order) and prints `m["lcd"]`.
-- [ ] `main()` compares the clips glb against the glb just exported, and `PXE_ARMS_BEFORE` is gone.
-- [ ] Verification 2–7 pass: the build's checks pass and are reproducible, kept pieces within 1e-6 m, the glb read-back is right, the render-mode checks come out as stated, and both the diff and the grep are empty.
-- [ ] assets.md records the measured values next to Assets' "Expected values".
-- [ ] `desert/docs/art-style.md` has only the binding slot-sentence changes. `arms.hpp`'s comment and `arms.cpp`'s `kScreen` are as specified.
-- [ ] The captures are in the task folder, deterministic, and show what Verification 8 describes.
-- [ ] Project builds cleanly from a fresh build directory with CMake.
+- [x] `HAND_ROLL` is 90.0, or the first of 85/80/75 at which the compass face is wholly seen (recorded in assets.md). `HAND_YAW`, `HAND_PITCH`, `FINGERS`, `THUMB_*`, `WRIST`, `SHOULDER` and `ELBOW_SWING` are unchanged. `KNUCKLE_Y` is (-0.70, -0.40). — Evidence: build_arms.py: `HAND_ROLL = 90.0` (no fallback; 0 of 216 compass face vertices blocked, assets.md), the other pose constants unchanged in `git diff 8b57c1b`, `KNUCKLE_Y = (-0.70, -0.40)`.
+- [x] `MATERIALS` has `Arms_Glow` (70, 255, 110) emissive, `Arms_Thread` (132, 100, 70), and `Arms_Screen` (30, 46, 36) emissive appended last. Every other entry is unchanged. — Evidence: build_arms.py `MATERIALS`; `tools/glb.py info` lists 15 materials with `Arms_Screen` at 14; the build's glb read-back matched every colour and emissive flag.
+- [x] `BAR`, `BAR_GAP`, `BAR_MIN_PX` and the bar pieces are gone. `LCD_PANEL`, `LCD_DOT`, `LCD_PROUD`, `LCD_TEXT` and `LCD_MIN_PX` are as binding. `gauge()` builds `L.screen` and one `L.lcd.<g>.<r><c>` piece per lit dot (38 dots). — Evidence: build_arms.py constants and `Builder.gauge()`: `L.screen` plus 38 `L.lcd.*` dots (m["lcd"].dots 38); Verification 7 grep empty.
+- [x] `framing()` runs the binding readout checks (in view, seen, ≥3 px both ways, facing ≥ `FACE_COS`, reading order) and prints `m["lcd"]`. — Evidence: build_arms.py `framing()`: in view, seen, ≥ `LCD_MIN_PX` both ways, `facing < FACE_COS` fails, glyph order and row order; m["lcd"] printed (min 4.21 × 4.35 px, facing ≥ 0.963). Designer proved the size and order checks fail when broken.
+- [x] `main()` compares the clips glb against the glb just exported, and `PXE_ARMS_BEFORE` is gone. — Evidence: build_arms.py `main()`: `before` read from OUT after `export()`, before `add_clips`; `PXE_ARMS_BEFORE` and `DEFAULT_GLB` removed.
+- [x] Verification 2–7 pass: the build's checks pass and are reproducible, kept pieces within 1e-6 m, the glb read-back is right, the render-mode checks come out as stated, and both the diff and the grep are empty. — Evidence: orchestrator: fresh build OK; kept_pieces 266 pieces at 0 m; glb info 15 materials, 39 joints, both clips 1.0 s 31 LINEAR keys, 16,276 triangles; ortho 6/6, perspective example identical and both desert cases differ; diff 0 lines; grep empty. Designer: two rebuilds cmp-identical.
+- [x] assets.md records the measured values next to Assets' "Expected values". — Evidence: docs/tasks/desert-arms-revision/assets.md, measured equal to every expected value (-0.478/-0.406/-0.320, knuckles -0.518, centres ∓0.432, nearest 0.281 m).
+- [x] `desert/docs/art-style.md` has only the binding slot-sentence changes. `arms.hpp`'s comment and `arms.cpp`'s `kScreen` are as specified. — Evidence: `git diff 8b57c1b -- desert/docs/art-style.md`: the one bullet, slots 0–14 with `Arms_Screen` and "from 15"; arms.hpp comment and arms.cpp `kScreen = 14` as specified (f61756e).
+- [x] The captures are in the task folder, deterministic, and show what Verification 8 describes. — Evidence: revision-day/night/sprint.png committed; orchestrator re-rendered all three, cmp-identical; they show the rolled hands, the 47%▮ readout (same at night), darker stitching, the compass as before, sprint fists below row 351.
+- [x] Project builds cleanly from a fresh build directory with CMake. — Evidence: orchestrator `cmake --preset check --fresh && cmake --build --preset check --clean-first` in the worktree: only the stb_image_write `sprintf` warning.
 
 ## Assets
 - **arms** (revised): `desert/assets/characters/arms.glb`, rebuilt by `desert/tools/blender/build_arms.py`, with its previews (`arms.png`, `arms_eye.png`, `arms_left.png`, `arms_right.png`, `arms_walk.png`, `arms_sprint.png`) rewritten.
@@ -213,3 +213,4 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-30, base 8b57c1b
+- Cycle 1 review, 2026-10-30: build, Verification 1–8 and review pass; no issues. Complete.
