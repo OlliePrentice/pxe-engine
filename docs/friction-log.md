@@ -327,3 +327,42 @@ Status: actioned
 Seen: desert-arms-pose (2026-10-30, designer: the first live trial gave the same numbers for every candidate, because constants were set in the returned copy)
 Detail: Setting `am["GAUGE_S"]` on the dict from `runpy.run_path` doesn't reach the script's functions.
 Action: desert/docs/art-style.md, next to "Never hand-edit the glb": set the functions' own globals, or use `tools/blender-override.py` (retro commit).
+
+## F-045: captures.sh --edit captures from a stale binary
+Kind: tool
+Status: actioned
+Seen: perspective-surface-detail (2026-10-30, developer: terminator.png came out identical to ripples.png until a `sleep 2` between runs; orchestrator: with the sleep, off.png still came out identical to terminator.png)
+Detail: The presets build with Unix Makefiles; macOS `make` compares timestamps to the whole second, and a desert capture takes under a second, so the restore's `touch` lands in the same second as the compile and the next build skips the file. Earlier stale-build sightings (F-020, F-038) may share the cause.
+Action: queued fix task `captures-edit-stale-build` at the top of the queue; CLAUDE.md shell notes: `sleep 1` before a touch meant to force a rebuild (retro commit).
+
+## F-046: Hour 18 is exact sunset
+Kind: doc-gap
+Status: actioned
+Seen: perspective-surface-detail (2026-10-30, developer: Verification 4 at `--hour 18` gave captures identical to the base, since the sun's y is 0 and the direct term is skipped; replan-1 moved it to 17.5)
+Detail: `sunDirection` puts the sun on the horizon at 6 and 18, so specs that treat 18 as "golden hour" get no direct sunlight. `desert-ground`'s golden capture is at 18 too.
+Action: docs/engine-guide.md, end of the perspective "Light" paragraph, and the "Surface detail" paragraph (retro commit). Spec-side check added to .claude/skills/feature/SKILL.md (retro workflow commit).
+
+## F-047: A capture asked to show something outside its view
+Kind: instruction-gap
+Status: actioned
+Seen: desert-sky (2026-10-30, developer and orchestrator: Verification 4 asked the captures to show the sun disc and sun-facing dust glints, but the desert's spawn view looks along +z and never faces the sun at the listed hours)
+Detail: The spec described what to look for without checking that the capture pose and hour could show it.
+Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": check every capture can show what it is asked to (in view, sun up); move what it can't to the playtest (retro workflow commit).
+
+## F-048: Defaults of the sky cloud layers not in the guide
+Kind: doc-gap
+Status: actioned
+Seen: desert-sky (2026-10-30, developer: read engine/src/scene.cpp for layer 1's defaults)
+Action: docs/engine-guide.md "Sky and haze": both layers' defaults (retro commit).
+
+## F-049: A binding value the named function can't reach
+Kind: instruction-gap
+Status: actioned
+Seen: perspective-surface-detail (2026-10-30, developer: the spec bound `uEye` to `camera.eye` in `bindLit`, which takes no camera; it added a parameter)
+Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": check every value a spec has a named function use is in that function's reach, or give the signature change (retro workflow commit).
+
+## F-050: A spec's wrong premise about a script
+Kind: doc-gap
+Status: actioned
+Seen: blender-override-tool (2026-10-30, developer: the spec said `tools/blender/build_ruins.py` has no `main()`; it calls `main()` unguarded, so loading it ran the whole build and rewrote ruins.glb, restored by the developer)
+Action: tools/README.md's `blender-override.py` row: scripts without a `__main__` guard are refused, naming build_ruins.py (retro commit).
