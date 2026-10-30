@@ -1,7 +1,7 @@
 # Terminator sharpness and surface ripples in perspective mode
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Give the perspective mode's lit model (`perspective-smooth-lighting`) two surface controls a game can set:
@@ -138,3 +138,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30, base c2c6add
