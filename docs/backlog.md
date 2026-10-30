@@ -96,3 +96,11 @@ Depends on: none
 Touches: .gitignore, docs/tasks/gitignore-pycache/
 Assets: no
 Merged: 8c45110
+
+## desert-arms-revision: Arms: hands held with intent, an LCD gauge, quieter stitching
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-arms-revision/task.md
+Depends on: none
+Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, desert/src/arms.hpp, desert/src/arms.cpp, docs/tasks/desert-arms-revision/
+Assets: yes
