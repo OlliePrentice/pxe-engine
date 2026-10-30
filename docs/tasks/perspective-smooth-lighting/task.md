@@ -1,7 +1,7 @@
 # Smooth lighting in perspective mode
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Replace the toon ramp in the perspective render mode with a smooth, stylised lit model, toward the mood of `desert/docs/concept/wanderers.png`: a low warm sun through dusty haze. Surfaces take continuous light falloff: a warm direct sun or moon with soft-edged shadows, a cooler sky fill from above and a bounce from the ground. Distance haze is continuous and exponential, and glows toward the sun. The sky is a continuous gradient with a sun glow and a soft sun disc. The orthographic mode must not change by a single byte.
@@ -302,3 +302,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 1722db0
