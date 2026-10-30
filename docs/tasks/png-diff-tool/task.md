@@ -1,7 +1,7 @@
 # A PNG difference reporter
 Type: tooling
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Tasks keep writing small scripts to say how two captures differ: `docs/tasks/view-model-edges/scripts/diff_box.py` (the count and bounding box of differing pixels), `docs/tasks/desert-arms-walk/scripts/arm_rows.py` (the box of the difference in each half, to find the arms), and `docs/tasks/desert-lighting/scripts/png-diff.py` (the mean per-channel change over a region), plus a diff by hand in `desert-arms-detail`. Friction log F-027. Turn them into one tool, `tools/png-diff.py`.
@@ -80,3 +80,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 57494bc.
