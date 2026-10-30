@@ -23,9 +23,9 @@ Number entries sequentially and never reuse IDs.
 ## F-001: Shell differences on macOS (zsh, BSD sed)
 Kind: doc-gap
 Status: actioned
-Seen: render-mode-checks (2026-10-29), desert-arms (2026-10-29, developer: a `cp`-restored file wasn't rebuilt, so a capture came from a stale binary), render-mode-split (2026-10-29, orchestrator: an unquoted `$t` holding a command and its argument didn't word-split in zsh, so a check loop ran nothing)
+Seen: render-mode-checks (2026-10-29), desert-arms (2026-10-29, developer: a `cp`-restored file wasn't rebuilt, so a capture came from a stale binary), render-mode-split (2026-10-29, orchestrator: an unquoted `$t` holding a command and its argument didn't word-split in zsh, so a check loop ran nothing), desert-arms-walk (2026-10-30, developer: a loop over bad-argument strings passed each as one argument)
 Detail: The developer had to work out that BSD `sed -i` needs `sed -i ''` and that zsh's pipe exit codes are `$pipestatus`, for the negative-check edits. The old byte-identical paragraph in CLAUDE.md carried a zsh tip ("pass multi-word arguments through \"$@\" or an array"), and the render-mode-checks spec's replacement text dropped it.
-Action: CLAUDE.md "Verifying a change" gains a shell-notes paragraph covering zsh arguments, `$pipestatus` and `sed -i ''` (retro commit); desert-arms retro adds `touch` after restoring a file.
+Action: CLAUDE.md "Verifying a change" gains a shell-notes paragraph covering zsh arguments, `$pipestatus` and `sed -i ''` (retro commit); desert-arms retro adds `touch` after restoring a file. desert-arms-walk retro: the shell notes say an unquoted `$var` doesn't split in zsh, and to loop over arrays or use `${=var}`.
 
 ## F-002: tools/README.md's build.sh row omitted the desert game
 Kind: doc-gap
@@ -86,9 +86,9 @@ Action: none yet (first sighting).
 ## F-010: Asset requirements without a matching build check, and measurement points left undefined
 Kind: instruction-gap
 Status: actioned
-Seen: desert-arms (2026-10-29), desert-arms-detail (2026-10-29, designer: the knurled dial's required facing squeezed its knurl pitch under the 3 px check; the per-part triangle guide couldn't hold the stitching the same section set, 3,120 triangles for 260 dashes)
+Seen: desert-arms (2026-10-29), desert-arms-detail (2026-10-29, designer: the knurled dial's required facing squeezed its knurl pitch under the 3 px check; the per-part triangle guide couldn't hold the stitching the same section set, 3,120 triangles for 260 dashes), desert-arms-walk (2026-10-30, designer: "the hand trails it at the wrist" named no axis)
 Detail: The arms spec required the gauge to read (Decisions, Verification) but didn't list it among the build checks. It also measured "hand centre", "top of the index knuckle" and "wrist turned 30 degrees" without defining the points or the axis, and gave a pose guide its own binding framing checks contradicted (the gauge fell off-screen with the guide's elbows). The designer worked each out and recorded it in assets.md.
-Action: .claude/skills/feature/SKILL.md, step 1.7 "Each asset": every visual requirement gets a build check, every measured point and axis is defined, and a guide that binding checks also constrain is checked against them, roughly with numbers, before queueing (retro workflow commit). desert-arms-detail retro: the same step now asks to work a budget guide from the counts and sizes the spec itself sets, and to check each fixed placement or facing against the size checks on the parts placed there.
+Action: .claude/skills/feature/SKILL.md, step 1.7 "Each asset": every visual requirement gets a build check, every measured point and axis is defined, and a guide that binding checks also constrain is checked against them, roughly with numbers, before queueing (retro workflow commit). desert-arms-detail retro: the same step now asks to work a budget guide from the counts and sizes the spec itself sets, and to check each fixed placement or facing against the size checks on the parts placed there. desert-arms-walk retro: the same step now asks for the axis of every rotation in a motion guide too (F-024).
 
 ## F-011: A spec's engine code used a GL call the engine's loader doesn't load
 Kind: instruction-gap
@@ -121,9 +121,9 @@ Action: none yet (first sighting).
 ## F-015: Re-importing a glb to verify it against its build
 Kind: tool
 Status: open
-Seen: desert-arms (2026-10-29)
-Detail: docs/tasks/desert-arms/scripts/verify_arms_glb.py (build_arms.py also reads its glb back after export).
-Action: none yet (first sighting).
+Seen: desert-arms (2026-10-29), desert-arms-walk (2026-10-30)
+Detail: docs/tasks/desert-arms/scripts/verify_arms_glb.py (build_arms.py also reads its glb back after export). desert-arms-walk: docs/tasks/desert-arms-walk/scripts/reimport_glb.py re-imports a glb and lists its skinned meshes, armatures and actions.
+Action: none yet (two sightings). The glb-tool task (F-026) reads glbs directly; it doesn't re-import through Blender's importer.
 
 ## F-016: Checks on parts at the screen edge, and first-hit checks without a tolerance
 Kind: instruction-gap
@@ -148,10 +148,10 @@ Action: .claude/agents/designer.md, "Building assets" (retro workflow commit).
 
 ## F-019: Comparing two glbs' rigs
 Kind: tool
-Status: open
-Seen: desert-arms-detail (2026-10-29)
+Status: actioned
+Seen: desert-arms-detail (2026-10-29), desert-arms-walk (2026-10-30, `check_glb_clips` in build_arms.py compares the rest-pose vertices, joint nodes and inverse bind matrices with the glb before the clips)
 Detail: docs/tasks/desert-arms-detail/scripts/compare_joints.py compares joint names, node transforms and inverse bind matrices of two glbs, to prove a rebuild kept the rig. Related to F-015 (re-importing a glb to verify it).
-Action: none yet (first sighting).
+Action: folded into the glb-tool tooling task (F-026) as `tools/glb.py compare`.
 
 ## F-020: Temporary-edit verifications without the line to edit
 Kind: instruction-gap
@@ -173,3 +173,52 @@ Status: actioned
 Seen: desert-arms-detail (2026-10-29, orchestrator)
 Detail: `Blender -b -P build_arms.py` raises on a failed check, which stops the export, but Blender still exits 0, so a "build fails" check showed only in the log. The orchestrator confirmed it with a one-line raising script; `--python-exit-code 1` gives exit 1. The rebuild also rewrote the four preview PNGs with different bytes, leaving the tree dirty.
 Action: CLAUDE.md, after the shell notes: the `--python-exit-code 1` flag and restoring previews after a verify-only rebuild; README.md's arms rebuild command gains the flag (retro commit).
+
+## F-023: Exact rest keys from Blender's glTF exporter
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-walk (2026-10-30, designer)
+Detail: The spec required rest-keyed joints and every translation and scale key to equal rest "exactly". Blender 5.2's glTF exporter, with forced sampling, writes keys 1-2 float32 steps off the joint nodes' own TRS (translation 1.3e-7, scale 4.2e-7, rotation 6e-8; docs/tasks/desert-arms-walk/scripts/key_diffs.py). The designer exported the glb without animations and appended the clips itself (`add_clips` in desert/tools/blender/build_arms.py), copying node values for the still keys.
+Action: .claude/agents/designer.md, "Building assets": the exporter's key error and the `add_clips` way round it. .claude/skills/feature/SKILL.md, step 1.7: a spec that wants exported values to equal others exactly says it means float32 from the same source, or gives a tolerance (retro workflow commit).
+
+## F-024: A value given for one clip only, and a rotation without its axis
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-walk (2026-10-30, designer)
+Detail: The spec gave the walk's wrist trail ("up to 6 degrees") but no value for the sprint, and "the hand trails it at the wrist" named no axis. The designer used 6 degrees in both and pitched the hand about the elbow's hinge, recording both in assets.md.
+Action: .claude/skills/feature/SKILL.md, step 1.7: every value given for one clip or variant is given for each of the others (or "as <clip>"), and every rotation in a motion guide names its axis (retro workflow commit).
+
+## F-025: A check whose targets are the constants that build the thing checked
+Kind: doc-gap
+Status: actioned
+Seen: desert-arms-walk (2026-10-30, designer)
+Detail: The first amplitude check compared the motion against the same `CLIPS` table that drives it, so a wrong number there could never fail it. A negative run (walk bob set to 2 cm) passed. The checks now use a separate `CLIP_TARGETS` table.
+Action: .claude/agents/designer.md, "Building assets": a check's targets come from the spec, in their own table, not from the build's constants, and each new check is proved by one negative run (retro workflow commit).
+
+## F-026: Reading a glb's chunks and accessors by hand
+Kind: tool
+Status: actioned
+Seen: desert-arms (2026-10-29, docs/tasks/desert-arms/scripts/verify_arms_glb.py), desert-arms-detail (2026-10-29, docs/tasks/desert-arms-detail/scripts/compare_joints.py), desert-arms-walk (2026-10-30, `read_glb` and `read_accessor` in desert/tools/blender/build_arms.py, and docs/tasks/desert-arms-walk/scripts/key_diffs.py)
+Detail: Four copies of the same glb JSON-chunk, binary-chunk and accessor decoding with `struct`, in three tasks. tools/ has no shared glb reader.
+Action: tooling task glb-tool queued (`tools/glb.py`: `read`, `accessor`, `node_trs`; `info` and `compare`), with F-019 folded in.
+
+## F-027: Where the view model is in a capture
+Kind: tool
+Status: open
+Seen: desert-arms-detail (2026-10-29, a pixel diff against arms-day.png, by hand), desert-arms-walk (2026-10-30, docs/tasks/desert-arms-walk/scripts/arm_rows.py)
+Detail: Both tasks found the arms' top row and extent by diffing one capture against another. arm_rows.py needs a render without the arms, which takes a temporary edit of `arms.pose` in desert/src/main.cpp, because pxe_desert has no flag to hide them. Related to F-021 (temporary edits for the spawn pose). A third sighting queues a tooling task (likely a capture flag that hides the arms, and a tool that reports the difference's box).
+Action: none yet (two sightings).
+
+## F-028: A batch cut short after a task's merge
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-walk (2026-10-30, orchestrator)
+Detail: The batch merged desert-arms-walk (bc94943) and stopped before the post-merge build, the docs, the backlog's `done` and the worktree's removal. The next batch found the task `in-progress` in the backlog with its branch already merged, and the preflight only said an `in-progress` task resumes its cycles.
+Action: .claude/skills/backlog-run/SKILL.md, preflight: an `in-progress` task whose branch is already merged into the run's branch resumes at step 6's post-merge steps (retro workflow commit).
+
+## F-029: The docs step left CLAUDE.md's flag list stale
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-walk (2026-10-30, orchestrator)
+Detail: CLAUDE.md's "Verifying a change" lists pxe_desert's flags ("has only `--help`, `--capture` ..."). The task added `--walk` and `--sprint`, and neither the developer's docs notes nor the merge's docs step named that list. Fixed in the desert-arms-walk docs commit.
+Action: .claude/skills/backlog-run/SKILL.md, step 6 "Docs": when a task changes a binary's flags, update CLAUDE.md's flag lists under "Verifying a change" too (retro workflow commit).

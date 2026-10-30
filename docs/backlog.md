@@ -78,3 +78,11 @@ Depends on: desert-arms-detail
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/src/arms.hpp, desert/src/arms.cpp, desert/src/player.hpp, desert/src/player.cpp, desert/src/main.cpp, desert/docs/art-style.md, docs/tasks/desert-arms-walk/
 Assets: yes
 Merged: bc94943
+
+## glb-tool: A shared glb reader and checker
+Status: queued
+Type: tooling
+Spec: docs/tasks/glb-tool/task.md
+Depends on: none
+Touches: tools/glb.py, tools/README.md, docs/tasks/glb-tool/
+Assets: no
