@@ -1,6 +1,6 @@
 # captures.sh: rebuild the edited file after its edit and after its restore
 Type: fix
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -29,10 +29,10 @@ Run in the task's worktree.
 3. `git status --porcelain` shows only `tools/captures.sh` (and `tools/README.md` if changed) and the task folder; `desert/src/world.cpp` unchanged.
 
 ## Acceptance criteria
-- [ ] Every touch of the edited file in `tools/captures.sh` waits into a later second than the last build.
-- [ ] Verification 2 passes three times in a row, and the handoff shows the failure before the fix.
-- [ ] The help text and comment say why.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] Every touch of the edited file in `tools/captures.sh` waits into a later second than the last build. (`sleep 1` before the apply step's touch and in `cleanup` before the restore's touch)
+- [x] Verification 2 passes three times in a row, and the handoff shows the failure before the fix. (orchestrator reran scripts/verify2.sh 3: rc 0; handoff.md "Failure before the fix")
+- [x] The help text and comment say why. (`--edit` help entry; comment above `cleanup`)
+- [x] Project builds cleanly from a fresh build directory with CMake (orchestrator check build: only the stb sprintf warning)
 
 ## Assets
 None.
@@ -45,3 +45,7 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-30: base c5d362b
+- Cycle 1 review, 2026-10-30: build clean; Verification 2 rerun 3 rounds, all pass; no issues. Note: an interrupt during the restore's 1 s sleep leaves the file restored byte for byte (cp gives it a fresh mtime) but not touched a second later; accepted, the spec keeps interrupt handling as it was.
+
+## Playtest checklist
+None in-game: this only changes `tools/captures.sh`. To check it yourself, run `docs/tasks/captures-edit-stale-build/scripts/verify2.sh 3` from the repo root; it should end with rc 0 and "a != c ok", "b != c ok" every round.
