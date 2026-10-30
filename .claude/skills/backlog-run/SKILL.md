@@ -60,6 +60,7 @@ Everything for a task happens in its worktree:
 
 ## 4. Run the cycles
 Run every batch task's cycles at the same time:
+- Before the first delegation, build the base of the batch's cycle base once (`tools/perspective-check.sh <base>` from the main working tree): the check scripts and `tools/captures.sh` share `${TMPDIR:-/tmp}/pxe-render-check/<sha>/` and rebuild it from scratch when its binary is missing, so parallel tasks starting on an unbuilt base race and delete each other's build. Tell the agents not to delete that directory.
 - Delegate the developers for all tasks in the same turn, so they run in parallel.
 - Only one designer runs at a time: assets are built in the user's single live Blender session. Queue designer work across tasks and run it one task after another. The developers of tasks without asset work carry on meanwhile.
 - A task that blocks doesn't stop the others.
