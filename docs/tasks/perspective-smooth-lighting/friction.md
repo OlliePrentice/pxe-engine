@@ -6,3 +6,6 @@
 
 ## orchestrator cycle 1
 - instruction-gap: the spec's binding comment for `Lighting::sunDir` contradicted its own §2 (`sunDir = sun`) and Decisions; binding blocks should say whether their comments may be reworded.
+
+## game-developer cycle 2
+- none

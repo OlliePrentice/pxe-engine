@@ -52,3 +52,27 @@ Verification (base 1722db0):
 - Rain, the lightning flash, the dark-region and indoor drop and `testColours` paths were not exercised by any capture; they compile and link (the program links and runs in every capture) and were checked by reading.
 - A scene mesh with a surface index of 12 to 15 would index `uAlbedo` out of range, as the spec's `uAlbedo[vSurface]` does. No current mesh has one.
 - The sun disc and glow are not visible in any of the required captures (the camera faces away from the sun in all of them).
+
+## Cycle 2
+Build: pass (fresh `check` preset, clean build; only the expected stb_image_write `sprintf` warning)
+
+### Changes
+- `engine/include/pxe/lighting.hpp`: reworded the comment above `Lighting::sunDir` to say it points toward the sun even below the horizon, that the moon gets no disc or glow (the glow fades as the sun sets), and that the colour is the sun's display colour blended by phase. Comment only.
+- `docs/tasks/perspective-smooth-lighting/issues.md`: ISSUE-001 set to `fixed`, with fix notes.
+
+### Issues addressed
+- ISSUE-001: `sunDir` comment now matches `lightingAt` (`out.sunDir = sun`).
+
+### Layering
+- Engine: comment change only; no new or changed types or functions.
+- Game: none.
+- Misplaced code touched: none.
+
+### How to playtest
+- Nothing to play: the change is a comment. `tools/ortho-check.sh eb84614`: 6/6 cases identical. `tools/perspective-check.sh eb84614`: 3/3 cases identical (base eb84614 = "cycle 1: review").
+
+### Docs
+- None beyond the cycle 1 entry. The cycle 1 known limitation about the `sunDir` comment is resolved.
+
+### Known limitations
+- Unchanged from cycle 1, except the `sunDir` comment limitation, which is fixed.

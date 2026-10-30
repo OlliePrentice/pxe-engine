@@ -57,9 +57,10 @@ struct Lighting {
   glm::vec3 sunLight{0.f};
   glm::vec3 skyFillLight{0.f};
   glm::vec3 bounceLight{0.f};
-  // Toward the sun, whichever of sun and moon lights the scene, and its
-  // display colour blended by phase: the sky's sun disc and the glow round
-  // it in the sky and the haze.
+  // Toward the sun, even when it is below the horizon (the moon gets no
+  // disc or glow of its own; the glow fades as the sun sets), and the sun's
+  // display colour blended by phase: for the sky's sun disc and the glow
+  // round it in the sky and the haze.
   glm::vec3 sunDir{0.f, 1.f, 0.f};
   glm::vec3 sunGlowColour{1.f};
   // How much each phase (pxe::Phase) is in effect now; they sum to 1.
