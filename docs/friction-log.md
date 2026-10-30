@@ -72,7 +72,7 @@ Action: none yet (first sighting).
 ## F-008: Building a throwaway test program against the engine
 Kind: tool
 Status: open
-Seen: render-mode-split (2026-10-29)
+Seen: render-mode-split (2026-10-29), desert-ground (2026-10-30, developer: docs/tasks/desert-ground/scripts/gradient_check.cpp, a throwaway program against desert code comparing `duneGradient` with a finite difference)
 Detail: Written by hand, with the macOS link line copied from the example's link.txt: docs/tasks/render-mode-split/scripts/mode_mismatch.sh.
 Action: none yet (first sighting).
 
@@ -240,9 +240,9 @@ Action: `glb.read` in `tools/glb.py` walks the chunks with the padding, and desi
 ## F-032: A spec's sketch that disagrees with its text
 Kind: instruction-gap
 Status: actioned
-Seen: glb-tool (2026-10-30, developer and orchestrator: the `info` example listed the animations in a different order from the text's "in file order"), perspective-smooth-lighting (2026-10-30, developer and orchestrator: the binding comment on `Lighting::sunDir` said it follows the moon while §2 and Decisions set it to the sun only, costing a cycle; the binding `bindLit` signature had no way to reach `params.actorMaterials`, which its text named)
+Seen: glb-tool (2026-10-30, developer and orchestrator: the `info` example listed the animations in a different order from the text's "in file order"), perspective-smooth-lighting (2026-10-30, developer and orchestrator: the binding comment on `Lighting::sunDir` said it follows the moon while §2 and Decisions set it to the sun only, costing a cycle; the binding `bindLit` signature had no way to reach `params.actorMaterials`, which its text named), desert-ground (2026-10-30, developer: `duneGradient` called "file-local" and also declared in world.hpp; the palm constraint called the slope "windward" while its numeric test picks the downwind face seen from the spawn)
 Detail: The developer kept file order, rightly, since the sketch wasn't binding, but had to decide which one wins.
-Action: .claude/skills/feature/SKILL.md: a sketch must agree with the rules written around it (retro workflow commit). 2026-10-30 retro: binding examples too, comments included; a binding signature takes every value its text says the function uses; say whether a binding block's comments may be reworded.
+Action: .claude/skills/feature/SKILL.md: a sketch must agree with the rules written around it (retro workflow commit). 2026-10-30 retro: binding examples too, comments included; a binding signature takes every value its text says the function uses; say whether a binding block's comments may be reworded. desert-ground retro: read the spec end to end for one section contradicting another (a "file-local" function declared in a header), and check direction words (windward, uphill, behind) against the numeric test and the code's conventions (retro workflow commit).
 
 ## F-033: `\b` in `git grep -E` matches nothing on this Mac
 Kind: doc-gap
@@ -338,7 +338,7 @@ Action: queued fix task `captures-edit-stale-build` at the top of the queue; CLA
 ## F-046: Hour 18 is exact sunset
 Kind: doc-gap
 Status: actioned
-Seen: perspective-surface-detail (2026-10-30, developer: Verification 4 at `--hour 18` gave captures identical to the base, since the sun's y is 0 and the direct term is skipped; replan-1 moved it to 17.5)
+Seen: perspective-surface-detail (2026-10-30, developer: Verification 4 at `--hour 18` gave captures identical to the base, since the sun's y is 0 and the direct term is skipped; replan-1 moved it to 17.5), desert-ground (2026-10-30, developer and orchestrator: the spec, queued before this fix, still names `--hour 18` its golden capture; it reads as twilight, a note for the user)
 Detail: `sunDirection` puts the sun on the horizon at 6 and 18, so specs that treat 18 as "golden hour" get no direct sunlight. `desert-ground`'s golden capture is at 18 too.
 Action: docs/engine-guide.md, end of the perspective "Light" paragraph, and the "Surface detail" paragraph (retro commit). Spec-side check added to .claude/skills/feature/SKILL.md (retro workflow commit).
 
@@ -366,3 +366,24 @@ Kind: doc-gap
 Status: actioned
 Seen: blender-override-tool (2026-10-30, developer: the spec said `tools/blender/build_ruins.py` has no `main()`; it calls `main()` unguarded, so loading it ran the whole build and rewrote ruins.glb, restored by the developer)
 Action: tools/README.md's `blender-override.py` row: scripts without a `__main__` guard are refused, naming build_ruins.py (retro commit).
+
+## F-051: A spec's shell argument with `\n` inside double quotes
+Kind: instruction-gap
+Status: actioned
+Seen: captures-edit-stale-build (2026-10-30, developer and orchestrator)
+Detail: Verification 2 gave a multi-line `--edit` replacement as `"...;\n<anchor>"`. Bash passes the backslash-n literally, so the edit would not compile; the developer used `$'\n'`.
+Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": a shell argument holding a newline is written with `$'...\n...'` (retro workflow commit).
+
+## F-052: Searching a terrain function's free parameters against its constraints
+Kind: tool
+Status: open
+Seen: desert-ground (2026-10-30)
+Detail: docs/tasks/desert-ground/scripts/tune_phases.py mirrors `duneHeight` in Python and grid-searches the four `kRidges` phases against the `--terrain-report` constraints. Likely to recur for any dune change.
+Action: none yet (first sighting).
+
+## F-053: captures.sh adds `--capture` itself
+Kind: doc-gap
+Status: actioned
+Seen: desert-ground (2026-10-30, developer: first put `--capture` in the cases file; `--help` says so)
+Detail: tools/README.md's row gave the cases-file line format without saying the tool adds `--capture <out>/<name>.png`.
+Action: tools/README.md's captures.sh row says so (retro commit).
