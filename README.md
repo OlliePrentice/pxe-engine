@@ -153,6 +153,13 @@ tools/glb.py info desert/assets/characters/arms.glb
 tools/glb.py compare old.glb desert/assets/characters/arms.glb   # exit 0 identical, 1 differs
 ```
 
+To try a value in an asset build script, or prove one of its checks fails, without editing it, run the script through `tools/blender-override.py` with `NAME=expr` overrides of its top-level constants (each evaluated in the script's own namespace):
+
+```bash
+PXE_SKIP_EXPORT=1 /Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 \
+  -P tools/blender-override.py -- desert/tools/blender/build_arms.py HAND_ROLL=90.0
+```
+
 Without presets, the plain form still works (any build directory; `build/` is git-ignored):
 
 ```bash
