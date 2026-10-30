@@ -1,7 +1,7 @@
 # Ignore Python bytecode caches
 Type: fix
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Importing `tools/glb.py` as a module (`sys.path.insert(0, "<repo>/tools"); import glb`), which build scripts, checks and Blender's Python now do, writes `tools/__pycache__/glb.cpython-*.pyc`. `.gitignore` doesn't cover it, so `git status --porcelain` shows `?? tools/__pycache__/` afterwards. A dirty main working tree stops `/backlog-run` at preflight, and an agent could commit the bytecode by mistake (`docs/tasks/glb-tool/issues.md`, ISSUE-001).
@@ -47,3 +47,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30, base 91c4860.
