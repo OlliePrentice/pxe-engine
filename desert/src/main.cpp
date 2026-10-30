@@ -332,7 +332,7 @@ int main(int argc, char** argv) {
       if (viewSettings.showArms) arms.pose(eyeView, params);
       renderer.render(world.scene, eyeView, params);
       const bool openBeforeDraw = menu.open();
-      menu.draw(clock, tuning, viewSettings, fps);
+      menu.draw(clock, tuning, viewSettings, world.scene, params.lighting, fps);
       // The menu's close button closes it in draw(): take the cursor back.
       if (openBeforeDraw && !menu.open()) window.setCursorCaptured(true);
       window.swap();

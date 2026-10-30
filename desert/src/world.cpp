@@ -200,9 +200,19 @@ float groundHeight(float x, float z) {
 
 World buildWorld() {
   World world;
-  // A new scene starts with the engine's default palettes, Sand's among
-  // them, and its sky colours; the desert keeps them all.
+  // A new scene starts with the engine's default palettes, sky colours and
+  // perspective light; the desert keeps them all, apart from a warm sand
+  // bounce (a display colour and a linear strength per phase).
   pxe::Scene& scene = world.scene;
+  const auto rgb = [](float r, float g, float b) { return glm::vec3{r, g, b} / 255.f; };
+  scene.groundBounce[pxe::kPhaseDay] = rgb(214, 176, 118);
+  scene.groundBounceStrength[pxe::kPhaseDay] = 0.12f;
+  scene.groundBounce[pxe::kPhaseGolden] = rgb(220, 160, 110);
+  scene.groundBounceStrength[pxe::kPhaseGolden] = 0.10f;
+  scene.groundBounce[pxe::kPhaseTwilight] = rgb(150, 120, 130);
+  scene.groundBounceStrength[pxe::kPhaseTwilight] = 0.05f;
+  scene.groundBounce[pxe::kPhaseNight] = rgb(60, 65, 85);
+  scene.groundBounceStrength[pxe::kPhaseNight] = 0.03f;
   // The sun rises on the right of the spawn's view (it looks along +z),
   // peaks behind it toward -z, and sets on the left, so through the
   // afternoon the palm's shadow falls across the sand to the view's right.

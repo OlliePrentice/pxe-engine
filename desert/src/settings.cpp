@@ -21,6 +21,36 @@ void clockText(float hour, char* out, int size) {
   std::snprintf(out, static_cast<std::size_t>(size), "%02d:%02d", minutes / 60, minutes % 60);
 }
 
+// Writes the scene's light and sky as C++ statements for desert::buildWorld,
+// all four phases then the four single values, and flushes.
+void printLighting(const pxe::Scene& scene) {
+  static const char* const kPhaseNames[pxe::kPhaseCount] = {"kPhaseDay", "kPhaseGolden", "kPhaseTwilight",
+                                                            "kPhaseNight"};
+  std::printf("// pxe_desert lighting: paste into desert::buildWorld\n");
+  for (int i = 0; i < pxe::kPhaseCount; ++i) {
+    const char* name = kPhaseNames[i];
+    const auto colour = [&](const char* field, const glm::vec3& c) {
+      std::printf("scene.%s[pxe::%s] = {%.3ff, %.3ff, %.3ff};\n", field, name, c.x, c.y, c.z);
+    };
+    const auto strength = [&](const char* field, float v) {
+      std::printf("scene.%s[pxe::%s] = %.2ff;\n", field, name, v);
+    };
+    colour("sunColour", scene.sunColour[i]);
+    strength("sunStrength", scene.sunStrength[i]);
+    colour("skyFill", scene.skyFill[i]);
+    strength("skyFillStrength", scene.skyFillStrength[i]);
+    colour("groundBounce", scene.groundBounce[i]);
+    strength("groundBounceStrength", scene.groundBounceStrength[i]);
+    colour("skyHorizon", scene.skyHorizon[i]);
+    colour("skyZenith", scene.skyZenith[i]);
+  }
+  std::printf("scene.hazeDensity = %.4ff;\n", scene.hazeDensity);
+  std::printf("scene.sunGlow = %.2ff;\n", scene.sunGlow);
+  std::printf("scene.shadowPenumbra = %.2ff;\n", scene.shadowPenumbra);
+  std::printf("scene.exposure = %.2ff;\n", scene.exposure);
+  std::fflush(stdout);
+}
+
 }  // namespace
 
 void Clock::advance(float dt) {
@@ -59,7 +89,8 @@ void SettingsMenu::init(pxe::Overlay& overlay) {
 
 bool SettingsMenu::wantsKeyboard() const { return overlay_ && open_ && overlay_->wantsKeyboard(); }
 
-void SettingsMenu::draw(Clock& clock, PlayerSettings& player, ViewSettings& view, float fps) {
+void SettingsMenu::draw(Clock& clock, PlayerSettings& player, ViewSettings& view, pxe::Scene& scene,
+                        const pxe::Lighting& lighting, float fps) {
   if (!overlay_) return;
   overlay_->begin();
 
@@ -138,7 +169,34 @@ void SettingsMenu::draw(Clock& clock, PlayerSettings& player, ViewSettings& view
       ImGui::SameLine();
       ImGui::Checkbox("Test colours", &view.testColours);
       ImGui::SliderFloat("View distance", &view.viewDistance, 100.f, 300.f, "%.0f m");
-      ImGui::TextDisabled("Haze starts at 60%% of it");
+      ImGui::TextDisabled("The haze is full at it");
+
+      ImGui::SeparatorText("Lighting");
+      // The phase in effect now: the largest weight, the first index on a tie.
+      int ph = 0;
+      for (int i = 1; i < pxe::kPhaseCount; ++i)
+        if (lighting.phaseWeight[i] > lighting.phaseWeight[ph]) ph = i;
+      static const char* const kPhaseLabels[pxe::kPhaseCount] = {"Day", "Golden", "Twilight", "Night"};
+      ImGui::Text("Editing: %s", kPhaseLabels[ph]);
+      ImGui::TextDisabled("the phase in effect now; change the hour for the others");
+      const bool night = ph == pxe::kPhaseNight;
+      // At night the direct light is the moon's. ImGui hashes only what
+      // follows "###", so the label changes and the widget's ID does not.
+      ImGui::ColorEdit3(night ? "Moon###sunColour" : "Sun###sunColour", &scene.sunColour[ph].x);
+      ImGui::SliderFloat(night ? "Moon strength###sunStrength" : "Sun strength###sunStrength",
+                         &scene.sunStrength[ph], 0.f, 3.f, "%.2f");
+      ImGui::ColorEdit3("Sky fill", &scene.skyFill[ph].x);
+      ImGui::SliderFloat("Sky fill strength", &scene.skyFillStrength[ph], 0.f, 1.5f, "%.2f");
+      ImGui::ColorEdit3("Ground bounce", &scene.groundBounce[ph].x);
+      ImGui::SliderFloat("Bounce strength", &scene.groundBounceStrength[ph], 0.f, 1.f, "%.2f");
+      ImGui::ColorEdit3("Sky horizon", &scene.skyHorizon[ph].x);
+      ImGui::ColorEdit3("Sky zenith", &scene.skyZenith[ph].x);
+      ImGui::SliderFloat("Haze density", &scene.hazeDensity, 0.f, 0.03f, "%.4f /m");
+      ImGui::SliderFloat("Sun glow", &scene.sunGlow, 0.f, 1.f, "%.2f");
+      ImGui::SliderFloat("Shadow penumbra", &scene.shadowPenumbra, 0.f, 1.f, "%.2f m");
+      ImGui::SliderFloat("Exposure", &scene.exposure, 0.25f, 4.f, "%.2fx", ImGuiSliderFlags_Logarithmic);
+      if (ImGui::Button("Print values")) printLighting(scene);
+      ImGui::TextDisabled("Prints all four phases to the terminal as code for world.cpp");
 
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms)", fps, 1000.f / fps);

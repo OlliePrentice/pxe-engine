@@ -4,6 +4,7 @@
 
 #include "pxe/first_person_camera.hpp"
 #include "pxe/lighting.hpp"
+#include "pxe/scene.hpp"
 
 #include <glm/vec2.hpp>
 
@@ -69,9 +70,11 @@ class SettingsMenu {
   // True while the menu is open and a widget takes typing.
   bool wantsKeyboard() const;
 
-  // Build and draw the panel (if open). Call every play frame after the
+  // Build and draw the panel (if open); its Lighting section edits `scene`
+  // directly, for the phase `lighting` says is in effect. Call every play frame after the
   // scene is presented, before swap.
-  void draw(Clock& clock, PlayerSettings& player, ViewSettings& view, float fps);
+  void draw(Clock& clock, PlayerSettings& player, ViewSettings& view, pxe::Scene& scene,
+            const pxe::Lighting& lighting, float fps);
 
  private:
   pxe::Overlay* overlay_ = nullptr;

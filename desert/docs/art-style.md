@@ -5,7 +5,7 @@ The standing style for every asset in the desert game (`desert/`, the `pxe_deser
 ## Look
 - Low-poly and faceted: every face is flat-shaded, so models read as cut paper.
 - One solid base colour per material. No textures.
-- The engine lights everything with a hard three-tone toon ramp. Choose base colours as the mid tone; the engine makes the light and shadow tones.
+- The engine lights everything smoothly (the perspective mode's lit model): a warm direct sun or moon with soft-edged shadows, a cooler sky fill from above, a bounce from the ground below, and continuous distance haze that glows toward the sun. The mood reference is `desert/docs/concept/wanderers.png`: a low warm sun through dusty haze. Choose each base colour as the material's albedo, how it looks facing the noon sun. The time of day comes from the scene's light colours, not from the material.
 - Glowing parts use an emissive material, which the engine draws at full colour and unlit.
 - Keep palettes small and natural. The desert reads as a few warm blocks of colour: sand, palm bark, frond green.
 - Assets are seen both close up and far off. From the 1.7 m eye, a 10 m palm 14 m away fills much of the view, and at 100 m it is a few dozen pixels across. Prefer strong silhouettes and large facets over fine geometry, so a shape reads at both distances.
@@ -25,11 +25,11 @@ Static assets: plants, rocks, buildings and props. The reference asset is the da
 - **Budgets.** A palm is about 3,000 triangles.
 
 ## Terrain
-- The dunes are generated in the game's code, not in Blender: long, smooth, wind-aligned ridges with a sharper crest on the downwind face, built on a 1 m grid with smooth normals, so the toon ramp cuts each slope into a few clean bands that follow its curve.
+- The dunes are generated in the game's code, not in Blender: long, smooth, wind-aligned ridges with a sharper crest on the downwind face, built on a 1 m grid with smooth normals, so the light falls off continuously across each slope's curve.
 - No ripples, rocks or scrub until a task adds them.
 
 ## Palette
-- **Sand:** a warm ochre mid tone, about sRGB (214, 176, 118), by day. Golden hour pushes it orange, twilight pink-mauve, and night cool blue-grey. The engine holds these as `Sand`'s default palettes.
+- **Sand:** a warm ochre albedo, about sRGB (214, 176, 118) (`Scene::albedo[kSurfSand]`, the engine's default). The time of day colours it through the light: an orange sun at golden hour, pink-mauve at twilight, a cool blue-grey moon at night. The ground bounces the sand's own warmth back up. The desert's light, sky and haze values are set in `desert::buildWorld` (`desert/src/world.cpp`), and tuned live in the settings menu's Lighting section, whose "Print values" writes them out as code.
 - **Palm:** the trunk is the engine's `Bark` brown and the fronds its `Leaf` green. If the green reads wrong against the sand, a grey-green `Frond` surface is the fix, as its own task.
 
 ## Characters
