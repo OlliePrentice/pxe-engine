@@ -91,6 +91,19 @@ struct DarkRegion {
   float fadeDistance = 1.f;   // metres; 0 or less is endStrength throughout
 };
 
+// One layer of perspective mode's sky clouds (Scene::skyClouds): soft
+// streaks on a flat plane `height` metres above the eye, stretched along the
+// wind (Lighting::windDir), drifting by Weather::skyCloudOffset times
+// `drift`. Coloured from the light; they cast no shadows. Not drawn under Camera.
+struct SkyCloudLayer {
+  float height = 8000.f;   // metres above the eye
+  float cover = 0.f;       // 0 none .. 1 most of the sky
+  float opacity = 0.6f;    // 0..1 where a cloud is thickest
+  float length = 6000.f;   // metres a streak runs along the wind
+  float width = 900.f;     // metres across it
+  float drift = 1.f;       // times Weather::skyCloudOffset
+};
+
 struct Scene {
   // Starts with the reference palettes, rim and ink (see `palette`), and an
   // empty scene.
@@ -154,6 +167,11 @@ struct Scene {
   float sunGlow = 0.6f;         // 0..1: how far haze and sky toward the sun take its colour
   float shadowPenumbra = 0.3f;  // metres across a soft shadow's edge
   float exposure = 1.f;         // multiplies the light before it is clamped
+  // Perspective mode's sky clouds: [0] a high, thin layer, [1] a lower,
+  // fuller one. Both have cover 0 (none) unless the game sets it.
+  static constexpr int kSkyCloudLayers = 2;
+  SkyCloudLayer skyClouds[kSkyCloudLayers];
+  float skyCloudBrightness = 1.f;  // scales the clouds' colour
 
   // N·L thresholds for the toon ramp with the sun high. They scale down as
   // the sun drops so a low sun still lights flat ground.

@@ -142,6 +142,7 @@ Lighting lightingAt(const Scene& scene, float hour, const Weather& weather) {
   Lighting lighting = lightingAt(scene, hour);
   lighting.cloudCover = weather.cloudCover;
   lighting.cloudOffset = weather.cloudOffset;
+  lighting.skyCloudOffset = weather.skyCloudOffset;
   lighting.cloudStrength = weather.cloudStrength;
   lighting.windDir = weather.windDir;
   lighting.windStrength = weather.windStrength;

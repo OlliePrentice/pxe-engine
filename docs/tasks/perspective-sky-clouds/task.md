@@ -1,7 +1,7 @@
 # Sky clouds in perspective mode
 Type: feature
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 1
 
 ## Goal
 Add stylised clouds to the perspective mode's sky, toward `desert/docs/concept/wanderers.png`: two layers of soft streaks, each on its own flat plane at altitude. The streaks are aligned with and drifting on the wind, shaded smoothly from the light (pale bodies, warm edges toward the sun), and thin and fade into the horizon. They draw in the sky behind the scene, cast no shadows, and are off by default. The orthographic mode doesn't change.
@@ -118,10 +118,10 @@ Run in the task's worktree, against the cycle base:
    - `skyCloudOffset` reaches the shader times each layer's `drift`.
 
 ## Acceptance criteria
-- [ ] `SkyCloudLayer`, `Scene::skyClouds[2]` (defaults as §1) and `Scene::skyCloudBrightness` exist as binding. `Weather::skyCloudOffset` and `Lighting::skyCloudOffset` exist and are copied.
-- [ ] `backdrop.frag` draws the two layers with the binding `cloudLayer`, over the glow and disc, coloured from the light, faded at the horizon, aligned with and drifting on the wind.
-- [ ] Verification 2 and 3 pass. Verification 4's three captures are pairwise different, `clouds-off.png` equals the base, and a and b are kept and described.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `SkyCloudLayer`, `Scene::skyClouds[2]` (defaults as §1) and `Scene::skyCloudBrightness` exist as binding. `Weather::skyCloudOffset` and `Lighting::skyCloudOffset` exist and are copied. Evidence: `engine/include/pxe/scene.hpp` (struct, fields), `Scene::Scene()` in `engine/src/scene.cpp`, `lighting.hpp`, `lightingAt(scene, hour, weather)` in `lighting.cpp`.
+- [x] `backdrop.frag` draws the two layers with the binding `cloudLayer`, over the glow and disc, coloured from the light, faded at the horizon, aligned with and drifting on the wind. Evidence: `cloudLayer` in `engine/shaders/backdrop.frag`, called twice after the disc in `main`; `clouds-b.png`.
+- [x] Verification 2 and 3 pass. Verification 4's three captures are pairwise different, `clouds-off.png` equals the base, and a and b are kept and described. Evidence: orchestrator's ortho-check 6/6 and perspective-check 3/3 identical against 8f2a3a9; diff of the listed paths empty; captures pairwise different per handoff, example-first-person identical to base.
+- [x] Project builds cleanly from a fresh build directory with CMake Evidence: orchestrator's `check` preset build, only stb `sprintf` warning.
 
 ## Assets
 None.
@@ -136,3 +136,9 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 8f2a3a9
+- Cycle 1 review: build clean, ortho 6/6 and perspective 3/3 identical, diff matches the binding code, no issues. Complete.
+
+## Playtest checklist
+- Nothing changes in play: both cloud layers default to cover 0, so `pxe_desert` and `pxe_minimal --first-person` look exactly as before. The clouds become visible to play when `desert-sky` sets the desert's values.
+- Optional: set `scene.skyClouds[0].cover = 0.4f; scene.skyClouds[1].cover = 0.25f;` in a first-person scene and look round the sky: streaks run one way, fade to nothing at the horizon, warm on the sun side.

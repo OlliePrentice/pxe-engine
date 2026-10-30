@@ -150,6 +150,15 @@ Scene::Scene() {
   groundBounce[kPhaseNight] = rgb(128, 128, 128);
   groundBounceStrength[kPhaseNight] = 0.03f;
   for (int s = 0; s < kSurfCount; ++s) albedo[s] = palette[kPhaseDay][s].band[1];
+
+  // Perspective mode's sky clouds: layer 0 is the high, thin layer (the
+  // struct's defaults, drifting faster); layer 1 is lower and fuller.
+  skyClouds[0].drift = 1.5f;
+  skyClouds[1].height = 2500.f;
+  skyClouds[1].length = 2500.f;
+  skyClouds[1].width = 900.f;
+  skyClouds[1].opacity = 0.7f;
+  skyClouds[1].drift = 1.0f;
 }
 
 }  // namespace pxe
