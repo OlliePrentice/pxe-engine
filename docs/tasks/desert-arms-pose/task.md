@@ -1,6 +1,6 @@
 # Arms: pointing forward, closer to the body, chunkier gloves
 Type: feature
-Status: open
+Status: blocked
 Cycle: 1
 
 ## Goal
@@ -90,3 +90,4 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-30: base 010f23d
+- Cycle 1, 2026-10-30: designer returned NEEDS INPUT (5f8386c): four binding checks fail at the spec's values and its fallbacks can't recover them (gauge readout, compass in view, palm vs cuff, sprint framing); reproduced by the orchestrator. Fixes change Decisions: blocked, see replan-1.md.
