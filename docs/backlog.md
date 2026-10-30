@@ -197,12 +197,13 @@ Assets: no
 Merged: 73ba6c1
 
 ## desert-arms-pose: Arms: pointing forward, closer to the body, chunkier gloves
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-arms-pose/task.md
 Depends on: desert-lighting
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, docs/tasks/desert-arms-pose/
 Assets: yes
+Merged: 7ffff71
 
 ## desert-arms-gear: Arms: gear and palette after the concept art
 Status: queued
