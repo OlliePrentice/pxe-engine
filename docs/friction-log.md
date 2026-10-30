@@ -207,7 +207,7 @@ Kind: tool
 Status: actioned
 Seen: desert-arms-detail (2026-10-29, a pixel diff against arms-day.png, by hand), desert-arms-walk (2026-10-30, docs/tasks/desert-arms-walk/scripts/arm_rows.py), view-model-edges (2026-10-29, docs/tasks/view-model-edges/scripts/diff_box.py, found at the retro of 2026-10-30), desert-lighting (2026-10-30, docs/tasks/desert-lighting/scripts/png-diff.py: mean per-channel change over the ground), perspective-dust (2026-10-30, developer: inline Pillow count of changed pixels, their neighbours and rows)
 Detail: Both tasks found the arms' top row and extent by diffing one capture against another. arm_rows.py needs a render without the arms, which takes a temporary edit of `arms.pose` in desert/src/main.cpp, because pxe_desert has no flag to hide them. Related to F-021 (temporary edits for the spawn pose). A third sighting queues a tooling task (likely a capture flag that hides the arms, and a tool that reports the difference's box).
-Action: four copies of "how do two captures differ": queued tooling task `png-diff-tool` (`tools/png-diff.py`: count, box, halves, mean change, region, mask), 2026-10-30. A flag to hide the arms stays out of scope until a task needs it again.
+Action: four copies of "how do two captures differ": queued tooling task `png-diff-tool` (`tools/png-diff.py`: count, box, halves, mean change, region, mask), 2026-10-30. Built and merged (881493b); documented in tools/README.md and CLAUDE.md "Verifying a change" (a4549aa). A flag to hide the arms stays out of scope until a task needs it again.
 
 ## F-028: A batch cut short after a task's merge
 Kind: instruction-gap
@@ -387,3 +387,10 @@ Status: actioned
 Seen: desert-ground (2026-10-30, developer: first put `--capture` in the cases file; `--help` says so)
 Detail: tools/README.md's row gave the cases-file line format without saying the tool adds `--capture <name>.png`.
 Action: tools/README.md's captures.sh row says so (retro commit).
+
+## F-054: A tool spec silent on how two options combine
+Kind: instruction-gap
+Status: open
+Seen: png-diff-tool (2026-10-30, developer)
+Detail: The png-diff-tool spec didn't say whether `--mask` under `--region` writes a region-sized or image-sized image, or whether boxes under `--region` count from the image or the region. The developer chose image-sized and image coordinates, sensibly, and documented both in tools/README.md; nothing went wrong. If a later spec's silence on an option combination leads an agent to a wrong guess, add to `/feature`'s spec checks: for a tool, state the behaviour of each option combined with the others.
+Action: none yet (one sighting, no harm).
