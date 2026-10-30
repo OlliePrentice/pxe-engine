@@ -153,3 +153,27 @@ Spec: docs/tasks/desert-sky/task.md
 Depends on: perspective-dust, desert-lighting
 Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp, docs/tasks/desert-sky/
 Assets: no
+
+## desert-arms-pose: Arms: pointing forward, closer to the body, chunkier gloves
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-arms-pose/task.md
+Depends on: desert-lighting
+Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, docs/tasks/desert-arms-pose/
+Assets: yes
+
+## desert-arms-gear: Arms: gear and palette after the concept art
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-arms-gear/task.md
+Depends on: desert-arms-pose
+Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, desert/src/arms.hpp, desert/src/arms.cpp, docs/tasks/desert-arms-gear/
+Assets: yes
+
+## desert-arms-motion: Arms: a natural walk and a pumping sprint
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-arms-motion/task.md
+Depends on: desert-arms-gear
+Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, docs/tasks/desert-arms-motion/
+Assets: yes
