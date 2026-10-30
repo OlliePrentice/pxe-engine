@@ -1,7 +1,7 @@
 # Sky clouds in perspective mode
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Add stylised clouds to the perspective mode's sky, toward `desert/docs/concept/wanderers.png`: two layers of soft streaks, each on its own flat plane at altitude. The streaks are aligned with and drifting on the wind, shaded smoothly from the light (pale bodies, warm edges toward the sun), and thin and fade into the horizon. They draw in the sky behind the scene, cast no shadows, and are off by default. The orthographic mode doesn't change.
@@ -136,3 +136,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 8f2a3a9
