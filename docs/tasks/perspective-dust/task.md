@@ -1,7 +1,7 @@
 # Airborne dust in perspective mode
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Add drifting airborne dust to the perspective mode, toward `desert/docs/concept/wanderers.png`. Thousands of tiny half-transparent motes fill a box round the eye and drift on the wind. They're depth-tested against the scene, fade with distance, and are coloured from the haze, glinting warm toward the sun. The dust is off by default. The orthographic mode doesn't change.
@@ -161,3 +161,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 010f23d
