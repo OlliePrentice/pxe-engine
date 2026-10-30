@@ -129,3 +129,27 @@ Spec: docs/tasks/desert-lighting/task.md
 Depends on: perspective-smooth-lighting, desert-settings-menu
 Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp, desert/src/main.cpp, desert/docs/art-style.md, docs/tasks/desert-lighting/
 Assets: no
+
+## perspective-sky-clouds: Sky clouds in perspective mode
+Status: queued
+Type: feature
+Spec: docs/tasks/perspective-sky-clouds/task.md
+Depends on: perspective-smooth-lighting
+Touches: engine/include/pxe/scene.hpp, engine/src/scene.cpp, engine/include/pxe/lighting.hpp, engine/src/lighting.cpp, engine/src/renderer_perspective.cpp, engine/shaders/backdrop.frag, docs/tasks/perspective-sky-clouds/
+Assets: no
+
+## perspective-dust: Airborne dust in perspective mode
+Status: queued
+Type: feature
+Spec: docs/tasks/perspective-dust/task.md
+Depends on: perspective-sky-clouds
+Touches: engine/include/pxe/scene.hpp, engine/include/pxe/renderer.hpp, engine/src/renderer.cpp, engine/src/renderer_perspective.cpp, engine/shaders/dust.vert, engine/shaders/dust.frag, engine/CMakeLists.txt, docs/tasks/perspective-dust/
+Assets: no
+
+## desert-sky: The desert's sky clouds and dust, and their menu controls
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-sky/task.md
+Depends on: perspective-dust, desert-lighting
+Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp, docs/tasks/desert-sky/
+Assets: no
