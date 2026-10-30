@@ -34,9 +34,10 @@ Options:
   --edit <file> <old> <new>
                        before building, replace the one occurrence of the
                        exact text <old> in <file> (relative to the repo root)
-                       with <new>; restore the file byte for byte and touch it
-                       when the tool exits. Exit 2 if <old> occurs zero or
-                       several times.
+                       with <new>; restore the file byte for byte and touch it,
+                       a second after the build, so the next build recompiles
+                       it (make compares timestamps to the whole second). Exit
+                       2 if <old> occurs zero or several times.
   -h, --help           print this help.
 
 Exit status: 0 when every case ran and every check held, 1 when a case or a
@@ -193,14 +194,18 @@ else
 fi
 
 # Restore the edited file (byte for byte, then touch it so the next build
-# recompiles it) and remove scratch files, whatever way the tool exits.
+# recompiles it) and remove scratch files, whatever way the tool exits. The
+# presets build with Unix Makefiles, and macOS make compares timestamps to the
+# whole second: a touch in the same second as the file's last compile leaves
+# the object looking up to date, and the next build keeps the edit. So wait
+# into a later second before the touch.
 edit_backup=""
 scratch=""
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM
   if [[ -n "$edit_backup" ]]; then
-    if cp "$edit_backup" "$root/$edit_file" && touch "$root/$edit_file"; then
+    if cp "$edit_backup" "$root/$edit_file" && sleep 1 && touch "$root/$edit_file"; then
       rm -f "$edit_backup"
     else
       echo "captures.sh: FAILED to restore $edit_file; the original is in $edit_backup" >&2
@@ -246,6 +251,8 @@ if [[ -n "$edit_file" ]]; then
   cp "$root/$edit_file" "$backup_tmp"
   edit_backup="$backup_tmp"
   python3 -I -c "$edit_py" apply "$root/$edit_file" "$edit_old" "$edit_new"
+  # Wait into a later second than the previous build or restore (see cleanup).
+  sleep 1
   touch "$root/$edit_file"
   echo "edit: $edit_file (restored on exit)"
 fi
