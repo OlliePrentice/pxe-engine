@@ -1,6 +1,6 @@
 # Terminator sharpness and surface ripples in perspective mode
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -121,10 +121,10 @@ Run in the task's worktree, against the cycle base:
    - actors and the view model never ripple.
 
 ## Acceptance criteria
-- [ ] `SurfaceRipples`, `Scene::ripples` and `Scene::terminator` exist as binding, with the defaults stated.
-- [ ] The lit shaders implement the binding terminator and ripple shading, scene surfaces only, with `oNormal` unchanged.
-- [ ] Verification 2–5 pass, and the two captures are kept and described.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `SurfaceRipples`, `Scene::ripples` and `Scene::terminator` exist as binding, with the defaults stated. (`engine/include/pxe/scene.hpp`, word for word)
+- [x] The lit shaders implement the binding terminator and ripple shading, scene surfaces only, with `oNormal` unchanged. (`lit_perspective.glsl` litColour; `mesh_perspective.frag` rippled() applied after oNormal is written, actors return earlier with terminator 0)
+- [x] Verification 2–5 pass, and the two captures are kept and described. (orchestrator: ortho 6/6, perspective 3/3, V3 diff empty; V4 at 17.5 per revision 1: three captures pairwise different, off.png identical to base, kept PNGs reproduced byte for byte; described in handoff.md)
+- [x] Project builds cleanly from a fresh build directory with CMake (orchestrator check build: only the stb sprintf warning)
 
 ## Assets
 None.
@@ -140,3 +140,11 @@ None.
 ## Cycle log
 - Cycle 1, 2026-10-30, base c2c6add
 - Cycle 2, 2026-10-30, base de4ff92, after replan 1; no outstanding issues (cycle 1's code stands; verification re-run at 17.5)
+- Cycle 2 review: build clean, verification passes at 17.5, no issues. Complete.
+
+## Playtest checklist
+Nothing in either game changes yet (`desert-ground` turns these on). To see them in the desert now, add temporarily at the end of `buildWorld` in `desert/src/world.cpp`, then rebuild and run `--hour 17.5`:
+- `scene.ripples.surface = pxe::kSurfSand; scene.ripples.headingDegrees = 200.f;`: fine stripes on the near sand running across the wind, wandering slightly, gone by about 20 m and absent on steep slip faces. Walk: they stay fixed on the ground, and shouldn't crawl or shimmer at the fade.
+- `scene.terminator[pxe::kSurfSand] = 0.35f;`: tighter light/shadow edges along the crests, lit slopes still graded.
+- The arms never ripple; outlines don't pick up the ripples.
+- Note: at `--hour 18` the sun is exactly on the horizon, so neither shows (no direct light at all).
