@@ -80,9 +80,18 @@ Assets: yes
 Merged: bc94943
 
 ## glb-tool: A shared glb reader and checker
-Status: in-progress
+Status: done
 Type: tooling
 Spec: docs/tasks/glb-tool/task.md
 Depends on: none
 Touches: tools/glb.py, tools/README.md, docs/tasks/glb-tool/
+Assets: no
+Merged: 0476111
+
+## gitignore-pycache: Ignore Python bytecode caches
+Status: queued
+Type: fix
+Spec: docs/tasks/gitignore-pycache/task.md
+Depends on: none
+Touches: .gitignore, docs/tasks/gitignore-pycache/
 Assets: no
