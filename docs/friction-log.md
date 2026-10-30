@@ -385,5 +385,5 @@ Action: none yet (first sighting).
 Kind: doc-gap
 Status: actioned
 Seen: desert-ground (2026-10-30, developer: first put `--capture` in the cases file; `--help` says so)
-Detail: tools/README.md's row gave the cases-file line format without saying the tool adds `--capture <out>/<name>.png`.
+Detail: tools/README.md's row gave the cases-file line format without saying the tool adds `--capture <name>.png`.
 Action: tools/README.md's captures.sh row says so (retro commit).
