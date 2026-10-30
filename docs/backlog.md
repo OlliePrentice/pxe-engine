@@ -116,12 +116,13 @@ Assets: no
 Merged: 60b20f7
 
 ## perspective-smooth-lighting: Smooth lighting in perspective mode
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/perspective-smooth-lighting/task.md
 Depends on: none
 Touches: engine/include/pxe/scene.hpp, engine/src/scene.cpp, engine/include/pxe/lighting.hpp, engine/src/lighting.cpp, engine/include/pxe/renderer.hpp, engine/src/renderer.cpp, engine/src/renderer_internal.hpp, engine/src/renderer_perspective.cpp, engine/include/pxe/first_person_camera.hpp, engine/shaders/lit_perspective.glsl, engine/shaders/mesh_perspective.frag, engine/shaders/backdrop.frag, engine/shaders/edge_perspective.frag, engine/CMakeLists.txt, docs/tasks/perspective-smooth-lighting/
 Assets: no
+Merged: 597ddce
 
 ## desert-lighting: The desert's light and its menu controls
 Status: queued
