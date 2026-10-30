@@ -98,7 +98,7 @@ Assets: no
 Merged: 8c45110
 
 ## desert-arms-revision: Arms: hands held with intent, an LCD gauge, quieter stitching
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms-revision/task.md
 Depends on: none
