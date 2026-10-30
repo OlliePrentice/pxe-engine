@@ -170,12 +170,13 @@ Assets: no
 Merged: b36de25
 
 ## png-diff-tool: A PNG difference reporter
-Status: in-progress
+Status: done
 Type: tooling
 Spec: docs/tasks/png-diff-tool/task.md
 Depends on: none
 Touches: tools/png-diff.py, tools/README.md, docs/tasks/png-diff-tool/
 Assets: no
+Merged: 881493b
 
 ## perspective-dust: Airborne dust in perspective mode
 Status: done
