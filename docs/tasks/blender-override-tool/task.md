@@ -1,7 +1,7 @@
 # Run a Blender build script with constants overridden
 Type: tooling
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Trying a value in an asset build script, or proving that one of its checks fails, keeps being done by hand: a scratch copy of `desert/tools/blender/build_arms.py` with a constant `sed`-edited (and `HERE` pinned so the copy still finds the repo), or a `runpy.run_path` wrapper that sets constants in the functions' own globals. Copies so far: `desert-arms-revision` (planning trial of `HAND_ROLL`; the designer's negative check runs) and `docs/tasks/desert-arms-pose/scripts/pose_trials.py` (on branch `desert-arms-pose`; overrides `GAUGE_S`, `GAUGE_TURN`, `WRIST`, `GLOVE_BULK`, `CUFF_BULK`). Friction log F-034. Turn them into one tool, `tools/blender-override.py`.
@@ -71,3 +71,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30, base c2c6add
