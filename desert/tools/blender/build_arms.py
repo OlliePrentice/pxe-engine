@@ -6,8 +6,6 @@ then renders the previews beside the glb):
     PXE_DESERT_OUT=/some/dir ... writes the glb and previews there instead.
     PXE_SKIP_PREVIEW=1 ... skips the previews.
     PXE_SKIP_EXPORT=1 ... stops after the checks.
-    PXE_ARMS_BEFORE=<glb> ... the glb whose rest pose the new one must equal
-        (default: the glb about to be overwritten, else the shipped one).
 
 Or step by step in an open Blender, to watch it go together:
     import runpy; am = runpy.run_path(".../build_arms.py", run_name="arms")
@@ -27,7 +25,7 @@ Built in the held pose, which is the rest (bind) pose: shoulders 0.38 m apart,
 0.22 m below and 0.05 m behind the eye; elbows bent to 99 degrees, 8 cm below
 the shoulders, 25 cm ahead of them and 15 cm out from them, so the forearms
 rise from the bottom corners of the view, forward, up and inward; wrists 0.37 m
-ahead, hands centred 0.42 m ahead, palms turned inward and down, fingers
+ahead, hands centred 0.42 m ahead, palms facing each other with the thumbs up, fingers
 relaxed and a little curled, thumbs resting along the index fingers. With real
 proportions the forearm rises steeply, so only a few centimetres behind the
 glove show; the cuff is kept short and the bracer's gauge sits at its wrist
@@ -60,7 +58,9 @@ one solid colour per material. A view model carries detail down to about
     gauge (left)  Arms_Brass  a bezel on the plate's wrist end, turned toward
                               the eye, its window recessed 3 mm, long side
                               level across the view
-                  Arms_Glow   three emissive bars in the window
+                  Arms_Screen a backlit panel on the window floor (emissive)
+                  Arms_Glow   the readout: 47% and a block cursor in lit
+                              2.4 mm dots (emissive)
                   Arms_Steel  four slotted screws on the bezel's corners; a
                               knurled dial on its inner side (Arms_Paint
                               index mark); three toggles at the plate's wrist
@@ -106,7 +106,7 @@ are exact. The checks (clip_checks, check_glb_clips) sample every key and
 half-key as the engine does.
 
 Material order is the contract with the engine: glTF material i is actor
-slot firstMaterial + i (desert::Arms loads into slots 0-13).
+slot firstMaterial + i (desert::Arms loads into slots 0-14).
 """
 
 import json
@@ -130,8 +130,6 @@ PREVIEW_LEFT = os.path.join(OUT_DIR, "arms_left.png")
 PREVIEW_RIGHT = os.path.join(OUT_DIR, "arms_right.png")
 PREVIEW_CLIPS = {"Arms_Walk": os.path.join(OUT_DIR, "arms_walk.png"),
                  "Arms_Sprint": os.path.join(OUT_DIR, "arms_sprint.png")}
-# The glb the clips were added to: its rest-pose vertices must come back unchanged.
-DEFAULT_GLB = os.path.normpath(os.path.join(HERE, "..", "..", "assets", "characters", "arms.glb"))
 COLLECTION = "Arms"
 MESH = "Arms"
 RIG = "Arms_Rig"
@@ -181,16 +179,17 @@ MATERIALS = [
     ("Arms_Glove", (78, 54, 40), False),     # dark leather gloves
     ("Arms_Strap", (118, 84, 56), False),    # bracer straps and buckles
     ("Arms_Brass", (176, 132, 64), False),   # worn brass bracer plate and bezel
-    ("Arms_Glow", (90, 230, 210), True),     # the gauge's bars
+    ("Arms_Glow", (70, 255, 110), True),     # the gauge readout's lit dots (phosphor green)
     ("Arms_Steel", (92, 96, 102), False),    # screws, canister, valve, compass housing and lid, buckles, rivets, toggle bases
     ("Arms_Copper", (178, 98, 56), False),   # coil, copper cable
     ("Arms_Rubber", (44, 40, 38), False),    # rubber cable, toggle levers, compass buttons
-    ("Arms_Thread", (196, 170, 124), False),  # glove and strap stitching
+    ("Arms_Thread", (132, 100, 70), False),  # glove and strap stitching
     ("Arms_Worn", (112, 82, 62), False),     # knuckle pads, palm, back-of-hand and fingertip patches
     ("Arms_Grime", (160, 146, 120), False),  # grime bands, frayed tails
     ("Arms_Dial", (222, 212, 186), False),   # the compass face (ivory enamel)
     ("Arms_Paint", (170, 64, 44), False),    # toggle tips, compass needle and ticks, dial index mark
     ("Arms_Amber", (255, 170, 60), True),    # the compass's status lamp
+    ("Arms_Screen", (30, 46, 36), True),     # the gauge's backlit screen panel
 ]
 M = {name: i for i, (name, _, _) in enumerate(MATERIALS)}
 TRI_BUDGET = (12000, 20000)
@@ -209,10 +208,9 @@ TAN_Y = math.tan(FOV_Y / 2.0)
 VIEW_W, VIEW_H = 960, 540
 
 FRAME_TOP = -0.30            # nothing in view above this NDC y (the lower 35%)
-KNUCKLE_Y = (-0.70, -0.50)   # top of each index knuckle, NDC y
+KNUCKLE_Y = (-0.70, -0.40)   # top of each index knuckle, NDC y
 HAND_X = (0.40, 0.60)        # each hand's centre, |NDC x|
 CLEARANCE = 0.15             # every vertex in view at least this far ahead (m)
-BAR_MIN_PX = 3.0             # each gauge bar at least this wide on screen
 SMALL_MIN_PX = 3.0           # every seen small part (screw head, toggle tip, lamp, needle, tick, index mark), and the knurl pitch
 FACE_MIN_PX = 30.0           # the compass dial at least this wide on screen
 FACE_COS = 0.87              # the compass face's normal within 30 degrees of the direction to the eye
@@ -281,7 +279,7 @@ WRIST = v(0.215, -0.370, -0.155)    # where the forearm meets the hand
 ELBOW_SWING = 48.0                  # degrees the elbow swings out from straight below the shoulder-wrist line
 HAND_YAW = 16.0                      # the hand points this far inward (degrees)
 HAND_PITCH = 16.0                   # and this far down
-HAND_ROLL = 24.0                    # the palm turns from facing down toward facing inward
+HAND_ROLL = 90.0                    # the palm turns from facing down to facing inward: palms face each other, thumbs up
 
 # Forearm (cloth over it): radius at the wrist and at the elbow.
 FORE_R0, FORE_R1 = 0.030, 0.044
@@ -349,8 +347,21 @@ GAUGE_TURN = 0.55
 WINDOW = (0.045, 0.022)
 BEZEL = 0.005
 RECESS = 0.003
-BAR = (0.010, 0.015)
-BAR_GAP = 0.0035
+# The gauge's screen: a backlit panel on the window floor (across, up the
+# forearm, and how far it stands off the floor, sunk as far into it), and a
+# readout of lit dots on it in a 3x5 font: square dots this wide, standing
+# LCD_PROUD off the panel (sunk 0.4 mm into it). One blank column between
+# glyphs. Each glyph is five rows, top first, X lit.
+LCD_PANEL = (0.044, 0.021, 0.0006)
+LCD_DOT = 0.0024
+LCD_PROUD = 0.0010
+LCD_TEXT = (
+    ("X.X", "X.X", "XXX", "..X", "..X"),   # 4
+    ("XXX", "..X", "..X", ".X.", ".X."),   # 7
+    ("X.X", "..X", ".X.", "X..", "X.X"),   # %
+    ("XXX", "XXX", "XXX", "XXX", "XXX"),   # the block cursor
+)
+LCD_MIN_PX = 3.0             # each dot at least this wide on screen, both ways
 
 # ---- detail (desert-arms-detail) -------------------------------------------
 # Glove stitching: dash length, width, gap, and how far it stands proud (and sinks in).
@@ -610,7 +621,7 @@ class Builder:
         self.attach = []     # (piece, piece) that must touch in every pose
         self.covered = []    # (piece, vertex list, [pieces]): verts that must stay inside one of the pieces
         self.band_edges = []  # per forearm, ring loops whose edges must crease
-        self.bars = []
+        self.lcd = []        # (piece, glyph, row, top centre, right, up, n): every lit dot of the gauge's readout
         self.segs = {}       # (side, digit, segment) -> the segment's frame and sizes, for the glove detail
         self.palm_loops = {}
         self.cuff_loops = {}
@@ -626,7 +637,7 @@ class Builder:
     # ---- scene plumbing ---------------------------------------------------
 
     def start(self):
-        """A fresh Arms collection and the 14 materials; the rest of the file is left alone."""
+        """A fresh Arms collection and the 15 materials; the rest of the file is left alone."""
         old = bpy.data.collections.get(COLLECTION)
         if old:
             for ob in list(old.objects):
@@ -1419,15 +1430,15 @@ class Builder:
 
     def gauge(self):
         """A brass bezel on the plate, turned toward the eye, its window
-        recessed 3 mm, with three glowing bars in the window."""
+        recessed 3 mm, with a backlit screen reading 47% and a block cursor."""
         sd = self.sides["L"]
         ri = self.bracer_r(sd, GAUGE_S) + BRACER_T
         base = self._bracer_point(sd, GAUGE_S, 0.0, ri)
         plate_n = sd.back
         to_eye = (-base).normalized()
         n = plate_n.slerp(to_eye, GAUGE_TURN).normalized()
-        # The window's long side lies level across the view, so the bars
-        # stand side by side on screen; its short side runs up the forearm.
+        # The window's long side lies level across the view, so the readout
+        # runs across the screen; its short side runs up the forearm.
         w = (X - n * X.dot(n)).normalized()
         u = n.cross(w).normalized()
         if u.dot(sd.af) < 0:
@@ -1481,17 +1492,34 @@ class Builder:
         self.gauge_top = top
         self.gauge_frame = (top, u, w, n, hl, hw)
         self.gauge_on_plate = on_plate
-        # Bars, side by side along the window's long side.
+        # The screen: a backlit panel filling the window floor, and on it
+        # the readout's lit dots.
         floor = top - n * RECESS
-        for k in range(3):
-            y = (k - 1) * (BAR[0] + BAR_GAP)
-            c = floor + w * y
-            q = self.piece(f"L.bar.{k + 1}", "Arms_Glow")
-            la, lb = self.box_loops(c - n * 0.0006, c + n * 0.0016, n, u, BAR[0], BAR[1])
-            self.loft(q, [la, lb])
-            self.gadget(q, "L")
-            self.attach.append((q.name, "L.gauge"))
-            self.bars.append((q.name, c + n * 0.0016, w, n))
+        pw, pu, pt = LCD_PANEL
+        q = self.piece("L.screen", "Arms_Screen")
+        la, lb = self.box_loops(floor - n * pt, floor + n * pt, n, u, pw, pu)   # pw along w, pu along u
+        self.loft(q, [la, lb])
+        self.gadget(q, "L")
+        self.attach.append(("L.screen", "L.gauge"))
+        # Reading directions on screen: `right` the one of +-w whose end
+        # projects further right (NDC x), `up` the one of +-u that projects higher.
+        right = w if project(floor + w * 0.01)[0] > project(floor)[0] else -w
+        up = u if project(floor + u * 0.01)[1] > project(floor)[1] else -u
+        face = floor + n * pt
+        cols = 4 * len(LCD_TEXT) - 1
+        for g, rows in enumerate(LCD_TEXT):
+            for r, row in enumerate(rows):
+                for c, lit in enumerate(row):
+                    if lit != "X":
+                        continue
+                    centre = face + right * ((4 * g + c - (cols - 1) / 2) * LCD_DOT) + up * ((2 - r) * LCD_DOT)
+                    name = f"L.lcd.{g + 1}.{r + 1}{c + 1}"
+                    q = self.piece(name, "Arms_Glow")
+                    la, lb = self.box_loops(centre - n * 0.0004, centre + n * LCD_PROUD, n, up, LCD_DOT, LCD_DOT)
+                    self.loft(q, [la, lb])
+                    self.gadget(q, "L")
+                    self.attach.append((name, "L.screen"))
+                    self.lcd.append((name, g, r, centre + n * LCD_PROUD, right, up, n))
         self.refresh()
 
     def bracer_detail(self):
@@ -2264,29 +2292,50 @@ def framing(b, pts, idx):
         else:
             m[f"forearm_exit_ndc_x.{S}"] = round(exit_q[0], 3)
         m[f"wrist_ndc.{S}"] = [round(c, 3) for c in project(sd.W)]
-    # Gauge bars: in view, facing the eye, wide enough, not hidden.
+    # The gauge's readout: the screen and every dot in view, every dot seen,
+    # wide enough both ways, facing the eye, and reading left to right and
+    # top to bottom on screen.
     tree = BVHTree.FromPolygons(pts, [p.vertices for p in me.polygons])
     poly_piece = {}
     for name, (vi, pi) in idx.items():
         for i in pi:
             poly_piece[i] = name
-    for name, top_c, across, n in b.bars:
-        vs = [pts[i] for i in idx[name][0]]
-        if not all(in_view(p) for p in vs):
+
+    def px_between(a, c):
+        qa, qc = project(a), project(c)
+        return math.hypot((qa[0] - qc[0]) * VIEW_W / 2, (qa[1] - qc[1]) * VIEW_H / 2)
+    for name in ["L.screen"] + [d[0] for d in b.lcd]:
+        if not all(in_view(pts[i]) for i in idx[name][0]):
             problems.append(f"{name} is not wholly in view")
-        to_eye = (-top_c).normalized()
-        facing = n.dot(to_eye)
-        a, c = project(top_c - across * BAR[0] / 2), project(top_c + across * BAR[0] / 2)
-        px = math.hypot((a[0] - c[0]) * VIEW_W / 2, (a[1] - c[1]) * VIEW_H / 2)
+    px_across, px_up, facing_min = [], [], 1.0
+    glyph_x = {}
+    row_y = {}
+    for name, g, r, top_c, right, up, n in b.lcd:
         hit, _, pidx, _ = tree.ray_cast(Vector((0, 0, 0)), top_c.normalized(), top_c.length + 0.01)
-        bar_seen = hit is not None and poly_piece.get(pidx) == name
-        m[f"{name}_px_wide"] = round(px, 1)
-        m[f"{name}_facing_eye"] = round(facing, 3)
-        if facing <= 0.2 or px < BAR_MIN_PX or not bar_seen:
-            problems.append(f"{name}: facing {facing:.2f}, {px:.1f} px wide, seen from the eye {bar_seen}")
-    bq = [project(pts[i]) for k in range(3) for i in idx[f"L.bar.{k + 1}"][0]]
-    m["gauge_bars_ndc"] = {"x": [round(min(q[0] for q in bq), 3), round(max(q[0] for q in bq), 3)],
-                           "y": [round(min(q[1] for q in bq), 3), round(max(q[1] for q in bq), 3)]}
+        dot_seen = hit is not None and poly_piece.get(pidx) == name
+        across = px_between(top_c - right * LCD_DOT / 2, top_c + right * LCD_DOT / 2)
+        upward = px_between(top_c - up * LCD_DOT / 2, top_c + up * LCD_DOT / 2)
+        facing = n.dot((-top_c).normalized())
+        px_across.append(across)
+        px_up.append(upward)
+        facing_min = min(facing_min, facing)
+        if not dot_seen or across < LCD_MIN_PX or upward < LCD_MIN_PX or facing < FACE_COS:
+            problems.append(f"{name}: seen from the eye {dot_seen}, {across:.1f} x {upward:.1f} px, facing {facing:.3f}")
+        q = project(top_c)
+        glyph_x.setdefault(g, []).append(q[0])
+        row_y.setdefault((g, r), []).append(q[1])
+    gx = [sum(glyph_x[g]) / len(glyph_x[g]) for g in range(len(LCD_TEXT))]
+    if not all(a < c for a, c in zip(gx, gx[1:])):
+        problems.append(f"the readout's glyphs don't read left to right: mean NDC x {[round(x, 4) for x in gx]}")
+    for g in range(len(LCD_TEXT)):
+        if min(row_y[(g, 0)]) <= max(row_y[(g, 4)]):
+            problems.append(f"the readout's glyph {g + 1}: row 1 does not project above row 5")
+    lq = [project(pts[i]) for d in b.lcd for i in idx[d[0]][0]]
+    m["lcd"] = {"dots": len(b.lcd),
+                "ndc": {"x": [round(min(q[0] for q in lq), 3), round(max(q[0] for q in lq), 3)],
+                        "y": [round(min(q[1] for q in lq), 3), round(max(q[1] for q in lq), 3)]},
+                "px_min": [round(min(px_across), 2), round(min(px_up), 2)],
+                "facing_min": round(facing_min, 3)}
 
     def verts(name):
         return [pts[i] for i in idx[name][0]]
@@ -2800,8 +2849,8 @@ def add_clips(path, b):
 
 
 def check_glb(path, tris_expected):
-    """Read the glb back: one skinned mesh, 39 named joints, the 14
-    materials in order with their colours, only the glow and amber emissive,
+    """Read the glb back: one skinned mesh, 39 named joints, the 15
+    materials in order with their colours, only the glow, amber and screen emissive,
     and the two clips (checked further by check_glb_clips)."""
     with open(path, "rb") as fh:
         data = fh.read()
@@ -3121,15 +3170,10 @@ def main():
         raise RuntimeError("the arms fail their checks:\n  " + "\n  ".join(problems))
     if os.environ.get("PXE_SKIP_EXPORT"):
         return
-    # The glb the clips are added to, read before it is overwritten.
-    before = None
-    for path in (os.environ.get("PXE_ARMS_BEFORE"), OUT, DEFAULT_GLB):
-        if path and os.path.exists(path):
-            with open(path, "rb") as fh:
-                before = fh.read()
-            print("rest pose compared with", path)
-            break
     export()
+    # The glb the clips are added to: its rest pose must come back unchanged.
+    with open(OUT, "rb") as fh:
+        before = fh.read()
     add_clips(OUT, b)
     gp, gm = check_glb(OUT, m["triangles"])
     with open(OUT, "rb") as fh:
