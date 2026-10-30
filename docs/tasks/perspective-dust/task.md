@@ -1,7 +1,7 @@
 # Airborne dust in perspective mode
 Type: feature
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 1
 
 ## Goal
 Add drifting airborne dust to the perspective mode, toward `desert/docs/concept/wanderers.png`. Thousands of tiny half-transparent motes fill a box round the eye and drift on the wind. They're depth-tested against the scene, fade with distance, and are coloured from the haze, glinting warm toward the sun. The dust is off by default. The orthographic mode doesn't change.
@@ -144,11 +144,11 @@ Run in the task's worktree, against the cycle base:
    - `dustOffset_` advances by the wind each frame.
 
 ## Acceptance criteria
-- [ ] `Scene::dustDensity` and `Scene::dustSize` exist as binding, defaulting to 0 and 1.
-- [ ] `dust.vert` and `dust.frag` implement the binding shape. The perspective frame draws the dust as §4 says, with the blend, depth and mask state restored after.
-- [ ] `progDust_` and `dustVao_` are created in perspective mode only, and freed. `upload()` resets the dust offset.
-- [ ] Verification 2 and 3 pass. Verification 4's captures behave as stated, and the two kept captures are described.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `Scene::dustDensity` and `Scene::dustSize` exist as binding, defaulting to 0 and 1. (engine/include/pxe/scene.hpp, after skyCloudBrightness, as binding.)
+- [x] `dust.vert` and `dust.frag` implement the binding shape. The perspective frame draws the dust as §4 says, with the blend, depth and mask state restored after. (engine/shaders/dust.vert matches the binding shape; renderer_perspective.cpp dust block after window panes, before the view model, restores blend/depth/mask.)
+- [x] `progDust_` and `dustVao_` are created in perspective mode only, and freed. `upload()` resets the dust offset. (renderer.cpp init() perspective branch, ~Renderer() deletes both, upload() resets dustOffset_/dustTime_.)
+- [x] Verification 2 and 3 pass. Verification 4's captures behave as stated, and the two kept captures are described. (review run: ortho-check 6/6, perspective-check 3/3 identical vs 010f23d; step 3 diff empty; dust-a/b/off pairwise different, dust-off = base (handoff), described in handoff.md.)
+- [x] Project builds cleanly from a fresh build directory with CMake (review fresh check build at fec3f46: only the stb sprintf warning.)
 
 ## Assets
 None.
@@ -160,4 +160,13 @@ None.
 ## Spec revisions
 None.
 
+## Playtest checklist
+- Play unchanged: `tools/build.sh release desert` looks and plays as before (dust is off by default).
+- Temporarily add `world.scene.dustDensity = 1.f; world.scene.dustSize = 2.f;` at the end of `buildWorld` in `desert/src/world.cpp`, run `tools/build.sh release desert -- --hour 18`: motes drift on the wind, never run out as you walk and sprint, never show in front of the arms, fade out by ~40 m and never sit on the far sky.
+- Same at `--hour 6` and `--hour 12`: motes toward the low sun look warmer and brighter.
+- Turning the density on and off in one session (later, via desert-sky's menu) doesn't make motes jump.
+- Revert the temporary edit.
+
 ## Cycle log
+- Cycle 1, 2026-10-30: base 010f23d
+- Cycle 1 review: no issues; fresh build clean, checks pass. Complete.

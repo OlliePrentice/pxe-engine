@@ -25,6 +25,9 @@ constexpr float kShadowReach = 60.f;
 // kViewModelDepth only about a millimetre past the near plane.
 constexpr double kViewModelDepth = 0.01;
 
+// Metres a second the dust drifts at wind strength 1.
+constexpr float kDustSpeed = 2.f;
+
 // The same fixed-size square for a perspective camera, kShadowReach round
 // the eye pushed half that ahead along the view's flat forward (not at all
 // looking straight down), so most of the map lies where the view looks.
@@ -324,6 +327,41 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
     glEnable(GL_CULL_FACE);
+  }
+  // Airborne dust, over the scene and sky, behind the view model. The wind's
+  // carry advances every frame, with or without dust, so turning the dust on
+  // doesn't make it jump.
+  {
+    const float dt = dustTime_ < 0.f ? 0.f : std::clamp(params.time - dustTime_, 0.f, 0.25f);
+    dustTime_ = params.time;
+    const glm::vec2 wind = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{1.f, 0.f};
+    dustOffset_ += glm::vec3{wind.x, 0.f, wind.y} * (kDustSpeed * lighting.windStrength * dt);
+    const int count = static_cast<int>(std::lround(std::clamp(scene.dustDensity, 0.f, 1.f) * kDustMax));
+    if (count > 0) {
+      const glm::vec3 haze = overcastSky(lighting.skyHorizon, lighting.overcast);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glDepthFunc(GL_LEQUAL);
+      glDepthMask(GL_FALSE);
+      glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+      glUseProgram(progDust_);
+      umat(progDust_, "uViewProj", viewProj);
+      u3f(progDust_, "uEye", camera.eye.x, camera.eye.y, camera.eye.z);
+      u3f(progDust_, "uOffset", dustOffset_.x, dustOffset_.y, dustOffset_.z);
+      u1f(progDust_, "uTime", params.time);
+      u1f(progDust_, "uSize", std::clamp(scene.dustSize, 1.f, 2.f));
+      u3f(progDust_, "uHaze", haze.x, haze.y, haze.z);
+      u3f(progDust_, "uSunDir", sunDir.x, sunDir.y, sunDir.z);
+      u3f(progDust_, "uSunColour", lighting.sunGlowColour.x, lighting.sunGlowColour.y, lighting.sunGlowColour.z);
+      u1f(progDust_, "uSunGlow", sunGlow);
+      glBindVertexArray(dustVao_);
+      glDrawArrays(GL_POINTS, 0, count);
+      glBindVertexArray(0);
+      glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+      glDepthMask(GL_TRUE);
+      glDepthFunc(GL_LESS);
+      glDisable(GL_BLEND);
+    }
   }
   // The view model, in front of everything already drawn.
   if (!params.viewModel.empty()) {
