@@ -177,3 +177,19 @@ Spec: docs/tasks/desert-arms-motion/task.md
 Depends on: desert-arms-gear
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, docs/tasks/desert-arms-motion/
 Assets: yes
+
+## perspective-surface-detail: Terminator sharpness and surface ripples in perspective mode
+Status: queued
+Type: feature
+Spec: docs/tasks/perspective-surface-detail/task.md
+Depends on: perspective-dust
+Touches: engine/include/pxe/scene.hpp, engine/shaders/lit_perspective.glsl, engine/shaders/mesh_perspective.frag, engine/src/renderer_perspective.cpp, docs/tasks/perspective-surface-detail/
+Assets: no
+
+## desert-ground: The desert's ground after the concept art
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-ground/task.md
+Depends on: perspective-surface-detail, desert-sky
+Touches: desert/src/world.hpp, desert/src/world.cpp, desert/src/main.cpp, desert/src/settings.cpp, desert/docs/art-style.md, docs/tasks/desert-ground/
+Assets: no
