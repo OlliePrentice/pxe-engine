@@ -1,0 +1,5 @@
+# desert-arms-pose Verification 6
+pose-day     desert/pxe_desert
+pose-golden  desert/pxe_desert --hour 18
+pose-walk    desert/pxe_desert --walk 2
+pose-sprint  desert/pxe_desert --walk 3 --sprint
