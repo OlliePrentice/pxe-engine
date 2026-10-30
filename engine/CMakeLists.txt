@@ -76,8 +76,10 @@ set(PXE_SHADERS
   gridglow.frag
   gridstep.frag
   gridsum.frag
+  lit_perspective.glsl
   mesh.frag
   mesh.vert
+  mesh_perspective.frag
   present.frag
   present.vert
   shadow.frag

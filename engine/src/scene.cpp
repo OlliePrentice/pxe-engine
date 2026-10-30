@@ -121,6 +121,35 @@ Scene::Scene() {
   ink[kPhaseNight] = hex(0x12163a);
   skyHorizon[kPhaseNight] = hex(0x283462);
   skyZenith[kPhaseNight] = hex(0x0e1236);
+
+  // Perspective mode's light: the sun (the moon at night), the sky's fill and
+  // the ground's bounce, as display colours with linear strengths.
+  auto rgb = [](float r, float g, float b) { return glm::vec3{r, g, b} / 255.f; };
+  sunColour[kPhaseDay] = rgb(255, 244, 224);
+  sunStrength[kPhaseDay] = 1.0f;
+  sunColour[kPhaseGolden] = rgb(255, 196, 140);
+  sunStrength[kPhaseGolden] = 0.9f;
+  sunColour[kPhaseTwilight] = rgb(240, 150, 140);
+  sunStrength[kPhaseTwilight] = 0.35f;
+  sunColour[kPhaseNight] = rgb(150, 170, 220);
+  sunStrength[kPhaseNight] = 0.18f;
+  skyFill[kPhaseDay] = rgb(150, 180, 230);
+  skyFillStrength[kPhaseDay] = 0.30f;
+  skyFill[kPhaseGolden] = rgb(170, 170, 210);
+  skyFillStrength[kPhaseGolden] = 0.28f;
+  skyFill[kPhaseTwilight] = rgb(140, 130, 190);
+  skyFillStrength[kPhaseTwilight] = 0.22f;
+  skyFill[kPhaseNight] = rgb(70, 85, 130);
+  skyFillStrength[kPhaseNight] = 0.12f;
+  groundBounce[kPhaseDay] = rgb(128, 128, 128);
+  groundBounceStrength[kPhaseDay] = 0.12f;
+  groundBounce[kPhaseGolden] = rgb(128, 128, 128);
+  groundBounceStrength[kPhaseGolden] = 0.10f;
+  groundBounce[kPhaseTwilight] = rgb(128, 128, 128);
+  groundBounceStrength[kPhaseTwilight] = 0.05f;
+  groundBounce[kPhaseNight] = rgb(128, 128, 128);
+  groundBounceStrength[kPhaseNight] = 0.03f;
+  for (int s = 0; s < kSurfCount; ++s) albedo[s] = palette[kPhaseDay][s].band[1];
 }
 
 }  // namespace pxe

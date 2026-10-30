@@ -30,6 +30,12 @@ constexpr float kMoonset = 5.f;
 // its windows once the sky is fully dark.
 constexpr float kMoonlight = 0.15f;
 
+// A display (sRGB) colour in linear light, by the exact sRGB curve per channel.
+glm::vec3 toLinear(glm::vec3 c) {
+  auto one = [](float v) { return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f); };
+  return glm::vec3{one(c.x), one(c.y), one(c.z)};
+}
+
 }  // namespace
 
 glm::vec3 moonDirection(const Scene& scene, float hour) {
@@ -97,6 +103,22 @@ Lighting lightingAt(const Scene& scene, float hour) {
     out.skyHorizon += w[ph] * scene.skyHorizon[ph];
     out.skyZenith += w[ph] * scene.skyZenith[ph];
   }
+
+  // Perspective mode's light.
+  out.sunLight = out.skyFillLight = out.bounceLight = glm::vec3{0.f};
+  out.sunGlowColour = glm::vec3{0.f};
+  for (int ph = 0; ph < kPhaseCount; ++ph) {
+    out.phaseWeight[ph] = w[ph];
+    out.sunLight += w[ph] * toLinear(scene.sunColour[ph]) * scene.sunStrength[ph];
+    out.skyFillLight += w[ph] * toLinear(scene.skyFill[ph]) * scene.skyFillStrength[ph];
+    out.bounceLight += w[ph] * toLinear(scene.groundBounce[ph]) * scene.groundBounceStrength[ph];
+    out.sunGlowColour += w[ph] * scene.sunColour[ph];
+  }
+  out.sunDir = sun;
+  out.hazeDensity = scene.hazeDensity;
+  out.sunGlow = scene.sunGlow;
+  out.shadowPenumbra = scene.shadowPenumbra;
+  out.exposure = scene.exposure;
 
   const glm::vec3 moon = moonDirection(scene, hour);
   out.lightDir = (sun.y >= moon.y) ? sun : moon;

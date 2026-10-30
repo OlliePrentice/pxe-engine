@@ -33,6 +33,7 @@ void drawActors(unsigned prog, const std::vector<ActorDraw>& actors);
 struct LightFit {
   glm::mat4 viewProj{1.f};
   float texel = 0.05f;
+  float depthSpan = 1.f;  // metres between the fit's near and far planes
 };
 
 // Flatten one Palette field across all surfaces into shadow/mid/lit

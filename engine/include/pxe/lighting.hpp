@@ -51,6 +51,24 @@ struct Lighting {
   // overhead.
   glm::vec3 skyHorizon{0.f};
   glm::vec3 skyZenith{0.f};
+  // Perspective mode's light, blended by phase from Scene::sunColour and
+  // the rest: linear-light colours times their strengths, ready to multiply
+  // a linear albedo. sunLight shines along lightDir (the moon's at night).
+  glm::vec3 sunLight{0.f};
+  glm::vec3 skyFillLight{0.f};
+  glm::vec3 bounceLight{0.f};
+  // Toward the sun, whichever of sun and moon lights the scene, and its
+  // display colour blended by phase: the sky's sun disc and the glow round
+  // it in the sky and the haze.
+  glm::vec3 sunDir{0.f, 1.f, 0.f};
+  glm::vec3 sunGlowColour{1.f};
+  // How much each phase (pxe::Phase) is in effect now; they sum to 1.
+  float phaseWeight[kPhaseCount]{};
+  // Copied from the Scene.
+  float hazeDensity = 0.f;
+  float sunGlow = 0.f;
+  float shadowPenumbra = 0.f;
+  float exposure = 1.f;
   // God rays: how strong the sunbeams are (0 none; the renderer adds the
   // camera angle) and their colour.
   float rays = 0.f;

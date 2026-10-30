@@ -31,8 +31,9 @@
 // a light rim only at an upward crease. The scene never outlines against
 // it. A frame with no view model is drawn exactly as before.
 //
-// Distance haze: surfaces fade into the sky's horizon colour toward the far
-// plane, in flat steps like the sky's bands.
+// Distance haze: surfaces fade into the sky's horizon colour with distance,
+// continuous and exponential, full at the far plane, and glowing toward the
+// sun as the sky does.
 //
 // This is a fork of edge.frag, the orthographic mode's edge pass, kept
 // separate so that tuning either mode's never changes the other's. A change
@@ -111,7 +112,11 @@ uniform vec2 uTanHalf;         // tangents of half the horizontal and vertical f
 uniform float uPixelAngle;     // metres across one pixel per metre of distance
 uniform float uRefTexel;       // metres across one pixel of the orthographic view, which kSilhouette suits
 uniform vec3 uHaze;            // the sky's horizon colour
-uniform vec2 uHazeSpan;        // distances where the haze starts and is full, metres
+uniform float uHazeDensity;    // per metre
+uniform vec3 uSunDir;          // toward the sun
+uniform vec3 uSunColour;       // its display colour
+uniform float uSunGlow;        // 0..1, already faded by overcast
+const float kGlowPower = 8.0;  // as backdrop.frag
 // The view model (pxe::FrameParams::viewModel) is drawn into [0,
 // uViewModelDepth] of the depth range, in front of the whole scene: a pixel
 // whose depth is below it is the view model's, and its true depth is its
@@ -237,17 +242,20 @@ vec3 edges(ivec2 p, vec3 col, vec4 np, int surface, bool actorCrease) {
 // The world position under pixel p.
 vec3 worldAt(ivec2 p) { return uEye + rayAt(p) * viewDepth(p); }
 
-// Haze: a surface fades into the sky's horizon colour from where the haze
-// starts to the far plane, by its distance from the eye, in flat steps like
-// the sky's bands; the last step is the horizon colour itself, so the end
-// of the geometry never shows against the sky. The sky (nothing drawn) is
-// left as it is.
+// Haze: a surface fades into the sky's horizon colour by its distance from
+// the eye, `1 - exp(-density * distance)`, and fully by the far plane so the
+// end of the geometry never shows against the sky. Looking toward the sun the
+// haze takes its colour, as the sky does. The sky (nothing drawn) is left as
+// it is.
 vec3 distanceHaze(ivec2 p, vec3 col) {
     if (texelFetch(uDepth, p, 0).r >= 1.0) return col;
-    const float kSteps = 8.0;
-    float dist = length(rayAt(p)) * viewDepth(p);
-    float t = clamp((dist - uHazeSpan.x) / (uHazeSpan.y - uHazeSpan.x), 0.0, 1.0);
-    return mix(col, uHaze, min(floor(t * kSteps) / (kSteps - 1.0), 1.0));
+    vec3 ray = rayAt(p);
+    float dist = length(ray) * viewDepth(p);
+    float t = 1.0 - exp(-uHazeDensity * dist);
+    t = max(t, smoothstep(0.85 * uFar, uFar, dist));
+    vec3 dir = normalize(ray);
+    float glow = clamp(uSunGlow * pow(max(dot(dir, uSunDir), 0.0), kGlowPower) * smoothstep(-0.10, 0.05, uSunDir.y), 0.0, 1.0);
+    return mix(col, mix(uHaze, uSunColour, glow), t);
 }
 
 void main() {
