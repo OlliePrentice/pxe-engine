@@ -228,7 +228,7 @@ Kind: doc-gap
 Status: actioned
 Seen: glb-tool (2026-10-30, orchestrator: `tools/__pycache__/` showed in `git status` after Verification 7 and 8)
 Detail: `.gitignore` has no `__pycache__/` entry, so importing `tools/glb.py` leaves the tree dirty, which stops `/backlog-run` at preflight. The fix lay outside glb-tool's allowed files (ISSUE-001, wont-fix there).
-Action: fix task gitignore-pycache queued (adds `__pycache__/` to `.gitignore`).
+Action: fix task gitignore-pycache queued (adds `__pycache__/` to `.gitignore`). Fixed: `.gitignore` ignores `__pycache__/` everywhere since gitignore-pycache merged (8c45110, 2026-10-30).
 
 ## F-031: Where a glb's binary chunk starts
 Kind: doc-gap
