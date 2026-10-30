@@ -74,7 +74,7 @@ Designer first, then the developer.
 - **Tubes:** a `tubes()` step using `Builder.tube`, rigid to each forearm (they leave the view, so their far ends need no attachment beyond the forearm). The copper cable's path becomes the first left tube's.
 - **New checks** in `check()` and `framing()` (binding):
   - Materials: the colours, names, order and emissive flags of the table. Every piece in `Arms_Copper` is named `*.coil*`.
-  - Undersuit seen: at least 8 `Arms_Undersuit` vertices per forearm are `seen` from the eye at rest.
+  - Undersuit seen: at least 8 `Arms_Undersuit` vertices on the right forearm are `seen` from the eye at rest. On the left the plate covers every in-view part of the forearm, so the left forearm is not checked for it. The right vambrace's plate sits with its wrist end toward the elbow far enough for this to pass, with a gap between strips behind the right cuff; prefer its wrist end at s −0.045 to −0.066 so part of it stays in view, and move it further back only if the check can't pass there.
   - Strips: each forearm has 2–3 strip pieces. Each strip edge has at least 8 notches, a notch being a dip of 3–6 mm in the edge's offset along the forearm. Each forearm has 2–3 tails.
   - Vambraces: one `Arms_Gunmetal` plate per forearm, 0.12–0.15 m long along the forearm axis and spanning 140° ± 10° round it. At least 4 `Arms_Steel` scratch pieces per plate, each 15–40 mm long and at most 1.2 mm wide. Two straps per vambrace, each with a buckle.
   - Hand plates: three `Arms_Gunmetal` segments per hand, each touching the next (overlap). Four `Arms_Worn` knuckle guards per hand.
@@ -151,6 +151,8 @@ Run in the task's worktree, against the cycle base:
 
 ## Spec revisions
 - 2026-10-30, from the unblock of `desert-arms-pose` (user): each vambrace is 0.12–0.15 m long along the forearm (was 0.11–0.13 m), in Decisions and the check. `desert-arms-pose` extended the left plate's wrist end to s −0.020 to keep the gauge's toggles on it, so the plate is 0.140 m (`BRACER_S` (−0.160, −0.020)).
+- Revision 1, 2026-10-30: the "Undersuit seen" check applies to the right forearm only, and the right vambrace's placement is set so it passes (Approach §1). The left plate covers the whole in-view part of the left forearm, so the check contradicted its size and placement. See replan-1.md.
 
 ## Cycle log
 - Cycle 1, 2026-10-30: base 1657933.
+- Cycle 1, 2026-10-30: designer NEEDS INPUT (undersuit check infeasible on the left); replan 1 applied (Approach only).
