@@ -142,6 +142,13 @@ tools/ortho-check.sh main
 tools/perspective-check.sh HEAD~1
 ```
 
+To see what a `.glb` holds, or to check that an asset rebuild kept a model's rig, materials and rest mesh, use `tools/glb.py` (standard-library Python; it also imports inside Blender's Python as a module):
+
+```bash
+tools/glb.py info desert/assets/characters/arms.glb
+tools/glb.py compare old.glb desert/assets/characters/arms.glb   # exit 0 identical, 1 differs
+```
+
 Without presets, the plain form still works (any build directory; `build/` is git-ignored):
 
 ```bash
