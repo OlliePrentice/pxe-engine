@@ -1,7 +1,7 @@
 # Run a Blender build script with constants overridden
 Type: tooling
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 1
 
 ## Goal
 Trying a value in an asset build script, or proving that one of its checks fails, keeps being done by hand: a scratch copy of `desert/tools/blender/build_arms.py` with a constant `sed`-edited (and `HERE` pinned so the copy still finds the repo), or a `runpy.run_path` wrapper that sets constants in the functions' own globals. Copies so far: `desert-arms-revision` (planning trial of `HAND_ROLL`; the designer's negative check runs) and `docs/tasks/desert-arms-pose/scripts/pose_trials.py` (on branch `desert-arms-pose`; overrides `GAUGE_S`, `GAUGE_TURN`, `WRIST`, `GLOVE_BULK`, `CUFF_BULK`). Friction log F-034. Turn them into one tool, `tools/blender-override.py`.
@@ -55,10 +55,10 @@ Run in the task's worktree. `B=/Applications/Blender.app/Contents/MacOS/Blender`
 5. `git status --porcelain` lists only `tools/blender-override.py`, `tools/README.md` and the task folder; no asset or preview changed.
 
 ## Acceptance criteria
-- [ ] `tools/blender-override.py` exists and behaves as the Decisions say, with the override lines and exit statuses.
-- [ ] `tools/README.md` has the binding row.
-- [ ] Verification 2–5 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `tools/blender-override.py` exists and behaves as the Decisions say, with the override lines and exit statuses. (orchestrator re-ran: override lines printed, failing pose exits 1, all five bad-usage cases exit 2)
+- [x] `tools/README.md` has the binding row. (after the `build_<asset>.py` row, word for word)
+- [x] Verification 2–5 pass. (2: arms.glb cmp-identical per handoff; 3, 4, 5 re-run by the orchestrator)
+- [x] Project builds cleanly from a fresh build directory with CMake (orchestrator check build: only the stb sprintf warning)
 
 ## Assets
 None.
@@ -71,3 +71,8 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30, base c2c6add
+- Cycle 1 review: build clean, verification passes, no issues. The spec's premise that `build_ruins.py` has no `main()` is wrong (it calls `main()` unguarded); the tool refuses it from the AST before executing, still exit 2 as Verification 4 requires. Complete.
+
+## Playtest checklist
+- Nothing in the games changes. Optionally: `PXE_SKIP_EXPORT=1 /Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 -P tools/blender-override.py -- desert/tools/blender/build_arms.py HAND_ROLL=90.0` prints the override line and exits 0.
