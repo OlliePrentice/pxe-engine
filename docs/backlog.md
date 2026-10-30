@@ -105,3 +105,11 @@ Depends on: none
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, desert/src/arms.hpp, desert/src/arms.cpp, docs/tasks/desert-arms-revision/
 Assets: yes
 Merged: 451ab12
+
+## desert-settings-menu: The desert's settings menu
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-settings-menu/task.md
+Depends on: none
+Touches: desert/src/settings.hpp, desert/src/settings.cpp, desert/src/main.cpp, desert/src/player.hpp, desert/src/player.cpp, desert/src/arms.hpp, desert/src/arms.cpp, desert/CMakeLists.txt
+Assets: no

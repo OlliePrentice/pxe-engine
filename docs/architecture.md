@@ -65,6 +65,9 @@ Home `game` is `game/`, `desert` is `desert/`.
 | Command-line modes: capture, bench, self-test | game | in place |
 | Command-line modes: help, capture, window PNG, hour | desert | in place: `desert/src/main.cpp` |
 
+## Standing rules per game
+- **Desert tunables go in its settings menu.** Every desert feature that adds a tunable (sky, haze, clouds, dust, sand, lighting, ...) adds its controls to the desert's settings menu (`desert::SettingsMenu`, `desert/src/settings.cpp`, from task `desert-settings-menu`), defaulting to the value the desert uses without the menu, so play opens unchanged and captures stay byte-identical (user decision, 2026-10-30).
+
 ## Misplaced code
 Code marked **misplaced** above is moved only by a dedicated refactor task, never as a side effect of a feature. Until then:
 - Extend misplaced code where it currently lives. Don't start a second copy of it in the other layer.
