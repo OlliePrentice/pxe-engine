@@ -1,7 +1,7 @@
 # A capture runner: sets of captures, twice, against a base, under a temporary edit
 Type: tooling
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 2
 
 ## Goal
 Verification steps keep running sets of captures by hand: each twice and `cmp`-ed for determinism, against a base commit's build, or under a temporary source edit that is applied, built, captured and restored. Copies so far: `docs/tasks/desert-settings-menu/scripts/walk-compare.sh` (cases against the base build), `docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh` (cases into the task folder, each twice), and by hand in `desert-arms`, `desert-arms-detail` (spawn-pose edits), `perspective-sky-clouds` (three edits of the cloud cover) and `desert-lighting` (a no-bounce edit compared with the base; three captures each twice). Friction log F-036, F-038 and F-021. Turn them into one tool, `tools/captures.sh`.
@@ -112,12 +112,12 @@ fp     examples/minimal/pxe_minimal --first-person
 9. Nothing outside `tools/captures.sh`, `tools/README.md` and the task folder changes: `git diff --stat <cycle base>` lists only those.
 
 ## Acceptance criteria
-- [ ] `tools/captures.sh` exists, is executable and has the binding usage text.
-- [ ] Cases files, `--out`, `--twice`, `--base`, `--expect`, `--distinct` and `--edit` behave as specified, with the binding output lines and exit statuses.
-- [ ] An edit is restored byte for byte and touched on success, failure and interrupt.
-- [ ] `tools/README.md` has the binding row.
-- [ ] Verification 2–9 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `tools/captures.sh` exists, is executable and has the binding usage text. (tools/captures.sh, mode 755, usage heredoc identical to the binding text.)
+- [x] Cases files, `--out`, `--twice`, `--base`, `--expect`, `--distinct` and `--edit` behave as specified, with the binding output lines and exit statuses. (captures.sh option parsing and run_in/loop; reviewer reran --twice --distinct (all deterministic, distinct) and --base HEAD --expect differ with --edit (d1630, d21 differ, fp identical, exit 1, '1 checks failed').)
+- [x] An edit is restored byte for byte and touched on success, failure and interrupt. (cleanup() EXIT trap, INT/TERM -> exit 130/143; backup armed only once complete (ISSUE-001); interrupt-test.py INT: exit 130, restored and touched; world.cpp clean after every run.)
+- [x] `tools/README.md` has the binding row. (after the perspective-check.sh row)
+- [x] Verification 2–9 pass. (handoff cycles 1-2; reviewer reran 2 (partial), 3, 5, 6, 7 (via scripts/interrupt-test.py, as the literal background kill can't reach a trap from a non-interactive shell), 9 (diff lists only tools/captures.sh, tools/README.md, task folder).)
+- [x] Project builds cleanly from a fresh build directory with CMake (reviewer fresh check build at b3dd32f: only the stb sprintf warning.)
 
 ## Assets
 None.
@@ -131,4 +131,14 @@ None.
 ## Spec revisions
 None.
 
+## Playtest checklist
+No game change. To try the tool:
+- `tools/captures.sh --help` prints the usage.
+- Write a cases file (e.g. `d21 desert/pxe_desert --hour 21`) and run `tools/captures.sh --twice --distinct <file>`: each case reports written and deterministic.
+- `--base <ref>` compares against that commit's build (shared with the check scripts); `--edit <file> <old> <new>` applies a temporary edit; press Ctrl-C mid-run and confirm `git status` is clean afterwards.
+
 ## Cycle log
+- Cycle 1, 2026-10-30: base 010f23d
+- Cycle 1 review: fresh build clean; Verification 2, 3, 6 and the interrupt (scripts/interrupt-test.py: exit 130, restored, touched) rerun by the reviewer and pass. ISSUE-001 opened.
+- Cycle 2, 2026-10-30: base 4968c17; outstanding ISSUE-001
+- Cycle 2 review: ISSUE-001 resolved; fresh build clean; Verification 5 and 9 rerun and pass. Complete.

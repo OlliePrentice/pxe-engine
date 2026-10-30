@@ -104,6 +104,21 @@ struct SkyCloudLayer {
   float drift = 1.f;       // times Weather::skyCloudOffset
 };
 
+// Ripples on one surface under perspective mode's light (Scene::ripples):
+// a shading-only tilt of the normal in an asymmetric wave, a gentle side
+// facing into the wind and a steep side facing downwind, the crest lines
+// wandering a little. Fades out with distance and on steep slopes. Not
+// drawn under Camera.
+struct SurfaceRipples {
+  int surface = -1;              // the Surface rippled; -1 none
+  float wavelength = 0.25f;      // metres crest to crest
+  float depth = 0.35f;           // how far the steep side tilts the normal, 0..1 (the gentle side a third of it)
+  float headingDegrees = 0.f;    // the wind blows toward this, compass-like: 0 toward +z, 90 toward +x
+  float fadeStart = 6.f;         // metres from the eye: full to here
+  float fadeEnd = 20.f;          // and gone from here
+  float maxSlopeDegrees = 22.f;  // none on ground steeper than this, fading over the last 4 degrees
+};
+
 struct Scene {
   // Starts with the reference palettes, rim and ink (see `palette`), and an
   // empty scene.
@@ -172,6 +187,16 @@ struct Scene {
   static constexpr int kSkyCloudLayers = 2;
   SkyCloudLayer skyClouds[kSkyCloudLayers];
   float skyCloudBrightness = 1.f;  // scales the clouds' colour
+  // Perspective mode's airborne dust: tiny half-transparent motes drifting
+  // on the wind round the eye, out to 40 m, coloured from the haze and
+  // glinting toward the sun. Not drawn under Camera.
+  float dustDensity = 0.f;  // 0 none .. 1 the most (Renderer's kDustMax motes)
+  float dustSize = 1.f;     // pixels for motes nearer than 4 m, 1..2; farther ones are 1
+  // Perspective mode's surface shading. terminator: per surface, 0 (the
+  // smooth falloff) .. 1, how sharply light turns to shadow; lit faces stay
+  // graded. ripples: on one surface, none by default.
+  float terminator[kSurfCount]{};
+  SurfaceRipples ripples;
 
   // N·L thresholds for the toon ramp with the sun high. They scale down as
   // the sun drops so a low sun still lights flat ground.

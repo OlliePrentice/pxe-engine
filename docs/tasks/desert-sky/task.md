@@ -1,7 +1,7 @@
 # The desert's sky clouds and dust, and their menu controls
 Type: feature
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 1
 
 ## Goal
 Turn on the perspective mode's sky clouds (`perspective-sky-clouds`) and dust (`perspective-dust`) in the desert with its starting values. Make the desert's clock drift the sky clouds on the wind, and add a "Sky and dust" section to the settings menu, included in "Print values", so the user can tune the look live, golden hour above all.
@@ -88,11 +88,11 @@ Run in the task's worktree, against the cycle base:
    - "Print values" includes the new lines.
 
 ## Acceptance criteria
-- [ ] `buildWorld` sets the Decisions' values that differ from the engine defaults, and nothing else of the sky or dust.
-- [ ] `Clock` advances `skyCloudOffset` as specified and passes it through `weather()`.
-- [ ] The "Sky and dust" section and the print lines are as specified.
-- [ ] Verification 2–4 pass, with the captures kept and described.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `buildWorld` sets the Decisions' values that differ from the engine defaults, and nothing else of the sky or dust. (`desert/src/world.cpp` buildWorld: covers, layer 0 opacity, dust density; other values are the defaults in `engine/src/scene.cpp`)
+- [x] `Clock` advances `skyCloudOffset` as specified and passes it through `weather()`. (`desert/src/settings.cpp` Clock::advance, inside the not-paused branch; Clock::weather)
+- [x] The "Sky and dust" section and the print lines are as specified. (`settings.cpp` SettingsMenu::draw and printLighting)
+- [x] Verification 2–4 pass, with the captures kept and described. (orchestrator: ortho-check 6/6; perspective-check example-first-person identical, desert-default/night differ; six captures via captures.sh --twice, described in handoff.md)
+- [x] Project builds cleanly from a fresh build directory with CMake (orchestrator check build: only the stb sprintf warning)
 
 ## Assets
 None.
@@ -104,3 +104,11 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30, base c2c6add
+- Cycle 1 review: build clean, verification passes, no issues. Complete.
+
+## Playtest checklist
+- Tab, untick Paused, raise Wind strength above 1: the high and low cloud layers drift along the wind at different speeds; pause and they stop.
+- Drag each Sky and dust control (cover, opacity, altitude, streak length per layer; cloud brightness; dust density; dust size): each takes effect at once. Cover 0 clears a layer; dust density 1 and size 2 px make the motes easy to see while walking.
+- `--hour 18` (or the Golden preset), turn toward the sun: sun disc and glow, warm cloud edges, warm dust glints (no capture shows these, as the spawn view never faces the sun).
+- Print values: the terminal ends with the eleven sky and dust lines, matching the starting values.

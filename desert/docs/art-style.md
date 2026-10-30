@@ -18,18 +18,19 @@ The standing style for every asset in the desert game (`desert/`, the `pxe_deser
 
 ## Scenery and props
 Static assets: plants, rocks, buildings and props. The reference asset is the date palm (`desert/tools/blender/build_date_palm.py`).
-- Built by a reproducible Blender Python script in `desert/tools/blender/build_<name>.py` and exported to `desert/assets/scenes/<name>.glb`. The script is the source of truth: build step by step in the user's live Blender session through the Blender MCP so the user can watch, then rebuild and export headless. Never hand-edit the glb.
+- Built by a reproducible Blender Python script in `desert/tools/blender/build_<name>.py` and exported to `desert/assets/scenes/<name>.glb`. The script is the source of truth: build step by step in the user's live Blender session through the Blender MCP so the user can watch, then rebuild and export headless. Never hand-edit the glb. To run a build script with a constant changed (a trial, or proving a check fails), don't set it in the dict `runpy.run_path` returns: that is a copy of the script's globals, and its functions keep reading the originals. Set it in a function's own globals (`am["main"].__globals__`), or use `tools/blender-override.py` (`tools/README.md`).
 - Each asset documents its origin. For scenery, that is the base centre at ground level.
 - **Materials** are the engine's surfaces, named as the asset contract lists. The desert uses `Sand` (ground), `Bark` (palm trunks, frond stubs, dates) and `Leaf` (palm fronds). Colours in the .blend are for previews only.
 - **Name what code uses.** Every point and size the code needs, such as a trunk's collision radius, an asset's height and its extent, is printed by the build and recorded in the task's assets.md, in engine coordinates.
 - **Budgets.** A palm is about 3,000 triangles.
 
 ## Terrain
-- The dunes are generated in the game's code, not in Blender: long, smooth, wind-aligned ridges with a sharper crest on the downwind face, built on a 1 m grid with smooth normals, so the light falls off continuously across each slope's curve.
-- No ripples, rocks or scrub until a task adds them.
+- The dunes are generated in the game's code, not in Blender: wind-aligned ridges in four layers, 4–12 m crest to trough, each with a long windward slope up to a sharp crest and a steep downwind face, plus long low hills that layer the far silhouettes into the haze. Built on a 0.5 m grid with exact normals, and sand's terminator sharpened, so the light falls off continuously across each slope but turns to shadow in a clear line along the crests.
+- Shadowed faces stay warm and sandy: the desert's sky fill is warm and the sand bounces its own warmth back up. Never a muddy mauve.
+- Wind ripples (shading only, about 0.25 m apart) cross the sand near the player, aligned with the main dunes' wind, fading out by 20 m and absent on steep downwind faces. No rocks or scrub until a task adds them.
 
 ## Palette
-- **Sand:** a warm ochre albedo, about sRGB (214, 176, 118) (`Scene::albedo[kSurfSand]`, the engine's default). The time of day colours it through the light: an orange sun at golden hour, pink-mauve at twilight, a cool blue-grey moon at night. The ground bounces the sand's own warmth back up. The desert's light, sky and haze values are set in `desert::buildWorld` (`desert/src/world.cpp`), and tuned live in the settings menu's Lighting section, whose "Print values" writes them out as code.
+- **Sand:** a warm beige-ochre albedo, about sRGB (212, 180, 136), set by the desert (`Scene::albedo[kSurfSand]`). The time of day colours it through the light: an orange sun at golden hour, pink-mauve at twilight, a cool blue-grey moon at night. The ground bounces the sand's own warmth back up. The desert's light, sky and haze values are set in `desert::buildWorld` (`desert/src/world.cpp`), and tuned live in the settings menu's Lighting section, whose "Print values" writes them out as code.
 - **Palm:** the trunk is the engine's `Bark` brown and the fronds its `Leaf` green. If the green reads wrong against the sand, a grey-green `Frond` surface is the fix, as its own task.
 
 ## Characters

@@ -1,0 +1,6 @@
+ground-1630 desert/pxe_desert
+ground-golden desert/pxe_desert --hour 18
+ground-noon desert/pxe_desert --hour 12
+ground-morning desert/pxe_desert --hour 7
+ground-night desert/pxe_desert --hour 21
+ground-walk desert/pxe_desert --walk 4

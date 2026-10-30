@@ -25,6 +25,9 @@ constexpr float kShadowReach = 60.f;
 // kViewModelDepth only about a millimetre past the near plane.
 constexpr double kViewModelDepth = 0.01;
 
+// Metres a second the dust drifts at wind strength 1.
+constexpr float kDustSpeed = 2.f;
+
 // The same fixed-size square for a perspective camera, kShadowReach round
 // the eye pushed half that ahead along the view's flat forward (not at all
 // looking straight down), so most of the map lies where the view looks.
@@ -68,7 +71,7 @@ glm::vec3 toLinear(glm::vec3 c) {
 // With `testColours` every albedo is white, the sun light pure red, the sky
 // fill pure green and the bounce pure blue, so each term shows on its own.
 void bindLit(unsigned prog, const Lighting& lighting, const Scene& scene, const FrameParams& params,
-             const LightFit& light, const LightFit& flash, float normalBias, bool testColours) {
+             const LightFit& light, const LightFit& flash, float normalBias, glm::vec3 eye, bool testColours) {
   const glm::vec3 sunDir = glm::normalize(lighting.lightDir);
   u3f(prog, "uSunDir", sunDir.x, sunDir.y, sunDir.z);
   const glm::vec3 sun = testColours ? glm::vec3{1.f, 0.f, 0.f} : lighting.sunLight;
@@ -117,6 +120,22 @@ void bindLit(unsigned prog, const Lighting& lighting, const Scene& scene, const 
   u3f(prog, "uFlashDir", flashDir.x, flashDir.y, flashDir.z);
   umat(prog, "uFlashViewProj", flash.viewProj);
   u1i(prog, "uFlashShadowMap", 6);
+
+  // Surface shading: each surface's terminator sharpness, and the ripples.
+  // Test colours show the plain light terms, so neither applies.
+  std::vector<float> terminator(kSurfCount, 0.f);
+  if (!testColours) std::copy(scene.terminator, scene.terminator + kSurfCount, terminator.begin());
+  glUniform1fv(uloc(prog, "uTerminator"), kSurfCount, terminator.data());
+  const SurfaceRipples& r = scene.ripples;
+  const float heading = glm::radians(r.headingDegrees);
+  glUniform1i(uloc(prog, "uRippleSurface"), testColours ? -1 : r.surface);
+  u1f(prog, "uRippleWavelength", r.wavelength);
+  u1f(prog, "uRippleDepth", r.depth);
+  u1f(prog, "uRippleFadeStart", r.fadeStart);
+  u1f(prog, "uRippleFadeEnd", r.fadeEnd);
+  u1f(prog, "uRippleMaxSlope", glm::radians(r.maxSlopeDegrees));
+  u2f(prog, "uRippleWind", std::sin(heading), std::cos(heading));
+  u3f(prog, "uEye", eye.x, eye.y, eye.z);
 }
 
 // The sky's colours greyed under rain cloud, as a room's window panes are.
@@ -239,7 +258,7 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
   // Program state shared by every mesh draw this frame.
   glUseProgram(progMesh_);
   u1i(progMesh_, "uShowNdl", params.showNdl ? 1 : 0);
-  bindLit(progMesh_, lighting, scene, params, light, flash, normalBias, params.testColours);
+  bindLit(progMesh_, lighting, scene, params, light, flash, normalBias, camera.eye, params.testColours);
 
   // No water to reflect.
   beginPass(PassTimes::kReflection);
@@ -324,6 +343,41 @@ void Renderer::render(const Scene& scene, const PerspectiveFrame& camera, const 
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
     glEnable(GL_CULL_FACE);
+  }
+  // Airborne dust, over the scene and sky, behind the view model. The wind's
+  // carry advances every frame, with or without dust, so turning the dust on
+  // doesn't make it jump.
+  {
+    const float dt = dustTime_ < 0.f ? 0.f : std::clamp(params.time - dustTime_, 0.f, 0.25f);
+    dustTime_ = params.time;
+    const glm::vec2 wind = glm::length(lighting.windDir) > 1e-4f ? glm::normalize(lighting.windDir) : glm::vec2{1.f, 0.f};
+    dustOffset_ += glm::vec3{wind.x, 0.f, wind.y} * (kDustSpeed * lighting.windStrength * dt);
+    const int count = static_cast<int>(std::lround(std::clamp(scene.dustDensity, 0.f, 1.f) * kDustMax));
+    if (count > 0) {
+      const glm::vec3 haze = overcastSky(lighting.skyHorizon, lighting.overcast);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glDepthFunc(GL_LEQUAL);
+      glDepthMask(GL_FALSE);
+      glColorMaski(1, GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+      glUseProgram(progDust_);
+      umat(progDust_, "uViewProj", viewProj);
+      u3f(progDust_, "uEye", camera.eye.x, camera.eye.y, camera.eye.z);
+      u3f(progDust_, "uOffset", dustOffset_.x, dustOffset_.y, dustOffset_.z);
+      u1f(progDust_, "uTime", params.time);
+      u1f(progDust_, "uSize", std::clamp(scene.dustSize, 1.f, 2.f));
+      u3f(progDust_, "uHaze", haze.x, haze.y, haze.z);
+      u3f(progDust_, "uSunDir", sunDir.x, sunDir.y, sunDir.z);
+      u3f(progDust_, "uSunColour", lighting.sunGlowColour.x, lighting.sunGlowColour.y, lighting.sunGlowColour.z);
+      u1f(progDust_, "uSunGlow", sunGlow);
+      glBindVertexArray(dustVao_);
+      glDrawArrays(GL_POINTS, 0, count);
+      glBindVertexArray(0);
+      glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+      glDepthMask(GL_TRUE);
+      glDepthFunc(GL_LESS);
+      glDisable(GL_BLEND);
+    }
   }
   // The view model, in front of everything already drawn.
   if (!params.viewModel.empty()) {

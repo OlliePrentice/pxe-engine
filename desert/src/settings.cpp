@@ -16,13 +16,16 @@ namespace {
 // and a quarter a second over the ground.
 constexpr float kCloudDrift = 0.05f;
 
+constexpr float kSkyCloudDrift = 15.f;  // metres a second the sky clouds drift at wind strength 1
+
 void clockText(float hour, char* out, int size) {
   const int minutes = static_cast<int>(std::floor(hour * 60.f)) % (24 * 60);
   std::snprintf(out, static_cast<std::size_t>(size), "%02d:%02d", minutes / 60, minutes % 60);
 }
 
 // Writes the scene's light and sky as C++ statements for desert::buildWorld,
-// all four phases then the four single values, and flushes.
+// all four phases, the four single values, then the sky clouds and dust, then
+// the ground (the sand's albedo and terminator and the ripples), and flushes.
 void printLighting(const pxe::Scene& scene) {
   static const char* const kPhaseNames[pxe::kPhaseCount] = {"kPhaseDay", "kPhaseGolden", "kPhaseTwilight",
                                                             "kPhaseNight"};
@@ -48,6 +51,30 @@ void printLighting(const pxe::Scene& scene) {
   std::printf("scene.sunGlow = %.2ff;\n", scene.sunGlow);
   std::printf("scene.shadowPenumbra = %.2ff;\n", scene.shadowPenumbra);
   std::printf("scene.exposure = %.2ff;\n", scene.exposure);
+  for (int i = 0; i < pxe::Scene::kSkyCloudLayers; ++i) {
+    const pxe::SkyCloudLayer& layer = scene.skyClouds[i];
+    std::printf("scene.skyClouds[%d].height = %.1ff;\n", i, layer.height);
+    std::printf("scene.skyClouds[%d].cover = %.2ff;\n", i, layer.cover);
+    std::printf("scene.skyClouds[%d].opacity = %.2ff;\n", i, layer.opacity);
+    std::printf("scene.skyClouds[%d].length = %.1ff;\n", i, layer.length);
+  }
+  std::printf("scene.skyCloudBrightness = %.2ff;\n", scene.skyCloudBrightness);
+  std::printf("scene.dustDensity = %.2ff;\n", scene.dustDensity);
+  std::printf("scene.dustSize = %.2ff;\n", scene.dustSize);
+  std::printf("scene.albedo[pxe::kSurfSand] = {%.3ff, %.3ff, %.3ff};\n", scene.albedo[pxe::kSurfSand].x,
+              scene.albedo[pxe::kSurfSand].y, scene.albedo[pxe::kSurfSand].z);
+  std::printf("scene.terminator[pxe::kSurfSand] = %.2ff;\n", scene.terminator[pxe::kSurfSand]);
+  const pxe::SurfaceRipples& ripples = scene.ripples;
+  if (ripples.surface == pxe::kSurfSand)
+    std::printf("scene.ripples.surface = pxe::kSurfSand;\n");
+  else
+    std::printf("scene.ripples.surface = %d;\n", ripples.surface);
+  std::printf("scene.ripples.wavelength = %.3ff;\n", ripples.wavelength);
+  std::printf("scene.ripples.depth = %.2ff;\n", ripples.depth);
+  std::printf("scene.ripples.headingDegrees = %.1ff;\n", ripples.headingDegrees);
+  std::printf("scene.ripples.fadeStart = %.1ff;\n", ripples.fadeStart);
+  std::printf("scene.ripples.fadeEnd = %.1ff;\n", ripples.fadeEnd);
+  std::printf("scene.ripples.maxSlopeDegrees = %.1ff;\n", ripples.maxSlopeDegrees);
   std::fflush(stdout);
 }
 
@@ -60,6 +87,7 @@ void Clock::advance(float dt) {
   // The noise is sampled at position + offset, so moving the offset against
   // the wind carries the clouds with it.
   cloudOffset -= windDir() * kCloudDrift * dt * windStrength;
+  skyCloudOffset += windDir() * kSkyCloudDrift * dt * windStrength;
 }
 
 glm::vec2 Clock::windDir() const {
@@ -71,6 +99,7 @@ pxe::Weather Clock::weather() const {
   pxe::Weather w;
   w.cloudCover = cloudCover;
   w.cloudOffset = cloudOffset;
+  w.skyCloudOffset = skyCloudOffset;
   w.cloudStrength = cloudStrength;
   w.windDir = windDir();
   w.windStrength = windStrength;
@@ -196,7 +225,42 @@ void SettingsMenu::draw(Clock& clock, PlayerSettings& player, ViewSettings& view
       ImGui::SliderFloat("Shadow penumbra", &scene.shadowPenumbra, 0.f, 1.f, "%.2f m");
       ImGui::SliderFloat("Exposure", &scene.exposure, 0.25f, 4.f, "%.2fx", ImGuiSliderFlags_Logarithmic);
       if (ImGui::Button("Print values")) printLighting(scene);
-      ImGui::TextDisabled("Prints all four phases to the terminal as code for world.cpp");
+      ImGui::TextDisabled("Prints all four phases, the sky and the ground to the terminal as code for world.cpp");
+
+      ImGui::SeparatorText("Sky and dust");
+      static const char* const kLayerLabels[pxe::Scene::kSkyCloudLayers] = {"High clouds", "Low clouds"};
+      for (int i = 0; i < pxe::Scene::kSkyCloudLayers; ++i) {
+        pxe::SkyCloudLayer& layer = scene.skyClouds[i];
+        char id[32];
+        ImGui::Text("%s", kLayerLabels[i]);
+        std::snprintf(id, sizeof(id), "Cover##%d", i);
+        ImGui::SliderFloat(id, &layer.cover, 0.f, 1.f, "%.2f");
+        std::snprintf(id, sizeof(id), "Opacity##%d", i);
+        ImGui::SliderFloat(id, &layer.opacity, 0.f, 1.f, "%.2f");
+        std::snprintf(id, sizeof(id), "Altitude##%d", i);
+        ImGui::SliderFloat(id, &layer.height, 500.f, 15000.f, "%.0f m", ImGuiSliderFlags_Logarithmic);
+        std::snprintf(id, sizeof(id), "Streak length##%d", i);
+        ImGui::SliderFloat(id, &layer.length, 500.f, 12000.f, "%.0f m", ImGuiSliderFlags_Logarithmic);
+      }
+      ImGui::SliderFloat("Cloud brightness", &scene.skyCloudBrightness, 0.f, 2.f, "%.2f");
+      ImGui::SliderFloat("Dust density", &scene.dustDensity, 0.f, 1.f, "%.2f");
+      ImGui::SliderFloat("Dust size", &scene.dustSize, 1.f, 2.f, "%.1f px");
+      ImGui::TextDisabled("Clouds cast no shadows; ground cloud shadows are Clouds and wind's Cover");
+
+      ImGui::SeparatorText("Ground");
+      ImGui::ColorEdit3("Sand", &scene.albedo[pxe::kSurfSand].x);
+      ImGui::SliderFloat("Terminator sharpness", &scene.terminator[pxe::kSurfSand], 0.f, 1.f, "%.2f");
+      pxe::SurfaceRipples& ripples = scene.ripples;
+      ImGui::SliderFloat("Ripple wavelength", &ripples.wavelength, 0.05f, 1.f, "%.2f m", ImGuiSliderFlags_Logarithmic);
+      ImGui::SliderFloat("Ripple depth", &ripples.depth, 0.f, 1.f, "%.2f");
+      ImGui::SliderFloat("Ripple heading", &ripples.headingDegrees, 0.f, 360.f, "%.0f deg");
+      ImGui::SliderFloat("Ripples full to", &ripples.fadeStart, 0.f, 30.f, "%.1f m");
+      // The fade ends at least a metre past where it starts.
+      ripples.fadeEnd = std::max(ripples.fadeEnd, ripples.fadeStart + 1.f);
+      ImGui::SliderFloat("Ripples gone by", &ripples.fadeEnd, 1.f, 60.f, "%.1f m");
+      ripples.fadeStart = std::min(ripples.fadeStart, ripples.fadeEnd - 1.f);
+      ImGui::SliderFloat("Ripple slope cutoff", &ripples.maxSlopeDegrees, 0.f, 45.f, "%.0f deg");
+      ImGui::TextDisabled("Dune shapes are fixed in world.cpp");
 
       if (fps > 0.f)
         ImGui::TextDisabled("%.0f fps (%.1f ms)", fps, 1000.f / fps);

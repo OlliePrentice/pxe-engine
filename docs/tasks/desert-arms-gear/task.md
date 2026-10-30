@@ -42,7 +42,7 @@ All from the planning interview with the user, 2026-10-30.
   - **raised knuckle guards** (`Arms_Worn`) over the four knuckles;
   - stitching (`Arms_Thread`) and worn patches as today.
 - **Vambraces.** One on each forearm:
-  - a curved `Arms_Gunmetal` plate over the top of the forearm, 0.11–0.13 m long along it, spanning ±70° round it, 3–4 mm thick;
+  - a curved `Arms_Gunmetal` plate over the top of the forearm, 0.12–0.15 m long along it, spanning ±70° round it, 3–4 mm thick;
   - at least 4 scratches, each a thin `Arms_Steel` sliver 0.5 mm proud, 0.6–1.2 mm wide and 15–40 mm long;
   - a worn `Arms_Steel` bevel along its edges and one or two `Arms_Rust` patches;
   - two buckled `Arms_Strap` straps, each buckle an `Arms_Steel` frame and tongue with an `Arms_Strap` keeper.
@@ -76,7 +76,7 @@ Designer first, then the developer.
   - Materials: the colours, names, order and emissive flags of the table. Every piece in `Arms_Copper` is named `*.coil*`.
   - Undersuit seen: at least 8 `Arms_Undersuit` vertices per forearm are `seen` from the eye at rest.
   - Strips: each forearm has 2–3 strip pieces. Each strip edge has at least 8 notches, a notch being a dip of 3–6 mm in the edge's offset along the forearm. Each forearm has 2–3 tails.
-  - Vambraces: one `Arms_Gunmetal` plate per forearm, 0.11–0.13 m long along the forearm axis and spanning 140° ± 10° round it. At least 4 `Arms_Steel` scratch pieces per plate, each 15–40 mm long and at most 1.2 mm wide. Two straps per vambrace, each with a buckle.
+  - Vambraces: one `Arms_Gunmetal` plate per forearm, 0.12–0.15 m long along the forearm axis and spanning 140° ± 10° round it. At least 4 `Arms_Steel` scratch pieces per plate, each 15–40 mm long and at most 1.2 mm wide. Two straps per vambrace, each with a buckle.
   - Hand plates: three `Arms_Gunmetal` segments per hand, each touching the next (overlap). Four `Arms_Worn` knuckle guards per hand.
   - Tubes: 3 `Arms_Glow` tube pieces (2 left, 1 right), each with 8 sides and radius 2.5 mm ± 0.2. Each starts within 1 mm of its device's housing. Its last ring is out of view below the bottom edge (NDC y < −1 for every vertex of the last ring, or behind the eye). Every in-view vertex is at least `CLEARANCE` ahead.
   - The existing checks all stay, with their values: framing, readout, compass, small parts, attachment in every pose, covered, closed, clips, and glb read-back.
@@ -150,6 +150,6 @@ Run in the task's worktree, against the cycle base:
 - Engine changes.
 
 ## Spec revisions
-None.
+- 2026-10-30, from the unblock of `desert-arms-pose` (user): each vambrace is 0.12–0.15 m long along the forearm (was 0.11–0.13 m), in Decisions and the check. `desert-arms-pose` extended the left plate's wrist end to s −0.020 to keep the gauge's toggles on it, so the plate is 0.140 m (`BRACER_S` (−0.160, −0.020)).
 
 ## Cycle log

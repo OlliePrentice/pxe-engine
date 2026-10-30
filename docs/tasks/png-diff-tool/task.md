@@ -1,7 +1,7 @@
 # A PNG difference reporter
 Type: tooling
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 1
 
 ## Goal
 Tasks keep writing small scripts to say how two captures differ: `docs/tasks/view-model-edges/scripts/diff_box.py` (the count and bounding box of differing pixels), `docs/tasks/desert-arms-walk/scripts/arm_rows.py` (the box of the difference in each half, to find the arms), and `docs/tasks/desert-lighting/scripts/png-diff.py` (the mean per-channel change over a region), plus a diff by hand in `desert-arms-detail`. Friction log F-027. Turn them into one tool, `tools/png-diff.py`.
@@ -63,11 +63,11 @@ Run in the task's worktree:
 6. `git diff --stat <cycle base>` lists only `tools/png-diff.py`, `tools/README.md` and the task folder.
 
 ## Acceptance criteria
-- [ ] `tools/png-diff.py` exists, is executable and has the binding usage.
-- [ ] The output lines, `--region`, `--halves` and `--mask` behave as specified, with the exit statuses.
-- [ ] `tools/README.md` has a row for it after the `glb.py` row: what it reports, its options, its exit statuses, and that it needs Pillow.
-- [ ] Verification 2–6 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `tools/png-diff.py` exists, is executable and has the binding usage. (git mode 100755; `--help` output diffs empty against the spec's usage block)
+- [x] The output lines, `--region`, `--halves` and `--mask` behave as specified, with the exit statuses. (`tools/png-diff.py` `run()`; verification 2–5 outputs in cycle 1 review)
+- [x] `tools/README.md` has a row for it after the `glb.py` row: what it reports, its options, its exit statuses, and that it needs Pillow. (row present, all four covered)
+- [x] Verification 2–6 pass. (orchestrator rerun: exits 2/2/2/2, self 0 with +0.00s, 61462 px and box columns 0..959 rows 21..539 = diff_box, region means +0.66 +0.21 -0.02 = desert-lighting script, mask 61462 white; diff --stat only the tool, README, task folder)
+- [x] Project builds cleanly from a fresh build directory with CMake (check preset, --fresh --clean-first: only the stb_image_write sprintf warning)
 
 ## Assets
 None.
@@ -80,3 +80,8 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 57494bc.
+- Cycle 1 review, 2026-10-30: fresh build clean; verification 2–6 rerun and pass; no issues.
+
+## Playtest checklist
+Nothing in either game changed, so there is nothing to play. To try the tool: `tools/png-diff.py --halves --mask /tmp/m.png docs/tasks/perspective-smooth-lighting/d1630.png docs/tasks/desert-lighting/d1630.png` prints 61462 differing pixels with the box and both halves, exits 1, and /tmp/m.png shows the difference in white.

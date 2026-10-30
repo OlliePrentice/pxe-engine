@@ -25,6 +25,7 @@
 #include "pxe/renderer.hpp"
 #include "pxe/window.hpp"
 
+#include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
 #include <glm/vec2.hpp>
 
@@ -60,6 +61,7 @@ struct Options {
   float walk = 0.f;     // seconds walked from the spawn before a capture
   bool sprint = false;  // that walk is a sprint
   bool menu = false;    // play starts with the settings menu open
+  bool terrainReport = false;  // print the dunes' stats and check the palm and spawn constraints
 };
 
 void printUsage(std::FILE* out) {
@@ -71,6 +73,7 @@ void printUsage(std::FILE* out) {
                "  --walk S                 walk straight ahead from the spawn for S seconds (0-10) first\n"
                "  --sprint                 with --walk: sprint instead\n"
                "  --menu                   start with the settings menu open (Tab)\n"
+               "  --terrain-report         print the dunes' stats and check the palm and spawn constraints, then exit\n"
                "  --help                   this list\n"
                "Play: the mouse looks, WASD walks, Shift sprints, and the arms walk with you. Tab (pad:\n"
                "Start) opens and closes the settings menu, which frees the cursor while it is open;\n"
@@ -103,6 +106,8 @@ int parseArgs(int argc, char** argv, Options& opt) {
       opt.sprint = true;
     } else if (arg == "--menu") {
       opt.menu = true;
+    } else if (arg == "--terrain-report") {
+      opt.terrainReport = true;
     } else {
       ok = false;
     }
@@ -129,7 +134,76 @@ int parseArgs(int argc, char** argv, Options& opt) {
     printUsage(stderr);
     return 1;
   }
+  if (opt.terrainReport && (headless || opt.menu || opt.walk > 0.f)) {
+    std::fprintf(stderr, "pxe_desert: bad argument: --terrain-report stands alone\n");
+    printUsage(stderr);
+    return 1;
+  }
   return -1;
+}
+
+// Prints the dunes' stats and checks the palm and spawn constraints, from
+// duneHeight, duneGradient and groundHeight alone (no window or GL). Returns
+// the exit code: 0, or 1 if any constraint fails.
+int terrainReport() {
+  // The play area, sampled every 0.5 m.
+  float lowest = 1e30f, highest = -1e30f, steepest = 0.f;
+  const int n = static_cast<int>(2.f * desert::kPlayHalf / 0.5f);
+  for (int j = 0; j <= n; ++j)
+    for (int i = 0; i <= n; ++i) {
+      const float x = -desert::kPlayHalf + static_cast<float>(i) * 0.5f;
+      const float z = -desert::kPlayHalf + static_cast<float>(j) * 0.5f;
+      const float h = desert::duneHeight(x, z);
+      lowest = std::min(lowest, h);
+      highest = std::max(highest, h);
+      steepest = std::max(steepest, glm::length(desert::duneGradient(x, z)));
+    }
+  std::printf("terrain: play area height %.2f .. %.2f m (crest to trough %.2f m)\n", static_cast<double>(lowest),
+              static_cast<double>(highest), static_cast<double>(highest - lowest));
+  std::printf("terrain: steepest slope in play area %.2f deg\n",
+              static_cast<double>(glm::degrees(std::atan(steepest))));
+  bool allOk = true;
+
+  // The palm's slope: at most 15 degrees, rising away from the spawn.
+  const glm::vec2 palmGrad = desert::duneGradient(desert::kPalmSpot.x, desert::kPalmSpot.y);
+  const glm::vec2 toSpawn = glm::normalize(kSpawn - desert::kPalmSpot);
+  const float palmSlope = glm::degrees(std::atan(glm::length(palmGrad)));
+  const bool slopeOk = palmSlope <= 15.f && glm::dot(palmGrad, toSpawn) <= 0.f;
+  std::printf("terrain: palm slope %.2f deg, rises away from spawn: %s\n", static_cast<double>(palmSlope),
+              slopeOk ? "ok" : "FAIL");
+  allOk = allOk && slopeOk;
+
+  // A dune behind the palm: along the line from the palm directly away from
+  // the spawn, 5-60 m, the ground rises at least 2 m above the palm's base.
+  const float palmBase = desert::groundHeight(desert::kPalmSpot.x, desert::kPalmSpot.y);
+  const glm::vec2 away = -toSpawn;
+  float rise = -1e30f;
+  for (float d = 5.f; d <= 60.f; d += 0.25f) {
+    const glm::vec2 p = desert::kPalmSpot + away * d;
+    rise = std::max(rise, desert::groundHeight(p.x, p.y) - palmBase);
+  }
+  const bool behindOk = rise >= 2.f;
+  std::printf("terrain: dune behind palm: rises %.2f m within 5-60 m: %s\n", static_cast<double>(rise),
+              behindOk ? "ok" : "FAIL");
+  allOk = allOk && behindOk;
+
+  // The sight line from the spawn's eye to 0.5 m up the trunk: the ground
+  // stays below it at every 0.25 m sample, by at least 0.1 m.
+  const float eyeY = desert::groundHeight(kSpawn.x, kSpawn.y) + desert::kEyeHeight;
+  const float targetY = palmBase + 0.5f;
+  const float length = glm::length(desert::kPalmSpot - kSpawn);
+  const int steps = static_cast<int>(std::lround(length / 0.25f));
+  float clearance = 1e30f;
+  for (int k = 0; k <= steps; ++k) {
+    const float t = static_cast<float>(k) / static_cast<float>(steps);
+    const glm::vec2 p = kSpawn + (desert::kPalmSpot - kSpawn) * t;
+    clearance = std::min(clearance, eyeY + (targetY - eyeY) * t - desert::groundHeight(p.x, p.y));
+  }
+  const bool sightOk = clearance >= 0.1f;
+  std::printf("terrain: sight line from spawn eye to palm: clears by %.2f m: %s\n", static_cast<double>(clearance),
+              sightOk ? "ok" : "FAIL");
+  allOk = allOk && sightOk;
+  return allOk ? 0 : 1;
 }
 
 // The game's input actions: what the keys, mouse and pad ask the player to
@@ -171,6 +245,7 @@ pxe::FrameParams frameParams(const desert::World& world, glm::ivec2 framebuffer,
 int main(int argc, char** argv) {
   Options opt;
   if (const int exitCode = parseArgs(argc, argv, opt); exitCode >= 0) return exitCode;
+  if (opt.terrainReport) return terrainReport();
   const bool headless = !opt.capture.empty() || !opt.windowPng.empty();
 
   try {

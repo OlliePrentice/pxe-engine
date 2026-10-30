@@ -196,6 +196,8 @@ Renderer::~Renderer() {
   if (skyVbo_) glDeleteBuffers(1, &skyVbo_);
   if (progSky_) glDeleteProgram(progSky_);
   if (progBackdrop_) glDeleteProgram(progBackdrop_);
+  if (dustVao_) glDeleteVertexArrays(1, &dustVao_);
+  if (progDust_) glDeleteProgram(progDust_);
   if (progMeshLit_) glDeleteProgram(progMeshLit_);
   for (const auto& row : toon_)
     for (const ToonPrograms& t : row)
@@ -512,6 +514,8 @@ void Renderer::init(RenderMode mode) {
   if (mode == RenderMode::kPerspective) {
     progBackdrop_ = linkProgram("edge.vert", "backdrop.frag");
     progMeshLit_ = linkProgram("mesh.vert", "mesh_perspective.frag", "lit_perspective.glsl");
+    progDust_ = linkProgram("dust.vert", "dust.frag");
+    glGenVertexArrays(1, &dustVao_);  // empty: the shader reads only gl_VertexID
   }
   createTargets();
   createQuads();
@@ -541,6 +545,8 @@ void Renderer::upload(const Scene& scene, bool keepGrassFire) {
   for (LightSlot& slot : slots_) slot = LightSlot{};
   fireLights_.clear();
   fireTime_ = -1.f;
+  dustOffset_ = glm::vec3{0.f};
+  dustTime_ = -1.f;
   uploadGrass(scene);
 
   // A pane of sky behind each window, in a plane a little outside the

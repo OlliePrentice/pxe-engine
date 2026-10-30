@@ -143,36 +143,58 @@ Assets: no
 Merged: 3eaf280
 
 ## capture-tool: A capture runner: sets of captures, twice, against a base, under a temporary edit
-Status: in-progress
+Status: done
 Type: tooling
 Spec: docs/tasks/capture-tool/task.md
 Depends on: none
 Touches: tools/captures.sh, tools/README.md, docs/tasks/capture-tool/
 Assets: no
+Merged: 96fbfa8
+
+## blender-override-tool: Run a Blender build script with constants overridden
+Status: done
+Type: tooling
+Spec: docs/tasks/blender-override-tool/task.md
+Depends on: none
+Touches: tools/blender-override.py, tools/README.md, docs/tasks/blender-override-tool/
+Assets: no
+Merged: 087a0f1
+
+## captures-edit-stale-build: captures.sh rebuilds the edited file after its edit and restore
+Status: done
+Type: fix
+Spec: docs/tasks/captures-edit-stale-build/task.md
+Depends on: none
+Touches: tools/captures.sh, tools/README.md, docs/tasks/captures-edit-stale-build/
+Assets: no
+Merged: b36de25
 
 ## png-diff-tool: A PNG difference reporter
-Status: queued
+Status: done
 Type: tooling
 Spec: docs/tasks/png-diff-tool/task.md
 Depends on: none
 Touches: tools/png-diff.py, tools/README.md, docs/tasks/png-diff-tool/
 Assets: no
+Merged: 881493b
 
 ## perspective-dust: Airborne dust in perspective mode
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/perspective-dust/task.md
 Depends on: perspective-sky-clouds
 Touches: engine/include/pxe/scene.hpp, engine/include/pxe/renderer.hpp, engine/src/renderer.cpp, engine/src/renderer_perspective.cpp, engine/shaders/dust.vert, engine/shaders/dust.frag, engine/CMakeLists.txt, docs/tasks/perspective-dust/
 Assets: no
+Merged: 135a6e3
 
 ## desert-sky: The desert's sky clouds and dust, and their menu controls
-Status: queued
+Status: done
 Type: feature
 Spec: docs/tasks/desert-sky/task.md
 Depends on: perspective-dust, desert-lighting
 Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp, docs/tasks/desert-sky/
 Assets: no
+Merged: 73ba6c1
 
 ## desert-arms-pose: Arms: pointing forward, closer to the body, chunkier gloves
 Status: in-progress
@@ -199,17 +221,19 @@ Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/d
 Assets: yes
 
 ## perspective-surface-detail: Terminator sharpness and surface ripples in perspective mode
-Status: queued
+Status: done
 Type: feature
 Spec: docs/tasks/perspective-surface-detail/task.md
 Depends on: perspective-dust
 Touches: engine/include/pxe/scene.hpp, engine/shaders/lit_perspective.glsl, engine/shaders/mesh_perspective.frag, engine/src/renderer_perspective.cpp, docs/tasks/perspective-surface-detail/
 Assets: no
+Merged: 240cb52
 
 ## desert-ground: The desert's ground after the concept art
-Status: queued
+Status: done
 Type: feature
 Spec: docs/tasks/desert-ground/task.md
 Depends on: perspective-surface-detail, desert-sky
 Touches: desert/src/world.hpp, desert/src/world.cpp, desert/src/main.cpp, desert/src/settings.cpp, desert/docs/art-style.md, docs/tasks/desert-ground/
 Assets: no
+Merged: f7fc8c9
