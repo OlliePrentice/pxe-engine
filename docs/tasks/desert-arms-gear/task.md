@@ -1,7 +1,7 @@
 # Arms: gear and palette after the concept art
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Restyle the desert player's arms' gear and palette after `desert/docs/concept/wanderers.png`:
@@ -153,3 +153,4 @@ Run in the task's worktree, against the cycle base:
 - 2026-10-30, from the unblock of `desert-arms-pose` (user): each vambrace is 0.12–0.15 m long along the forearm (was 0.11–0.13 m), in Decisions and the check. `desert-arms-pose` extended the left plate's wrist end to s −0.020 to keep the gauge's toggles on it, so the plate is 0.140 m (`BRACER_S` (−0.160, −0.020)).
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 1657933.
