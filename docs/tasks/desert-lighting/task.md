@@ -1,7 +1,7 @@
 # The desert's light and its menu controls
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Give the desert its own warm ground bounce under the perspective mode's new smooth lighting (`perspective-smooth-lighting`), and add a "Lighting" section to the desert's settings menu (`desert-settings-menu`). The section lets the user tune the light, sky and haze live and print the result as code to paste back into `world.cpp`. Then bring `desert/docs/art-style.md` up to date for the smooth look.
@@ -131,3 +131,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 8f2a3a9
