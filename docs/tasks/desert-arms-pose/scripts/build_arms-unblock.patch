@@ -1,0 +1,125 @@
+--- a/desert/tools/blender/build_arms.py
++++ b/desert/tools/blender/build_arms.py
+@@ -275,10 +275,10 @@
+ CLAVICLE = v(0.03, 0.075, -0.205)   # the shoulder joint's head, at the base of the neck
+ UPPER_LEN = 0.30
+ FORE_LEN = 0.26
+-WRIST = v(0.215, -0.370, -0.155)    # where the forearm meets the hand
++WRIST = v(0.200, -0.330, -0.150)    # where the forearm meets the hand
+ ELBOW_SWING = 48.0                  # degrees the elbow swings out from straight below the shoulder-wrist line
+-HAND_YAW = 16.0                      # the hand points this far inward (degrees)
+-HAND_PITCH = 16.0                   # and this far down
++HAND_YAW = -8.0                     # the hand turns this far outward (degrees; negative is outward)
++HAND_PITCH = 4.0                    # and this far down: a firm, almost straight wrist
+ HAND_ROLL = 90.0                    # the palm turns from facing down to facing inward: palms face each other, thumbs up
+ 
+ # Forearm (cloth over it): radius at the wrist and at the elbow.
+@@ -295,8 +295,13 @@
+ 
+ # Glove cuff: (s from the wrist along the forearm, radius); the first is the rear face.
+ CUFF = [(-0.036, 0.045), (-0.031, 0.046), (-0.019, 0.041), (-0.004, 0.036), (0.012, 0.034)]
+-# Hand: (s along the hand, half width, dorsal height, volar height). The last
+-# ring is the knuckle line, slanted (see palm_front).
++# The gloves' bulk: every glove width and thickness (PALM's half width and
++# heights, each finger's w0 and t0, THUMB_W and THUMB_T) is scaled by
++# GLOVE_BULK where it is read. PALM's first ring is spared, so the glove
++# tapers into the cuff. Lengths, curls, splays and palm_front's reach don't change.
++GLOVE_BULK = 1.15
++# Hand: (s along the hand, half width, dorsal height, volar height; the last
++# three before GLOVE_BULK). The last ring is the knuckle line, slanted (see palm_front).
+ PALM = [(-0.012, 0.023, 0.011, 0.011), (0.005, 0.030, 0.0140, 0.0125), (0.022, 0.037, 0.0165, 0.014),
+         (0.040, 0.041, 0.0175, 0.0137), (0.058, 0.0435, 0.0175, 0.013), (0.071, 0.0445, 0.0160, 0.0120),
+         (None, 0.0445, 0.0135, 0.0105)]
+@@ -313,7 +318,7 @@
+ 
+ # Fingers: name, lateral offset (thumb side +), dorsal offset, splay (degrees,
+ # toward the thumb +), segment lengths, rest curls (degrees, each joint),
+-# width at the base, thickness at the base.
++# width at the base, thickness at the base (both before GLOVE_BULK).
+ FINGERS = [
+     ("index", 0.0315, 0.002, 2.5, (0.043, 0.025, 0.021), (12.0, 20.0, 13.0), 0.0210, 0.0175),
+     ("middle", 0.0105, 0.003, 0.5, (0.047, 0.028, 0.023), (15.0, 23.0, 15.0), 0.0215, 0.0180),
+@@ -322,7 +327,7 @@
+ ]
+ OVERLAP = 0.004   # each segment reaches this far past its joints, so knuckles overlap
+ # Thumb: base (along hand, lateral, dorsal), first direction (f, t, n), segment
+-# lengths, bends toward the index (degrees), widths, thicknesses.
++# lengths, bends toward the index (degrees), widths, thicknesses (before GLOVE_BULK).
+ THUMB_BASE = (0.020, 0.022, -0.011)
+ THUMB_DIR = (0.80, 0.40, -0.45)
+ THUMB_LEN = (0.046, 0.033, 0.027)
+@@ -332,7 +337,7 @@
+ 
+ # Bracer, left forearm: along the forearm (s from the wrist), angular span
+ # about the back of the forearm, thickness.
+-BRACER_S = (-0.160, -0.040)
++BRACER_S = (-0.160, -0.020)   # the wrist end reaches under the cuff, so the toggles stay on the plate
+ BRACER_SPAN = 70.0     # degrees either side of the back of the forearm: four 35 degree facets
+ BRACER_T = 0.004
+ BRACER_SIT = 0.0045    # the plate's inside sits this far out from a band foot, into the lips
+@@ -342,7 +347,7 @@
+ BUCKLE = (0.013, 0.013, 0.0035)
+ # Gauge: centre along the forearm, angle round from the back of the forearm
+ # toward the eye side, how far its face turns from the plate toward the eye.
+-GAUGE_S = -0.0585
++GAUGE_S = -0.035
+ GAUGE_TURN = 0.55
+ WINDOW = (0.045, 0.022)
+ BEZEL = 0.005
+@@ -390,7 +395,7 @@
+ CABLES = (("copper", "Arms_Copper", -0.008, 0.0013), ("rubber", "Arms_Rubber", 0.002, 0.0015))
+ CABLE_END = -0.180      # each cable's end, tucked inside the wrap band past the plate's elbow end
+ # The sun compass, right forearm.
+-COMPASS_STRAP = (-0.0355, -0.031, -0.0265)  # strap rear edge, the cuff ring under it, front edge
++COMPASS_STRAP = (-0.0155, -0.011, -0.0065)  # strap rear edge, the post's line, front edge
+ COMPASS_POST = 0.008
+ COMPASS_TURN = 0.5      # the face turns this far from the post's line toward the eye
+ FACE_R = 0.015          # the face is 30 mm across
+@@ -411,7 +416,7 @@
+ CLIP_FRAMES = 30          # 1.0 s: 31 keys, the last equal to the first
+ CLIPS = {
+     "Arms_Walk": dict(cycle=2.0, bob=0.015, swing=0.025, lift=0.0, elbow=4.0, wrist=6.0, fist=0.0),
+-    "Arms_Sprint": dict(cycle=3.0, bob=0.025, swing=0.050, lift=0.015, elbow=8.0, wrist=6.0, fist=25.0),
++    "Arms_Sprint": dict(cycle=3.0, bob=0.020, swing=0.050, lift=0.0, elbow=8.0, wrist=6.0, fist=25.0),
+ }
+ CLIP_ORDER = ("Arms_Walk", "Arms_Sprint")
+ # What the checks hold the clips to (task desert-arms-walk, Assets), kept
+@@ -419,7 +424,7 @@
+ # build: each hand's y offset reaches mean +- bob, its z offset +- swing (m).
+ CLIP_TARGETS = {
+     "Arms_Walk": dict(mean=0.0, bob=0.015, swing=0.025),
+-    "Arms_Sprint": dict(mean=0.015, bob=0.025, swing=0.050),
++    "Arms_Sprint": dict(mean=0.0, bob=0.020, swing=0.050),
+ }
+ LIMBS = ("shoulder", "upper_arm", "forearm", "hand")   # the joints a clip may turn
+ DIGITS = ("thumb", "index", "middle", "ring", "pinky")  # and, curled into a fist, these in Arms_Sprint
+@@ -541,7 +546,7 @@
+                 up = rot(hinge, c, up)
+                 frames.append((dirv.copy(), up.copy()))
+                 pts.append(pts[-1] + dirv * L_)
+-            self.fingers[name] = (pts, frames, hinge, w0, t0)
++            self.fingers[name] = (pts, frames, hinge, w0 * GLOVE_BULK, t0 * GLOVE_BULK)
+         # Thumb.
+         fb, tb, nb = THUMB_BASE
+         T0 = self.W + self.f * fb + self.t * tb + self.n * nb
+@@ -1000,7 +1005,9 @@
+             self.attach.append((p.name, f"{S}.arm"))
+             # The hand: rings across it, the knuckle line slanted.
+             loops = []
+-            for s, hw, hd, hv in PALM:
++            for i, (s, hw, hd, hv) in enumerate(PALM):
++                k = 1.0 if i == 0 else GLOVE_BULK   # the wrist ring tapers into the cuff
++                hw, hd, hv = hw * k, hd * k, hv * k
+                 loop = []
+                 for tx, ny in PALM_SHAPE:
+                     lat = tx * hw
+@@ -1060,7 +1067,8 @@
+                 thicks = [t0, t0 * 0.92, t0 * 0.85]
+                 self._segments(S, name, pts, frames, widths, thicks, f"{S}.palm")
+             pts, frames, _ = sd.thumb
+-            self._segments(S, "thumb", pts, frames, THUMB_W, THUMB_T, f"{S}.palm")
++            self._segments(S, "thumb", pts, frames, [w * GLOVE_BULK for w in THUMB_W],
++                           [t * GLOVE_BULK for t in THUMB_T], f"{S}.palm")
+         self.refresh()
+ 
+     # ---- glove and wrap detail ---------------------------------------------
