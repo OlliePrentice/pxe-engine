@@ -1,7 +1,7 @@
 # Arms: hands held with intent, an LCD gauge, quieter stitching
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Revise the desert player's arms (`desert/tools/blender/build_arms.py`, `desert/assets/characters/arms.glb`) in three ways. Everything else about them stays as it is.
@@ -212,3 +212,4 @@ Run `build/release/desert/pxe_desert`.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30, base 8b57c1b
