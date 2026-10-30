@@ -3,3 +3,6 @@
 - instruction-gap: Spec §2's `sunDir = sun` contradicts the binding field comment ("whichever of sun and moon lights the scene"). I followed the code and reported it in the handoff.
 - instruction-gap: Spec §4's `bindLit(prog, lighting, scene, light, flash, normalBias, testColours)` has no way to reach `params.actorMaterials`, which it also names. I added a `params` argument.
 - doc-gap: the sorted order of PXE_SHADERS (`mesh.vert` before `mesh_perspective.frag`, because '.' sorts before '_') was not stated. Worked out by sorting.
+
+## orchestrator cycle 1
+- instruction-gap: the spec's binding comment for `Lighting::sunDir` contradicted its own §2 (`sunDir = sun`) and Decisions; binding blocks should say whether their comments may be reworded.
