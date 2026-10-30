@@ -1,0 +1,312 @@
+diff --git a/desert/tools/blender/build_arms.py b/desert/tools/blender/build_arms.py
+index 0fdd4ed..3d4a14f 100644
+--- a/desert/tools/blender/build_arms.py
++++ b/desert/tools/blender/build_arms.py
+@@ -275,10 +275,13 @@ SHOULDER = v(0.19, 0.05, -0.22)     # 0.38 m apart, 0.22 below and 0.05 behind t
+ CLAVICLE = v(0.03, 0.075, -0.205)   # the shoulder joint's head, at the base of the neck
+ UPPER_LEN = 0.30
+ FORE_LEN = 0.26
+-WRIST = v(0.215, -0.370, -0.155)    # where the forearm meets the hand
++WRIST = v(0.200, -0.330, -0.140)    # where the forearm meets the hand (z: the first of WRIST_ZS that passes)
++# The wrist's height, tried in order: the first at which every clip check
++# passes is used (a walk or sprint frame may break the framing's top).
++WRIST_ZS = (-0.140, -0.145, -0.150, -0.155)
+ ELBOW_SWING = 48.0                  # degrees the elbow swings out from straight below the shoulder-wrist line
+-HAND_YAW = 16.0                      # the hand points this far inward (degrees)
+-HAND_PITCH = 16.0                   # and this far down
++HAND_YAW = -8.0                     # the hand turns this far outward (degrees; negative is outward)
++HAND_PITCH = 4.0                    # and this far down: a firm, almost straight wrist
+ HAND_ROLL = 90.0                    # the palm turns from facing down to facing inward: palms face each other, thumbs up
+ 
+ # Forearm (cloth over it): radius at the wrist and at the elbow.
+@@ -293,10 +296,16 @@ BAND_TILT = (1.5, 4.5)         # degrees each band edge leans
+ BEVEL = math.radians(60.0)     # each lip's bevel down to the band under it, from the axis
+ CREASE_MIN = 40.0              # each band edge must turn more than this
+ 
+-# Glove cuff: (s from the wrist along the forearm, radius); the first is the rear face.
++# The gloves' bulk: every glove width and thickness (PALM's half width and
++# heights, each finger's w0 and t0, THUMB_W and THUMB_T) is scaled by
++# GLOVE_BULK where it is read, and the cuff's radii by CUFF_BULK, so it still
++# covers the wrap. Lengths, curls, splays and palm_front's reach don't change.
++GLOVE_BULK = 1.15
++CUFF_BULK = 1.10
++# Glove cuff: (s from the wrist along the forearm, radius before CUFF_BULK); the first is the rear face.
+ CUFF = [(-0.036, 0.045), (-0.031, 0.046), (-0.019, 0.041), (-0.004, 0.036), (0.012, 0.034)]
+-# Hand: (s along the hand, half width, dorsal height, volar height). The last
+-# ring is the knuckle line, slanted (see palm_front).
++# Hand: (s along the hand, half width, dorsal height, volar height; the last
++# three before GLOVE_BULK). The last ring is the knuckle line, slanted (see palm_front).
+ PALM = [(-0.012, 0.023, 0.011, 0.011), (0.005, 0.030, 0.0140, 0.0125), (0.022, 0.037, 0.0165, 0.014),
+         (0.040, 0.041, 0.0175, 0.0137), (0.058, 0.0435, 0.0175, 0.013), (0.071, 0.0445, 0.0160, 0.0120),
+         (None, 0.0445, 0.0135, 0.0105)]
+@@ -313,7 +322,7 @@ def palm_front(t):
+ 
+ # Fingers: name, lateral offset (thumb side +), dorsal offset, splay (degrees,
+ # toward the thumb +), segment lengths, rest curls (degrees, each joint),
+-# width at the base, thickness at the base.
++# width at the base, thickness at the base (both before GLOVE_BULK).
+ FINGERS = [
+     ("index", 0.0315, 0.002, 2.5, (0.043, 0.025, 0.021), (12.0, 20.0, 13.0), 0.0210, 0.0175),
+     ("middle", 0.0105, 0.003, 0.5, (0.047, 0.028, 0.023), (15.0, 23.0, 15.0), 0.0215, 0.0180),
+@@ -322,7 +331,7 @@ FINGERS = [
+ ]
+ OVERLAP = 0.004   # each segment reaches this far past its joints, so knuckles overlap
+ # Thumb: base (along hand, lateral, dorsal), first direction (f, t, n), segment
+-# lengths, bends toward the index (degrees), widths, thicknesses.
++# lengths, bends toward the index (degrees), widths, thicknesses (before GLOVE_BULK).
+ THUMB_BASE = (0.020, 0.022, -0.011)
+ THUMB_DIR = (0.80, 0.40, -0.45)
+ THUMB_LEN = (0.046, 0.033, 0.027)
+@@ -340,10 +349,13 @@ STRAPS = (-0.148, -0.090)   # strap centres along the forearm, behind the gauge
+ STRAP_W = 0.014
+ STRAP_T = 0.003
+ BUCKLE = (0.013, 0.013, 0.0035)
+-# Gauge: centre along the forearm, angle round from the back of the forearm
+-# toward the eye side, how far its face turns from the plate toward the eye.
+-GAUGE_S = -0.0585
+-GAUGE_TURN = 0.55
++# Gauge: centre along the forearm, and how far its face turns from the plate
++# toward the eye. The build tries GAUGE_CANDIDATES in order and keeps the
++# first whose readout passes every check (choose_gauge): GAUGE_S moves toward
++# the wrist in 5 mm steps, then GAUGE_TURN rises at the last GAUGE_S.
++GAUGE_CANDIDATES = [(s, 0.55) for s in (-0.0535, -0.0485, -0.0435, -0.0385, -0.035)] + \
++                   [(-0.035, t) for t in (0.60, 0.65, 0.70, 0.75, 0.80)]
++GAUGE_S, GAUGE_TURN = GAUGE_CANDIDATES[0]
+ WINDOW = (0.045, 0.022)
+ BEZEL = 0.005
+ RECESS = 0.003
+@@ -541,7 +553,7 @@ class Side:
+                 up = rot(hinge, c, up)
+                 frames.append((dirv.copy(), up.copy()))
+                 pts.append(pts[-1] + dirv * L_)
+-            self.fingers[name] = (pts, frames, hinge, w0, t0)
++            self.fingers[name] = (pts, frames, hinge, w0 * GLOVE_BULK, t0 * GLOVE_BULK)
+         # Thumb.
+         fb, tb, nb = THUMB_BASE
+         T0 = self.W + self.f * fb + self.t * tb + self.n * nb
+@@ -991,7 +1003,7 @@ class Builder:
+         """The flared cuffs over the wraps and the faceted hands."""
+         for S in "LR":
+             sd = self.sides[S]
+-            loops = [self._ring(sd.on_forearm(s), sd.af, r, X) for s, r in CUFF]
++            loops = [self._ring(sd.on_forearm(s), sd.af, r * CUFF_BULK, X) for s, r in CUFF]
+             self.cuff_loops[S] = loops
+             p = self.piece(f"{S}.cuff", "Arms_Glove")
+             self.loft(p, loops)
+@@ -1001,6 +1013,7 @@ class Builder:
+             # The hand: rings across it, the knuckle line slanted.
+             loops = []
+             for s, hw, hd, hv in PALM:
++                hw, hd, hv = hw * GLOVE_BULK, hd * GLOVE_BULK, hv * GLOVE_BULK
+                 loop = []
+                 for tx, ny in PALM_SHAPE:
+                     lat = tx * hw
+@@ -1060,7 +1073,8 @@ class Builder:
+                 thicks = [t0, t0 * 0.92, t0 * 0.85]
+                 self._segments(S, name, pts, frames, widths, thicks, f"{S}.palm")
+             pts, frames, _ = sd.thumb
+-            self._segments(S, "thumb", pts, frames, THUMB_W, THUMB_T, f"{S}.palm")
++            self._segments(S, "thumb", pts, frames, [w * GLOVE_BULK for w in THUMB_W],
++                           [t * GLOVE_BULK for t in THUMB_T], f"{S}.palm")
+         self.refresh()
+ 
+     # ---- glove and wrap detail ---------------------------------------------
+@@ -1070,7 +1084,7 @@ class Builder:
+         """The cuff's radius at s, between its rings."""
+         for (sa, ra), (sb, rb) in zip(CUFF, CUFF[1:]):
+             if sa <= s <= sb:
+-                return ra + (rb - ra) * (s - sa) / (sb - sa)
++                return (ra + (rb - ra) * (s - sa) / (sb - sa)) * CUFF_BULK
+         raise ValueError(f"s {s} is off the cuff")
+ 
+     def cuff_dirs(self, sd):
+@@ -2234,6 +2248,50 @@ def attachment_problems(b, pose_name, pts, idx, polys):
+     return problems
+ 
+ 
++def readout(b, pts, idx, tree, poly_piece):
++    """The gauge's readout: the screen and every dot in view, every dot seen,
++    wide enough both ways, facing the eye, and reading left to right and top
++    to bottom on screen. Returns (problems, measurements)."""
++    problems = []
++
++    def px_between(a, c):
++        qa, qc = project(a), project(c)
++        return math.hypot((qa[0] - qc[0]) * VIEW_W / 2, (qa[1] - qc[1]) * VIEW_H / 2)
++    for name in ["L.screen"] + [d[0] for d in b.lcd]:
++        if not all(in_view(pts[i]) for i in idx[name][0]):
++            problems.append(f"{name} is not wholly in view")
++    px_across, px_up, facing_min = [], [], 1.0
++    glyph_x = {}
++    row_y = {}
++    for name, g, r, top_c, right, up, n in b.lcd:
++        hit, _, pidx, _ = tree.ray_cast(Vector((0, 0, 0)), top_c.normalized(), top_c.length + 0.01)
++        dot_seen = hit is not None and poly_piece.get(pidx) == name
++        across = px_between(top_c - right * LCD_DOT / 2, top_c + right * LCD_DOT / 2)
++        upward = px_between(top_c - up * LCD_DOT / 2, top_c + up * LCD_DOT / 2)
++        facing = n.dot((-top_c).normalized())
++        px_across.append(across)
++        px_up.append(upward)
++        facing_min = min(facing_min, facing)
++        if not dot_seen or across < LCD_MIN_PX or upward < LCD_MIN_PX or facing < FACE_COS:
++            problems.append(f"{name}: seen from the eye {dot_seen}, {across:.1f} x {upward:.1f} px, facing {facing:.3f}")
++        q = project(top_c)
++        glyph_x.setdefault(g, []).append(q[0])
++        row_y.setdefault((g, r), []).append(q[1])
++    gx = [sum(glyph_x[g]) / len(glyph_x[g]) for g in range(len(LCD_TEXT))]
++    if not all(a < c for a, c in zip(gx, gx[1:])):
++        problems.append(f"the readout's glyphs don't read left to right: mean NDC x {[round(x, 4) for x in gx]}")
++    for g in range(len(LCD_TEXT)):
++        if min(row_y[(g, 0)]) <= max(row_y[(g, 4)]):
++            problems.append(f"the readout's glyph {g + 1}: row 1 does not project above row 5")
++    lq = [project(pts[i]) for d in b.lcd for i in idx[d[0]][0]]
++    m = {"dots": len(b.lcd),
++         "ndc": {"x": [round(min(q[0] for q in lq), 3), round(max(q[0] for q in lq), 3)],
++                 "y": [round(min(q[1] for q in lq), 3), round(max(q[1] for q in lq), 3)]},
++         "px_min": [round(min(px_across), 2), round(min(px_up), 2)],
++         "facing_min": round(facing_min, 3)}
++    return problems, m
++
++
+ def framing(b, pts, idx):
+     """The framing through the eye camera, and the problems with it."""
+     problems = []
+@@ -2292,50 +2350,13 @@ def framing(b, pts, idx):
+         else:
+             m[f"forearm_exit_ndc_x.{S}"] = round(exit_q[0], 3)
+         m[f"wrist_ndc.{S}"] = [round(c, 3) for c in project(sd.W)]
+-    # The gauge's readout: the screen and every dot in view, every dot seen,
+-    # wide enough both ways, facing the eye, and reading left to right and
+-    # top to bottom on screen.
+     tree = BVHTree.FromPolygons(pts, [p.vertices for p in me.polygons])
+     poly_piece = {}
+     for name, (vi, pi) in idx.items():
+         for i in pi:
+             poly_piece[i] = name
+-
+-    def px_between(a, c):
+-        qa, qc = project(a), project(c)
+-        return math.hypot((qa[0] - qc[0]) * VIEW_W / 2, (qa[1] - qc[1]) * VIEW_H / 2)
+-    for name in ["L.screen"] + [d[0] for d in b.lcd]:
+-        if not all(in_view(pts[i]) for i in idx[name][0]):
+-            problems.append(f"{name} is not wholly in view")
+-    px_across, px_up, facing_min = [], [], 1.0
+-    glyph_x = {}
+-    row_y = {}
+-    for name, g, r, top_c, right, up, n in b.lcd:
+-        hit, _, pidx, _ = tree.ray_cast(Vector((0, 0, 0)), top_c.normalized(), top_c.length + 0.01)
+-        dot_seen = hit is not None and poly_piece.get(pidx) == name
+-        across = px_between(top_c - right * LCD_DOT / 2, top_c + right * LCD_DOT / 2)
+-        upward = px_between(top_c - up * LCD_DOT / 2, top_c + up * LCD_DOT / 2)
+-        facing = n.dot((-top_c).normalized())
+-        px_across.append(across)
+-        px_up.append(upward)
+-        facing_min = min(facing_min, facing)
+-        if not dot_seen or across < LCD_MIN_PX or upward < LCD_MIN_PX or facing < FACE_COS:
+-            problems.append(f"{name}: seen from the eye {dot_seen}, {across:.1f} x {upward:.1f} px, facing {facing:.3f}")
+-        q = project(top_c)
+-        glyph_x.setdefault(g, []).append(q[0])
+-        row_y.setdefault((g, r), []).append(q[1])
+-    gx = [sum(glyph_x[g]) / len(glyph_x[g]) for g in range(len(LCD_TEXT))]
+-    if not all(a < c for a, c in zip(gx, gx[1:])):
+-        problems.append(f"the readout's glyphs don't read left to right: mean NDC x {[round(x, 4) for x in gx]}")
+-    for g in range(len(LCD_TEXT)):
+-        if min(row_y[(g, 0)]) <= max(row_y[(g, 4)]):
+-            problems.append(f"the readout's glyph {g + 1}: row 1 does not project above row 5")
+-    lq = [project(pts[i]) for d in b.lcd for i in idx[d[0]][0]]
+-    m["lcd"] = {"dots": len(b.lcd),
+-                "ndc": {"x": [round(min(q[0] for q in lq), 3), round(max(q[0] for q in lq), 3)],
+-                        "y": [round(min(q[1] for q in lq), 3), round(max(q[1] for q in lq), 3)]},
+-                "px_min": [round(min(px_across), 2), round(min(px_up), 2)],
+-                "facing_min": round(facing_min, 3)}
++    rp, m["lcd"] = readout(b, pts, idx, tree, poly_piece)
++    problems += rp
+ 
+     def verts(name):
+         return [pts[i] for i in idx[name][0]]
+@@ -2553,6 +2574,67 @@ def check(b):
+     return problems, m
+ 
+ 
++def geometry_readout(b):
++    """readout() on the built geometry before it is rigged: the rest pose,
++    which is the bind pose, so the bmesh's own coordinates."""
++    bm = b.bm
++    idx = piece_indices(b)
++    pts = [x.co.copy() for x in bm.verts]
++    polys = [[x.index for x in f.verts] for f in bm.faces]
++    tree = BVHTree.FromPolygons(pts, polys)
++    poly_piece = {i: name for name, (vi, pi) in idx.items() for i in pi}
++    return readout(b, pts, idx, tree, poly_piece)
++
++
++def choose_gauge():
++    """Try GAUGE_CANDIDATES in order, building the geometry for each, and keep
++    the first whose readout passes every check: sets GAUGE_S and GAUGE_TURN.
++    Returns what was tried; raises if none passes (the task blocks)."""
++    global GAUGE_S, GAUGE_TURN
++    tried = []
++    geometry = Builder.STEPS[:Builder.STEPS.index("compass") + 1]
++    for s, turn in GAUGE_CANDIDATES:
++        GAUGE_S, GAUGE_TURN = s, turn
++        b = Builder()
++        for step in geometry:
++            getattr(b, step)()
++        problems, lm = geometry_readout(b)
++        tried.append({"gauge_s": s, "gauge_turn": turn, "problems": len(problems), "lcd": lm,
++                      "first_problems": problems[:3]})
++        b.bm.free()
++        if not problems:
++            return tried
++    raise RuntimeError("no gauge position passes the readout's checks:\n  " +
++                       "\n  ".join(json.dumps(t) for t in tried))
++
++
++def build_checked():
++    """The whole build at the first wrist height in WRIST_ZS where every clip
++    check passes, with the gauge chosen by choose_gauge() at each. Any rest
++    check failing raises at once. Returns (builder, problems, measurements,
++    clip problems, clip measurements)."""
++    global WRIST
++    wrist_tried = []
++    for z in WRIST_ZS:
++        WRIST = v(WRIST.x, WRIST.y, z)
++        gauge_tried = choose_gauge()
++        b = Builder()
++        b.build_all()
++        problems, m = check(b)
++        if problems:
++            raise RuntimeError(f"the arms fail their checks at wrist z {z}:\n  " + "\n  ".join(problems))
++        cp, cm = clip_checks(b)
++        wrist_tried.append({"wrist_z": z, "clip_problems": cp[:5]})
++        if not cp:
++            m["chosen"] = {"wrist_z": z, "gauge_s": GAUGE_S, "gauge_turn": GAUGE_TURN,
++                           "gauge_tried": [{k: t[k] for k in ("gauge_s", "gauge_turn", "problems", "lcd")}
++                                           for t in gauge_tried],
++                           "wrist_tried": wrist_tried}
++            return b, problems, m, cp, cm
++    raise RuntimeError("no wrist height passes the clip checks:\n  " +
++                       "\n  ".join(json.dumps(t) for t in wrist_tried))
++
++
+ def to_engine(p):
+     return (p[0], p[2], -p[1])
+ 
+@@ -3159,15 +3241,10 @@ def render_previews(b):
+ 
+ def main():
+     bpy.ops.wm.read_factory_settings(use_empty=True)
+-    b = Builder()
+-    b.build_all()
+-    problems, m = check(b)
++    b, problems, m, cp, cm = build_checked()
+     print("arms:", json.dumps(m, indent=1))
+-    cp, cm = clip_checks(b)
+     print("clips:", json.dumps(cm, indent=1))
+-    problems += cp
+-    if problems:
+-        raise RuntimeError("the arms fail their checks:\n  " + "\n  ".join(problems))
++    print(f"chosen: GAUGE_S {GAUGE_S}, GAUGE_TURN {GAUGE_TURN}, wrist z {WRIST.z:.3f}")
+     if os.environ.get("PXE_SKIP_EXPORT"):
+         return
+     export()
