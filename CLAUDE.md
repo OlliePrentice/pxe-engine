@@ -41,7 +41,7 @@ Nothing tests rendering automatically. `./build/<config>/game/pxe --help` lists 
 - `--window-png <png>`, `--audio-wav <wav>`, `--self-test`, `--bench`.
 - Scene and state: `--scene hills`, `--hour <0-24>`, `--foxes <n>`, `--candles`, `--shelter-test`, `--extra-fires <n>`, `--rain <0-1>`.
 
-`pxe_desert` has only `--help`, `--capture <png>` (from the spawn pose), `--window-png <png>`, `--hour <0-24>` (default 16.5), and `--walk <0-10 s>` with `--sprint`, which walk straight ahead from the spawn before a capture.
+`pxe_desert` has only `--help`, `--capture <png>` (from the spawn pose), `--window-png <png>`, `--hour <0-24>` (default 16.5), and `--walk <0-10 s>` with `--sprint`, which walk straight ahead from the spawn before a capture, and `--menu` (play only), which starts with the Tab settings menu open.
 
 A refactor that should not change output must be **byte-identical**. `tools/ortho-check.sh <base>` and `tools/perspective-check.sh <base>` build the base commit in a scratch directory and the working tree, run each render mode's standard cases on both, and compare them (`--help` lists the cases). Run the check for every mode the change could reach. A change to the renderer, the shaders, the cameras or `Scene` and `Lighting` reaches both. Keyboard, mouse and gamepad play is never exercised by these checks. Give the user a playtest checklist for anything that changes it.
 

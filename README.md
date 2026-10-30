@@ -50,19 +50,22 @@ The Sleeping Fox is a single-storey, half-timbered inn on stone footings with a 
 - **The palm** (`desert/assets/scenes/date_palm.glb`, built by [`desert/tools/blender/build_date_palm.py`](desert/tools/blender/build_date_palm.py)) stands at the origin on the side of a low dune: an 11 m curved trunk with stepped rings of frond stubs, 18 fronds up to 14.6 m and three hanging date clusters, in `Bark` and `Leaf`. Rebuild it with `/Applications/Blender.app/Contents/MacOS/Blender -b -P desert/tools/blender/build_date_palm.py`.
 - **Your arms** (`desert/assets/characters/arms.glb`, built by [`desert/tools/blender/build_arms.py`](desert/tools/blender/build_arms.py)) rise from the bottom corners of the view: forearms wrapped in pale cloth bands with grime-stained bands and a frayed tail, dark leather gloves held palms-in with the thumbs up, quietly stitched, with knuckle pads and worn patches, on the left forearm a brass bracer built up into a hygrometer (its gauge a backlit LCD screen reading `47%` and a block cursor in green terminal-style dots, with screws, a knurled dial, three toggles, a copper coil, cables and a steel canister), and on the right wrist a sun compass with an ivory dial, a needle, an amber lamp and a propped-open lid. About 16,300 triangles in all. They are a rigged model locked to the view, held in its rest pose while you stand still. When you walk they walk with you: two looping clips in the glb, `Arms_Walk` and `Arms_Sprint`, in which both hands bob twice per stride and swing fore and aft in turn, the forearms rocking at the elbow (the sprint swings wider, with the hands lifted and curled into loose fists). Their phase follows the distance you actually move over the ground, so they keep step at any speed, and they ease in and out with your speed and settle back to the exact rest pose when you stop. The view itself never bobs. They are drawn through the engine's view model, so they stay whole in front of anything you walk up to, outlined in dark ink against the world and wherever a finger, strap or the gauge stands in front of the rest. Rebuild them with `/Applications/Blender.app/Contents/MacOS/Blender -b --python-exit-code 1 -P desert/tools/blender/build_arms.py`.
 - **You start** 25 m south of the palm (toward -z), facing it and looking level. The palm's trunk stops you (you slide round it), and so does the edge of the middle 160 × 160 m. Nothing else blocks.
-- **Time** is fixed: 16.5 unless `--hour` says, with a clear, still sky. There is no clock, weather, fire or sound.
+- **Time** starts paused at 16.5 (or `--hour`), under a clear, still sky. The settings menu can run the clock and bring in drifting cloud shadows. There is no rain, fire or sound.
+- **The settings menu** (Tab, or the pad's Start) has the clock (hour, presets, speed, pause), clouds and wind (cover, shadow strength, wind direction and strength), the player (walk and sprint speed, field of view, mouse sensitivity), the arms (show or hide, preview the walk or sprint clip standing still, hold a pose at a stride phase) and rendering (edges, the N·L and test-colour debug views, view distance), with an fps line. Every setting defaults to what the game does without it, and none is saved between runs.
 
 | Input | Action |
 |---|---|
 | Mouse | look (pitch held within ±85°) |
 | W A S D | walk, 3.5 m/s |
 | Shift (held) | sprint, 6 m/s |
-| Escape | release the cursor; with it released, quit |
-| Left click | capture the cursor again |
+| Tab | open or close the settings menu (the cursor is free while it is open) |
+| Escape | close the menu (the cursor stays free); else release the cursor; with it released, quit |
+| Left click | capture the cursor again (not while the menu is open) |
 | Gamepad left stick | walk; pressed in and held, sprint |
 | Gamepad right stick | look |
+| Gamepad Start | open or close the settings menu |
 
-The cursor is captured while you play, and looking and walking pause while it is released. The eye follows the ground with a light ease, so the dunes don't jolt the view.
+The cursor is captured while you play, and looking and walking pause while it is released or the menu is open. The eye follows the ground with a light ease, so the dunes don't jolt the view.
 
 | Flag | Effect |
 |---|---|
@@ -71,6 +74,7 @@ The cursor is captured while you play, and looking and walking pause while it is
 | `--hour H` | time of day, 0-24 (default 16.5) |
 | `--walk S` | with `--capture` or `--window-png`: walk straight ahead from the start for S seconds (0-10, fixed 1/60 s steps) before capturing |
 | `--sprint` | with `--walk`: sprint instead |
+| `--menu` | start play with the settings menu open (not with `--capture` or `--window-png`) |
 | `--help` | list the flags |
 
 ```bash

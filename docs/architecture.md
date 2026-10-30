@@ -56,15 +56,16 @@ Home `game` is `game/`, `desert` is `desert/`.
 | Game-only data on `pxe::Scene` (`fires`, `focus`, `yawDegrees`): the engine never reads it | game | in place: `game::BuiltScene`, `game::FireSite` |
 | Which scene to build, and where objects are placed in it (`kTavernSpot`, `kRuinsFoxSpot`, ...) | game | in place |
 | Player character, fox, tavern, fireball | game | in place |
-| The desert's world: the dune height function and its smooth-shaded sand ground (1 m cells in the middle, 4 m cells out to the edge), the date palm loaded and placed at the origin, the sun's directions, the fixed hour | desert | in place: `desert/src/world.cpp` |
+| The desert's world: the dune height function and its smooth-shaded sand ground (1 m cells in the middle, 4 m cells out to the edge), the date palm loaded and placed at the origin, the sun's directions | desert | in place: `desert/src/world.cpp` |
 | The desert's player: the eye, its yaw and pitch, walking and sprinting, ground following, sliding along the palm's trunk and the play area's edge, the ground distance the eye moved in each update, driving `pxe::FirstPersonCamera` | desert | in place: `desert/src/player.cpp` |
-| The desert player's arms: the arms model loaded into actor slots 0-14, placed at the eye from the view each frame, crease ink on its wraps, gloves, brass, worn patches and grime; the walk: the `Arms_Walk` and `Arms_Sprint` clips played by the distance moved and blended in by speed, the rest pose when still | desert | in place: `desert/src/arms.cpp` |
+| The desert player's arms: the arms model loaded into actor slots 0-14, placed at the eye from the view each frame, crease ink on its wraps, gloves, brass, worn patches and grime; the walk: the `Arms_Walk` and `Arms_Sprint` clips played by the distance moved and blended in by speed, the rest pose when still; holding one clip at a stride phase for the menu's preview | desert | in place: `desert/src/arms.cpp` |
 | World clock and weather rules (`WorldClock`): time of day, when it rains, when lightning strikes, cloud drift, fires burning down and rain putting them out. The engine takes the results as data | game | in place |
 | Input actions (what a key or button does), the settings menu's contents and style (its `ImGui::` widget calls), which sounds play when | game | in place |
-| The desert's input actions (mouse and right stick look, WASD and left stick walk, sprint, cursor capture and release) | desert | in place: `desert/src/main.cpp` |
+| The desert's input actions (mouse and right stick look, WASD and left stick walk, sprint, cursor capture and release, Tab and Start for the settings menu) | desert | in place: `desert/src/main.cpp` |
+| The desert's settings menu: its contents and `ImGui::` calls on `pxe::Overlay`, the running clock and cloud weather it edits (`desert::Clock`), the player and view tunables (`PlayerSettings`, `ViewSettings`) | desert | in place: `desert/src/settings.cpp`, created in `main.cpp`'s play branch only |
 | The sounds themselves: sample files, or the recipe of a synthesised sound (the wind, rain and thunder synth in `game/src/audio.cpp`). A sound is content, like a model. Generic synthesis building blocks (noise, filters, envelopes) move to the engine when a second sound or game needs them | game | in place |
 | Command-line modes: capture, bench, self-test | game | in place |
-| Command-line modes: help, capture, window PNG, hour | desert | in place: `desert/src/main.cpp` |
+| Command-line modes: help, capture, window PNG, hour, walk, menu | desert | in place: `desert/src/main.cpp` |
 
 ## Standing rules per game
 - **Desert tunables go in its settings menu.** Every desert feature that adds a tunable (sky, haze, clouds, dust, sand, lighting, ...) adds its controls to the desert's settings menu (`desert::SettingsMenu`, `desert/src/settings.cpp`, from task `desert-settings-menu`), defaulting to the value the desert uses without the menu, so play opens unchanged and captures stay byte-identical (user decision, 2026-10-30).
