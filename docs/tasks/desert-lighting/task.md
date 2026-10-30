@@ -1,6 +1,6 @@
 # The desert's light and its menu controls
 Type: feature
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -111,13 +111,13 @@ Run in the task's worktree, against the cycle base:
    - Press "Print values", paste the output into `buildWorld` in place of the bounce block, and confirm it builds and looks the same.
 
 ## Acceptance criteria
-- [ ] `buildWorld` sets the four phases' ground bounce from the Decisions table, and nothing else of the lighting.
-- [ ] `SettingsMenu::draw` has the binding signature. The Lighting section has the controls, ranges, phase choice and Moon labels specified, and edits the scene live.
-- [ ] "Print values" writes the binding format for all four phases and the four single values.
-- [ ] The View distance note reads "The haze is full at it".
-- [ ] `desert/docs/art-style.md` has exactly the three replacements.
-- [ ] Verification 2–6 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `buildWorld` sets the four phases' ground bounce from the Decisions table, and nothing else of the lighting. Evidence: `desert::buildWorld` in `desert/src/world.cpp`; Verification 4 (no-bounce capture identical to base).
+- [x] `SettingsMenu::draw` has the binding signature. The Lighting section has the controls, ranges, phase choice and Moon labels specified, and edits the scene live. Evidence: `desert/src/settings.hpp`, Lighting section of `SettingsMenu::draw` in `settings.cpp` (`###sunColour`/`###sunStrength` IDs keep the ID fixed across the Sun/Moon label, as the spec requires; `##c` would not).
+- [x] "Print values" writes the binding format for all four phases and the four single values. Evidence: `printLighting` in `desert/src/settings.cpp`.
+- [x] The View distance note reads "The haze is full at it". Evidence: `settings.cpp`; Verification 6 grep empty.
+- [x] `desert/docs/art-style.md` has exactly the three replacements. Evidence: `git diff 8f2a3a9 -- desert/docs/art-style.md`, 3 lines changed.
+- [x] Verification 2–6 pass. Evidence: orchestrator's ortho-check 6/6; perspective-check example identical, desert-default/night differ; developer's bounce-only proof and repeat captures in handoff.md.
+- [x] Project builds cleanly from a fresh build directory with CMake Evidence: orchestrator's `check` preset build, only stb `sprintf` warning.
 
 ## Assets
 None.
@@ -132,3 +132,11 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-30: base 8f2a3a9
+- Cycle 1 review: build clean, checks as specified, diff matches the spec. Sun/Moon widgets use `###` IDs so the ID stays the same, as Approach 3 requires. No issues. Complete.
+
+## Playtest checklist
+- `tools/build.sh release desert`, press Tab: the Rendering section's note reads "The haze is full at it", and a Lighting section follows it.
+- Set the hour to about 12, 18.3, 19.5 and 23: "Editing:" follows the clock (Day, Golden, Twilight, Night), and at night the first two controls read "Moon" and "Moon strength".
+- Drag each control and see it take effect at once: sun, sun strength, sky fill and its strength, ground bounce and its strength, sky horizon, sky zenith, haze density, sun glow, shadow penumbra, exposure (logarithmic).
+- Look down at the sand on a slope facing away from the sun: a slight warm lift from the bounce compared with before.
+- Press "Print values": the terminal shows 32 phase lines (Day, Golden, Twilight, Night) and the four single values. Paste them into `buildWorld` in place of the bounce block, rebuild, and confirm it builds and looks the same.
