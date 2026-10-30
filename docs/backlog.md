@@ -113,3 +113,19 @@ Spec: docs/tasks/desert-settings-menu/task.md
 Depends on: none
 Touches: desert/src/settings.hpp, desert/src/settings.cpp, desert/src/main.cpp, desert/src/player.hpp, desert/src/player.cpp, desert/src/arms.hpp, desert/src/arms.cpp, desert/CMakeLists.txt
 Assets: no
+
+## perspective-smooth-lighting: Smooth lighting in perspective mode
+Status: queued
+Type: feature
+Spec: docs/tasks/perspective-smooth-lighting/task.md
+Depends on: none
+Touches: engine/include/pxe/scene.hpp, engine/src/scene.cpp, engine/include/pxe/lighting.hpp, engine/src/lighting.cpp, engine/include/pxe/renderer.hpp, engine/src/renderer.cpp, engine/src/renderer_internal.hpp, engine/src/renderer_perspective.cpp, engine/include/pxe/first_person_camera.hpp, engine/shaders/lit_perspective.glsl, engine/shaders/mesh_perspective.frag, engine/shaders/backdrop.frag, engine/shaders/edge_perspective.frag, engine/CMakeLists.txt, docs/tasks/perspective-smooth-lighting/
+Assets: no
+
+## desert-lighting: The desert's light and its menu controls
+Status: queued
+Type: feature
+Spec: docs/tasks/desert-lighting/task.md
+Depends on: perspective-smooth-lighting, desert-settings-menu
+Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp, desert/src/main.cpp, desert/docs/art-style.md, docs/tasks/desert-lighting/
+Assets: no
