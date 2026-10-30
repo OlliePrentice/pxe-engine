@@ -159,12 +159,13 @@ Touches: tools/png-diff.py, tools/README.md, docs/tasks/png-diff-tool/
 Assets: no
 
 ## perspective-dust: Airborne dust in perspective mode
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/perspective-dust/task.md
 Depends on: perspective-sky-clouds
 Touches: engine/include/pxe/scene.hpp, engine/include/pxe/renderer.hpp, engine/src/renderer.cpp, engine/src/renderer_perspective.cpp, engine/shaders/dust.vert, engine/shaders/dust.frag, engine/CMakeLists.txt, docs/tasks/perspective-dust/
 Assets: no
+Merged: 135a6e3
 
 ## desert-sky: The desert's sky clouds and dust, and their menu controls
 Status: queued
