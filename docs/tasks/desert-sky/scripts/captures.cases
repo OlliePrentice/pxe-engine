@@ -1,0 +1,6 @@
+sky-1630 desert/pxe_desert
+sky-golden desert/pxe_desert --hour 18
+sky-morning desert/pxe_desert --hour 7
+sky-noon desert/pxe_desert --hour 12
+sky-night desert/pxe_desert --hour 21
+sky-midnight desert/pxe_desert --hour 0
