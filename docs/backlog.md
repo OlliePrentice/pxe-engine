@@ -206,7 +206,7 @@ Assets: yes
 Merged: 7ffff71
 
 ## desert-arms-gear: Arms: gear and palette after the concept art
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms-gear/task.md
 Depends on: desert-arms-pose
