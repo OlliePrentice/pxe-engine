@@ -236,9 +236,10 @@ Assets: no
 Merged: 240cb52
 
 ## desert-ground: The desert's ground after the concept art
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-ground/task.md
 Depends on: perspective-surface-detail, desert-sky
 Touches: desert/src/world.hpp, desert/src/world.cpp, desert/src/main.cpp, desert/src/settings.cpp, desert/docs/art-style.md, docs/tasks/desert-ground/
 Assets: no
+Merged: f7fc8c9
