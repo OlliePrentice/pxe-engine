@@ -1,7 +1,7 @@
 # Issues: capture-tool
 
 ## ISSUE-001: The edit's backup is armed before it holds the file
-Status: fixed
+Status: resolved
 Severity: minor
 Source: review
 Found in cycle: 1
