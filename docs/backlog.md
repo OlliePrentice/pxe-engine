@@ -152,7 +152,7 @@ Assets: no
 Merged: 96fbfa8
 
 ## blender-override-tool: Run a Blender build script with constants overridden
-Status: queued
+Status: in-progress
 Type: tooling
 Spec: docs/tasks/blender-override-tool/task.md
 Depends on: none
@@ -177,7 +177,7 @@ Assets: no
 Merged: 135a6e3
 
 ## desert-sky: The desert's sky clouds and dust, and their menu controls
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-sky/task.md
 Depends on: perspective-dust, desert-lighting
@@ -216,7 +216,7 @@ Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/d
 Assets: yes
 
 ## perspective-surface-detail: Terminator sharpness and surface ripples in perspective mode
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/perspective-surface-detail/task.md
 Depends on: perspective-dust
