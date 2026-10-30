@@ -304,3 +304,4 @@ None.
 ## Cycle log
 - Cycle 1, 2026-10-30: base 1722db0
 - Cycle 1 review, 2026-10-30: build, verification 2-6 pass (orchestrator: ortho 6/6, perspective 3 run and differ, d1818 deterministic); ISSUE-001 (minor, comment).
+- Cycle 2, 2026-10-30: base eb84614; outstanding ISSUE-001
