@@ -394,3 +394,17 @@ Status: open
 Seen: png-diff-tool (2026-10-30, developer)
 Detail: The png-diff-tool spec didn't say whether `--mask` under `--region` writes a region-sized or image-sized image, or whether boxes under `--region` count from the image or the region. The developer chose image-sized and image coordinates, sensibly, and documented both in tools/README.md; nothing went wrong. If a later spec's silence on an option combination leads an agent to a wrong guess, add to `/feature`'s spec checks: for a tool, state the behaviour of each option combined with the others.
 Action: none yet (one sighting, no harm).
+
+## F-055: View-model gadgets leave the view mid-clip
+Kind: instruction-gap
+Status: needs-user
+Seen: desert-arms-pose (2026-10-30, designer: in `pose-walk.png` (2 s walking) the gauge readout is below the bottom edge, and in `pose-sprint.png` (3 s sprinting) most of the compass face is; `clip_checks()` holds only the arms' top edge, the clearance and the forearm exit)
+Detail: Neither `build_arms.py`'s clip checks nor any spec says whether the gauge readout and compass must stay in view while walking and sprinting. `desert-arms-motion`, which replaces the clips, is silent on it too, and its spec is fixed once queued.
+Action: needs the user: should `desert-arms-motion` require the readout and compass face in view at every clip key (a new binding clip check), or is dipping out of view mid-stride fine? Proposed: decide through `/feature` on `desert-arms-motion` before it runs (it waits on `desert-arms-gear`); I'd keep them in view at walk and let the sprint dip.
+
+## F-056: A spec naming some of the docstrings its change makes wrong
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-pose (2026-10-30, designer: Approach §3 named only the module docstring; `compass()`'s docstring and the material list also said the strap sits at the cuff's back end, which the compass slide made wrong. The designer fixed them, correctly)
+Detail: Specs list the docstring edits they foresee; the change can make others wrong.
+Action: `.claude/agents/designer.md`, Building assets: fix every docstring or comment the change makes wrong and list each in the report (6a9fc51).
