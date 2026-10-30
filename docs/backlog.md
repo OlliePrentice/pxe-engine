@@ -218,12 +218,13 @@ Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/d
 Assets: yes
 
 ## perspective-surface-detail: Terminator sharpness and surface ripples in perspective mode
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/perspective-surface-detail/task.md
 Depends on: perspective-dust
 Touches: engine/include/pxe/scene.hpp, engine/shaders/lit_perspective.glsl, engine/shaders/mesh_perspective.frag, engine/src/renderer_perspective.cpp, docs/tasks/perspective-surface-detail/
 Assets: no
+Merged: 240cb52
 
 ## desert-ground: The desert's ground after the concept art
 Status: queued
