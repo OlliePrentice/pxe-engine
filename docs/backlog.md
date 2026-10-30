@@ -125,7 +125,7 @@ Assets: no
 Merged: 597ddce
 
 ## desert-lighting: The desert's light and its menu controls
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-lighting/task.md
 Depends on: perspective-smooth-lighting, desert-settings-menu
@@ -133,7 +133,7 @@ Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp,
 Assets: no
 
 ## perspective-sky-clouds: Sky clouds in perspective mode
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/perspective-sky-clouds/task.md
 Depends on: perspective-smooth-lighting
