@@ -4,14 +4,14 @@ description: Plans a new feature or fix. Interviews the user with the grill skil
 argument-hint: <feature or fix to plan> | unblock
 disable-model-invocation: true
 model: claude-opus-5-5
-effort: high
+effort: medium
 ---
 
 Run this workflow for the request: $ARGUMENTS
 
 You are the planner and architect. You interview the user, decide the architecture, split the work into tasks, write a spec for each task that a developer can implement without guessing, and queue the tasks in `docs/backlog.md`. You don't implement anything and you don't delegate to the developer or the designer. `/backlog-run` does that later, unattended, usually in a loop (`tools/backlog-loop.sh`). Nobody can answer a question during that run, so every decision has to be made here.
 
-**Model check.** Planning runs on Opus 5.5 at high effort. The `model` and `effort` lines above only hold for the turn that loads this skill, and the interview takes many turns. If the session isn't Opus 5.5 at high effort (`${CLAUDE_EFFORT}` should read `high`), tell the user to restart with `claude --model claude-opus-5-5 --effort high` and stop.
+**Model check.** Planning runs on Opus 5.5 at medium effort. The `model` and `effort` lines above only hold for the turn that loads this skill, and the interview takes many turns. If the session isn't Opus 5.5 at medium effort (`${CLAUDE_EFFORT}` should read `medium`), tell the user to restart with `claude --model claude-opus-5-5 --effort medium` and stop.
 
 **Branch.** Planning commits to a branch, never to `main`. If the session is on `main`, create a branch named for the run (`git switch -c <slug>`) before the first commit, and tell the user. `/backlog-run` runs on the same branch.
 

@@ -4,7 +4,7 @@ description: Implements one batch of queued tasks from docs/backlog.md, unattend
 argument-hint: "[task-id ...]"
 disable-model-invocation: true
 model: claude-opus-5-5
-effort: high
+effort: medium
 ---
 
 Run one batch of the backlog. Arguments: $ARGUMENTS (task IDs to restrict the batch to; empty means pick from the backlog).
@@ -114,7 +114,7 @@ Block the task, rather than looping, if:
 - the build environment is broken in a way the developer can't fix (missing toolchain, missing dependency). Report status `stop` too: later tasks would hit the same wall.
 
 ### Replanning
-When the developer returns `SPEC INFEASIBLE`, the designer says an asset can't be built as specified, or your review finds that the spec itself is wrong, the task goes back to planning. You are on Opus at high effort, as `/feature` is, so you do the planning, as `/feature` would.
+When the developer returns `SPEC INFEASIBLE`, the designer says an asset can't be built as specified, or your review finds that the spec itself is wrong, the task goes back to planning. You are on Opus at medium effort, as `/feature` is, so you do the planning, as `/feature` would.
 1. **Check the claim.** Read the code and the developer's evidence. Run what it ran. If the spec does work and the developer missed how, record an issue explaining how, and send it back as the next cycle. A spec that does work doesn't get changed.
 2. **Design an alternative.** Follow `/feature`'s design step (`.claude/skills/feature/SKILL.md`, step 2): work from the code, read the files involved, and keep to `docs/architecture.md`. Prefer the alternative that keeps the most of the spec. Write `docs/tasks/<task-id>/replan-<n>.md`: what failed, with the evidence; the alternatives you considered and why you rejected them; the proposal; and the exact changes to each spec section, with code examples where the spec has them.
 3. **Apply it or block.**

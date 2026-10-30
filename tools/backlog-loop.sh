@@ -7,7 +7,7 @@ usage() {
   cat <<'USAGE'
 Usage: tools/backlog-loop.sh [--max-batches n] [--budget usd] [--permission-mode mode]
 
-Runs the /backlog-run skill with `claude -p` on Opus 5.5 at high effort, once
+Runs the /backlog-run skill with `claude -p` on Opus 5.5 at medium effort, once
 per batch, each in a fresh session, so no batch carries over a compacted
 context. The skill picks the next ready tasks from docs/backlog.md, runs them
 in parallel worktrees, merges them and runs its retro. It ends with a status
@@ -72,7 +72,7 @@ for ((batch = 1; batch <= max_batches; batch++)); do
   set +e
   claude -p "/backlog-run" \
     --model claude-opus-5-5 \
-    --effort high \
+    --effort medium \
     --permission-mode "$permission_mode" \
     ${extra[@]+"${extra[@]}"} | tee "$log"
   claude_exit=${PIPESTATUS[0]}
