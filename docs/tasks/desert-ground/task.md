@@ -1,7 +1,7 @@
 # The desert's ground after the concept art
 Type: feature
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 1
 
 ## Goal
 Rework the desert's ground toward `desert/docs/concept/wanderers.png`:
@@ -156,13 +156,13 @@ Run in the task's worktree, against the cycle base:
    - compare golden hour with the concept art.
 
 ## Acceptance criteria
-- [ ] `kRidges` has the four binding layers. Only the phases differ from the table, and they're chosen so `--terrain-report` passes. The swell is 50–100%. `kFineCell` is 0.5. Normals come from the analytic gradient.
-- [ ] `buildWorld` sets the Decisions' palette, fill, bounce, sky, terminator and ripple values.
-- [ ] `--terrain-report` prints the binding lines, checks the three constraints, needs no window, and is listed in `--help`.
-- [ ] The Ground section and print lines are as specified.
-- [ ] `desert/docs/art-style.md` has exactly the two replacements.
-- [ ] Verification 2–6 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `kRidges` has the four binding layers. Only the phases differ from the table, and they're chosen so `--terrain-report` passes. The swell is 50–100%. `kFineCell` is 0.5. Normals come from the analytic gradient. (world.cpp `kRidges`: table values, phases 0.875/0.30/0.55/0.25; swell 0.75+0.25 sin; world.hpp `kFineCell` 0.5; `duneNormal` uses `duneGradient`)
+- [x] `buildWorld` sets the Decisions' palette, fill, bounce, sky, terminator and ripple values. (world.cpp `buildWorld`, block after the bounce colours)
+- [x] `--terrain-report` prints the binding lines, checks the three constraints, needs no window, and is listed in `--help`. (main.cpp `terrainReport`, run before the window; `printUsage`; orchestrator ran it: exit 0, all ok, crest to trough 9.38 m)
+- [x] The Ground section and print lines are as specified. (settings.cpp "Ground" section after "Sky and dust"; `printLighting` appends albedo, terminator and every ripples field)
+- [x] `desert/docs/art-style.md` has exactly the two replacements. (`git diff c5d362b -- desert/docs/art-style.md`: the two replacements only)
+- [x] Verification 2–6 pass. (orchestrator: --terrain-report exit 0, combined with --capture exit 1 "bad argument"; engine/game/examples diff empty; ortho 6/6; perspective example identical, desert cases differ; no kNormalStep; six captures twice-identical per handoff; duneGradient matches the binding math line by line; groundHeight reads kFineCell)
+- [x] Project builds cleanly from a fresh build directory with CMake (orchestrator check build: only the stb sprintf warning)
 
 ## Assets
 None.
@@ -174,3 +174,14 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base c5d362b
+- Cycle 1 review, 2026-10-30: build clean, Verification 2-6 pass, code matches the spec; no issues. Observations for the user (spec outcomes, not defects): `--hour 18` is mostly twilight under the engine's phase weights, so ground-golden.png is dark brown under a lilac sky, and the golden values read best around 17-17.6 h; from the spawn the layered silhouettes are weak (one crest behind the palm), clearer in ground-walk.png; ripples show some moire banding at 4-12 m; the palm constraint's "windward" wording contradicts its numeric test (the face seen from the spawn is the downwind face), the numeric test was followed.
+
+## Playtest checklist
+- Walk over several crests (behind the palm, up the crest about 22 m behind it and beyond): the eye follows the taller dunes smoothly, no jitter at crest edges.
+- Ripples appear near the eye and fade out between 6 and 20 m as you move, not on steep faces; check for moire banding at mid-distance.
+- Tab, "Ground": drag every control (Sand, Terminator sharpness, wavelength, depth, heading, full to, gone by, slope cutoff) and see it take effect at once. Drag "Ripples full to" past "gone by": the other is pushed 1 m clear.
+- Lighting's "Print values": the terminal also shows the `scene.albedo`, `scene.terminator` and `scene.ripples.*` lines.
+- Set the hour to about 17.6 and compare with desert/docs/concept/wanderers.png; try 7, 12 and 18 too (18 reads as twilight, not golden).
+- Shadowed faces stay warm and sandy, never mauve; crest edges read as a clear light/shadow line.
+- `pxe_desert --terrain-report` prints five lines, all ok, and exits 0.

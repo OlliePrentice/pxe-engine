@@ -24,7 +24,7 @@ constexpr float kDeg = kTau / 360.f;
 // `wavelength` metres apart. Each rises over the `windward` share of a
 // wavelength to its crest, then drops down a steep downwind face to the next
 // trough. The crest line wanders `meander` wavelengths either way over
-// `meanderLength` metres along it, and the ridge's height swells between 70%
+// `meanderLength` metres along it, and the ridge's height swells between 50%
 // and 100% of `height` over `swellLength` metres. `phase` slides the layer
 // along the wind (in wavelengths), and `seed` offsets its wander and swell.
 struct Ridges {
@@ -39,14 +39,23 @@ struct Ridges {
   float seed;
 };
 
-// The dunes: broad ridges with the wind toward the spawn's back (about
-// -z), and two smaller layers turned a little either way. The phases put
-// the palm on a windward slope of about 10 degrees with no crest between it
-// and the spawn's eye.
+// The dunes, after desert/docs/concept/wanderers.png: broad ridges with the
+// wind toward the spawn's back (about -z), two smaller layers turned a
+// little either way, and long low hills under them that layer the far
+// silhouettes into the haze. Crest to trough comes to about 4-12 m. The
+// phases (found with docs/tasks/desert-ground/scripts/tune_phases.py) put
+// the palm on a gentle slope that rises away from the spawn, with a crest
+// about 22 m behind it, and clear its trunk from the spawn's eye:
+// --terrain-report (main.cpp) checks that the slope at the palm is at most
+// 15 degrees and rises away from the spawn, that the ground rises at least
+// 2 m above the palm's base somewhere 5-60 m behind it, and that the sight
+// line from the eye to 0.5 m up the trunk clears the ground by at least
+// 0.1 m.
 constexpr Ridges kRidges[] = {
-    {200.f, 72.f, 3.6f, 0.72f, 0.10f, 150.f, 190.f, 0.9f, 0.f},
-    {214.f, 38.f, 1.5f, 0.70f, 0.12f, 90.f, 110.f, 0.8f, 1.f},
-    {186.f, 23.f, 0.6f, 0.68f, 0.15f, 60.f, 70.f, 0.7f, 2.f},
+    {200.f, 110.f, 6.5f, 0.75f, 0.10f, 150.f, 190.f, 0.875f, 0.f},
+    {214.f, 48.f, 2.4f, 0.75f, 0.12f, 90.f, 110.f, 0.30f, 1.f},
+    {186.f, 26.f, 0.8f, 0.75f, 0.15f, 60.f, 70.f, 0.55f, 2.f},
+    {196.f, 260.f, 5.0f, 0.75f, 0.08f, 400.f, 500.f, 0.25f, 3.f},
 };
 
 // A ridge's profile over one wavelength, u in 0..1 from trough to trough:
@@ -62,18 +71,13 @@ float ridgeProfile(float u, float windward) {
   return v * v;
 }
 
-// How far either side of a point the dunes' slope is read for its normal,
-// metres. The same step everywhere, so a vertex the fine and coarse grids
-// share has one normal and the two shade alike where they meet.
-constexpr float kNormalStep = 0.5f;
-
-// The dunes' smooth normal at world xz, from duneHeight's slope across the
-// point, so the toon ramp bands each slope in contours that follow its
-// curve rather than facet by facet.
+// The dunes' smooth normal at world xz, from duneHeight's exact slope, so the
+// light falls off continuously across each slope's curve, and a vertex the
+// fine and coarse grids share has one normal and the two shade alike where
+// they meet.
 glm::vec3 duneNormal(float x, float z) {
-  const float e = kNormalStep;
-  return glm::normalize(glm::vec3{duneHeight(x - e, z) - duneHeight(x + e, z), 2.f * e,
-                                  duneHeight(x, z - e) - duneHeight(x, z + e)});
+  const glm::vec2 g = duneGradient(x, z);
+  return glm::normalize(glm::vec3{-g.x, 1.f, -g.y});
 }
 
 void appendGround(pxe::SurfaceGeometry& geometry) {
@@ -92,7 +96,7 @@ void appendGround(pxe::SurfaceGeometry& geometry) {
     idx.insert(idx.end(), {a, b, c});
   };
 
-  // The fine grid, 1 m cells over the middle, each cell two triangles split
+  // The fine grid, 0.5 m cells over the middle, each cell two triangles split
   // corner (i, j) to (i+1, j+1), as groundHeight reads them.
   const int nf = static_cast<int>(2.f * kFineHalf / kFineCell);
   std::vector<std::uint32_t> fine(static_cast<std::size_t>((nf + 1) * (nf + 1)));
@@ -114,7 +118,7 @@ void appendGround(pxe::SurfaceGeometry& geometry) {
   const int nc = static_cast<int>(2.f * kGroundHalf / kCoarseCell);
   const int c0 = static_cast<int>((kGroundHalf - kFineHalf) / kCoarseCell);
   const int c1 = nc - c0;
-  const int ratio = static_cast<int>(kCoarseCell / kFineCell);
+  const int ratio = static_cast<int>(kCoarseCell / kFineCell);  // 8
   std::vector<std::uint32_t> coarse(static_cast<std::size_t>((nc + 1) * (nc + 1)));
   auto c = [&](int i, int j) { return coarse[static_cast<std::size_t>(j * (nc + 1) + i)]; };
   for (int j = 0; j <= nc; ++j)
@@ -174,10 +178,44 @@ float duneHeight(float x, float z) {
     float u = across / r.wavelength + r.meander * std::sin(kTau * along / r.meanderLength + 1.3f * r.seed + 0.4f) +
               r.phase;
     u -= std::floor(u);
-    const float swell = 0.7f + 0.3f * std::sin(kTau * along / r.swellLength + 2.1f * r.seed + 1.f);
+    const float swell = 0.75f + 0.25f * std::sin(kTau * along / r.swellLength + 2.1f * r.seed + 1.f);
     h += r.height * swell * ridgeProfile(u, r.windward);
   }
   return h;
+}
+
+glm::vec2 duneGradient(float x, float z) {
+  glm::vec2 g{0.f};
+  for (const Ridges& r : kRidges) {
+    const glm::vec2 wind{std::sin(r.heading * kDeg), std::cos(r.heading * kDeg)};
+    const glm::vec2 crest{wind.y, -wind.x};
+    const float across = x * wind.x + z * wind.y;
+    const float along = x * crest.x + z * crest.y;
+    const float meanderArg = kTau * along / r.meanderLength + 1.3f * r.seed + 0.4f;
+    float u = across / r.wavelength + r.meander * std::sin(meanderArg) + r.phase;
+    u -= std::floor(u);
+    const float duda = 1.f / r.wavelength;
+    const float duds = r.meander * (kTau / r.meanderLength) * std::cos(meanderArg);
+    const float swellArg = kTau * along / r.swellLength + 2.1f * r.seed + 1.f;
+    const float swell = 0.75f + 0.25f * std::sin(swellArg);
+    const float dswells = 0.25f * (kTau / r.swellLength) * std::cos(swellArg);
+    // The profile and its slope in u: ridgeProfile's two pieces.
+    float p, dp;
+    if (u < r.windward) {
+      const float t = u / r.windward;
+      p = t * t * (1.5f - 0.5f * t);
+      dp = (3.f * t - 1.5f * t * t) / r.windward;
+    } else {
+      const float v = 1.f - (u - r.windward) / (1.f - r.windward);
+      p = v * v;
+      dp = -2.f * v / (1.f - r.windward);
+    }
+    const float dhda = r.height * swell * dp * duda;
+    const float dhds = r.height * (dswells * p + swell * dp * duds);
+    g.x += dhda * wind.x + dhds * crest.x;
+    g.y += dhda * wind.y + dhds * crest.y;
+  }
+  return g;
 }
 
 float groundHeight(float x, float z) {
@@ -201,18 +239,38 @@ float groundHeight(float x, float z) {
 World buildWorld() {
   World world;
   // A new scene starts with the engine's default palettes, sky colours and
-  // perspective light; the desert keeps them all, apart from a warm sand
-  // bounce (a display colour and a linear strength per phase).
+  // perspective light; the desert keeps them, apart from a warm sand
+  // bounce (a display colour and a linear strength per phase) and the
+  // ground and sky values below.
   pxe::Scene& scene = world.scene;
   const auto rgb = [](float r, float g, float b) { return glm::vec3{r, g, b} / 255.f; };
   scene.groundBounce[pxe::kPhaseDay] = rgb(214, 176, 118);
-  scene.groundBounceStrength[pxe::kPhaseDay] = 0.12f;
   scene.groundBounce[pxe::kPhaseGolden] = rgb(220, 160, 110);
-  scene.groundBounceStrength[pxe::kPhaseGolden] = 0.10f;
   scene.groundBounce[pxe::kPhaseTwilight] = rgb(150, 120, 130);
   scene.groundBounceStrength[pxe::kPhaseTwilight] = 0.05f;
   scene.groundBounce[pxe::kPhaseNight] = rgb(60, 65, 85);
   scene.groundBounceStrength[pxe::kPhaseNight] = 0.03f;
+  // The ground and sky after desert/docs/concept/wanderers.png: beige-ochre
+  // sand, lit faces warm against a pale dusty sky, and shadowed faces that
+  // stay warm and sandy (a warm sky fill, and the sand's own bounce), not
+  // mauve. Night keeps the engine's cool fill. The sand's terminator is
+  // sharpened so light turns to shadow in a clear line along the crests, and
+  // wind ripples cross it near the eye, aligned with the main dunes' wind.
+  scene.albedo[pxe::kSurfSand] = rgb(212, 180, 136);
+  scene.skyFill[pxe::kPhaseDay] = rgb(170, 180, 200);
+  scene.skyFillStrength[pxe::kPhaseDay] = 0.30f;
+  scene.skyFill[pxe::kPhaseGolden] = rgb(200, 175, 160);
+  scene.skyFillStrength[pxe::kPhaseGolden] = 0.30f;
+  scene.skyFill[pxe::kPhaseTwilight] = rgb(150, 125, 140);
+  scene.skyFillStrength[pxe::kPhaseTwilight] = 0.22f;
+  scene.groundBounceStrength[pxe::kPhaseDay] = 0.20f;
+  scene.groundBounceStrength[pxe::kPhaseGolden] = 0.18f;
+  scene.skyHorizon[pxe::kPhaseGolden] = rgb(236, 212, 176);
+  scene.skyZenith[pxe::kPhaseGolden] = rgb(150, 160, 175);
+  scene.skyHorizon[pxe::kPhaseDay] = rgb(226, 214, 190);
+  scene.skyZenith[pxe::kPhaseDay] = rgb(150, 170, 190);
+  scene.terminator[pxe::kSurfSand] = 0.35f;
+  scene.ripples = {pxe::kSurfSand, 0.25f, 0.35f, 200.f, 6.f, 20.f, 22.f};
   // the desert's sky: two streaky cloud layers, high and low, and a little airborne dust
   scene.skyClouds[0].cover = 0.40f;
   scene.skyClouds[0].opacity = 0.55f;
