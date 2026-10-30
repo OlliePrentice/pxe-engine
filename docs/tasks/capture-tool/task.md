@@ -1,7 +1,7 @@
 # A capture runner: sets of captures, twice, against a base, under a temporary edit
 Type: tooling
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 Verification steps keep running sets of captures by hand: each twice and `cmp`-ed for determinism, against a base commit's build, or under a temporary source edit that is applied, built, captured and restored. Copies so far: `docs/tasks/desert-settings-menu/scripts/walk-compare.sh` (cases against the base build), `docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh` (cases into the task folder, each twice), and by hand in `desert-arms`, `desert-arms-detail` (spawn-pose edits), `perspective-sky-clouds` (three edits of the cloud cover) and `desert-lighting` (a no-bounce edit compared with the base; three captures each twice). Friction log F-036, F-038 and F-021. Turn them into one tool, `tools/captures.sh`.
@@ -112,10 +112,10 @@ fp     examples/minimal/pxe_minimal --first-person
 9. Nothing outside `tools/captures.sh`, `tools/README.md` and the task folder changes: `git diff --stat <cycle base>` lists only those.
 
 ## Acceptance criteria
-- [ ] `tools/captures.sh` exists, is executable and has the binding usage text.
+- [x] `tools/captures.sh` exists, is executable and has the binding usage text. (tools/captures.sh, mode 755, usage heredoc identical to the binding text.)
 - [ ] Cases files, `--out`, `--twice`, `--base`, `--expect`, `--distinct` and `--edit` behave as specified, with the binding output lines and exit statuses.
 - [ ] An edit is restored byte for byte and touched on success, failure and interrupt.
-- [ ] `tools/README.md` has the binding row.
+- [x] `tools/README.md` has the binding row. (after the perspective-check.sh row)
 - [ ] Verification 2–9 pass.
 - [ ] Project builds cleanly from a fresh build directory with CMake
 
@@ -133,3 +133,5 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-30: base 010f23d
+- Cycle 1 review: fresh build clean; Verification 2, 3, 6 and the interrupt (scripts/interrupt-test.py: exit 130, restored, touched) rerun by the reviewer and pass. ISSUE-001 opened.
+- Cycle 2, 2026-10-30: base BASEHASH; outstanding ISSUE-001
