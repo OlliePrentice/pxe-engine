@@ -143,12 +143,13 @@ Assets: no
 Merged: 3eaf280
 
 ## capture-tool: A capture runner: sets of captures, twice, against a base, under a temporary edit
-Status: in-progress
+Status: done
 Type: tooling
 Spec: docs/tasks/capture-tool/task.md
 Depends on: none
 Touches: tools/captures.sh, tools/README.md, docs/tasks/capture-tool/
 Assets: no
+Merged: 96fbfa8
 
 ## png-diff-tool: A PNG difference reporter
 Status: queued
