@@ -161,7 +161,7 @@ Assets: no
 Merged: 087a0f1
 
 ## captures-edit-stale-build: captures.sh rebuilds the edited file after its edit and restore
-Status: queued
+Status: in-progress
 Type: fix
 Spec: docs/tasks/captures-edit-stale-build/task.md
 Depends on: none
@@ -235,7 +235,7 @@ Assets: no
 Merged: 240cb52
 
 ## desert-ground: The desert's ground after the concept art
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-ground/task.md
 Depends on: perspective-surface-detail, desert-sky
