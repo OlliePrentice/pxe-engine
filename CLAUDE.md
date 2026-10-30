@@ -26,6 +26,8 @@ tools/build.sh release game -- --hour 21 --foxes 3    # build, then run the game
 tools/build.sh release desert -- --hour 18            # build, then run the desert game
 tools/build.sh release example -- --capture out.png   # build, then run the example
 ```
+`PXE_SHADERS` in `engine/CMakeLists.txt` is sorted in plain byte order (`.` before `_`, so `mesh.vert` comes before `mesh_perspective.frag`).
+
 The binaries are `build/<config>/game/pxe`, `build/<config>/desert/pxe_desert` and `build/<config>/examples/minimal/pxe_minimal`. Run from the caller's directory, so relative output paths land there.
 
 For a clean check, reconfigure and recompile everything (`--fresh` alone keeps the object files, so it is not a clean build):

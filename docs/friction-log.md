@@ -51,9 +51,9 @@ Action: tools/README.md's ortho-check row says the printed base directory holds 
 ## F-005: Verification greps that the required code itself fails
 Kind: instruction-gap
 Status: actioned
-Seen: render-mode-split (2026-10-29)
+Seen: render-mode-split (2026-10-29), desert-settings-menu (2026-10-30, developer: the `ImGui` grep over `desert/src` matched comments in the spec's own binding `settings.hpp` and `main.cpp` sketch; reworded to pass)
 Detail: The spec's "no output" grep for generic words (perspective, haze) over files the spec required to stay as main's could never be empty: main's own text matched. It took a replan.
-Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": run every "no output" grep in a spec's Verification against the code the spec keeps (main, or the files restored from it) before queueing it, and grep for the identifiers the change adds rather than generic words (retro workflow commit).
+Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": run every "no output" grep in a spec's Verification against the code the spec keeps (main, or the files restored from it) before queueing it, and grep for the identifiers the change adds rather than generic words (retro workflow commit). 2026-10-30 retro: the greps also run against the spec's own binding code and sketches, comments included.
 
 ## F-006: Splitting a source file by line ranges, keeping moved code byte-identical
 Kind: tool
@@ -240,9 +240,9 @@ Action: `glb.read` in `tools/glb.py` walks the chunks with the padding, and desi
 ## F-032: A spec's sketch that disagrees with its text
 Kind: instruction-gap
 Status: actioned
-Seen: glb-tool (2026-10-30, developer and orchestrator: the `info` example listed the animations in a different order from the text's "in file order")
+Seen: glb-tool (2026-10-30, developer and orchestrator: the `info` example listed the animations in a different order from the text's "in file order"), perspective-smooth-lighting (2026-10-30, developer and orchestrator: the binding comment on `Lighting::sunDir` said it follows the moon while §2 and Decisions set it to the sun only, costing a cycle; the binding `bindLit` signature had no way to reach `params.actorMaterials`, which its text named)
 Detail: The developer kept file order, rightly, since the sketch wasn't binding, but had to decide which one wins.
-Action: .claude/skills/feature/SKILL.md: a sketch must agree with the rules written around it (retro workflow commit).
+Action: .claude/skills/feature/SKILL.md: a sketch must agree with the rules written around it (retro workflow commit). 2026-10-30 retro: binding examples too, comments included; a binding signature takes every value its text says the function uses; say whether a binding block's comments may be reworded.
 
 ## F-033: `\b` in `git grep -E` matches nothing on this Mac
 Kind: doc-gap
@@ -264,3 +264,17 @@ Status: actioned
 Seen: desert-arms-revision (2026-10-30, designer)
 Detail: The orchestrator's delegation asked for "Revision: 3", but desert-arms-walk had already recorded Revision 3 for the arms. The designer followed the earlier assets.md files and wrote Revision 4.
 Action: none needed: the earlier assets.md files are the record, and the designer read them. Delegations shouldn't restate numbers the task folders already hold.
+
+## F-036: Running a set of captures and `cmp`-ing them, against a base build or twice for determinism
+Kind: tool
+Status: open
+Seen: desert-settings-menu (2026-10-30, docs/tasks/desert-settings-menu/scripts/walk-compare.sh: three `--walk` captures, base build from perspective-check.sh's scratch directory vs the worktree), perspective-smooth-lighting (2026-10-30, docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh: seven captures into the task folder, each run twice and `cmp`-ed)
+Detail: The check tools cover only their fixed cases. Specs ask for extra cases (walks, hours) compared against base, or captures shown deterministic, and each task writes its own loop. walk-compare.sh also needs the full base sha to find the base build.
+Action: none yet (2 sightings). On a third, queue a tooling task: extra cases for `perspective-check.sh`/`ortho-check.sh`, and a "run twice and cmp" mode, building on both scripts.
+
+## F-037: The sort order of `PXE_SHADERS`
+Kind: doc-gap
+Status: actioned
+Seen: perspective-smooth-lighting (2026-10-30, developer)
+Detail: The spec said "in alphabetical order"; whether `mesh.vert` or `mesh_perspective.frag` comes first wasn't written anywhere, and the developer worked it out by sorting.
+Action: CLAUDE.md "Build": `PXE_SHADERS` is sorted in plain byte order (`.` before `_`) (retro commit).
