@@ -1,7 +1,7 @@
 # The desert's sky clouds and dust, and their menu controls
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Turn on the perspective mode's sky clouds (`perspective-sky-clouds`) and dust (`perspective-dust`) in the desert with its starting values. Make the desert's clock drift the sky clouds on the wind, and add a "Sky and dust" section to the settings menu, included in "Print values", so the user can tune the look live, golden hour above all.
@@ -104,3 +104,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30, base c2c6add
