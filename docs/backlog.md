@@ -177,12 +177,19 @@ Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp,
 Assets: no
 
 ## desert-arms-pose: Arms: pointing forward, closer to the body, chunkier gloves
-Status: in-progress
+Status: blocked
 Type: feature
 Spec: docs/tasks/desert-arms-pose/task.md
 Depends on: desert-lighting
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, docs/tasks/desert-arms-pose/
 Assets: yes
+Questions:
+All four come from replan-1.md (docs/tasks/desert-arms-pose/replan-1.md, on branch desert-arms-pose). The designer implemented the spec (scripts/build_arms-pose.patch) and ran the build's full checks (scripts/pose_trials.py; reproduced by the orchestrator): four binding checks fail at the agreed values, and the spec's fallbacks can't fix them. Each answer changes `## Decisions` (and Approach, Assets, criteria, Out of scope as replan-1.md lists).
+- Compass: at the new wrist, 66–72 of the compass face's 216 vertices are below the bottom edge, even in the planning trial's own pose. Options: (a) slide it toward the hand along the cuff, (b) a different mount angle, (c) keep the wrist higher than −0.330. I'd pick (a).
+- Sprint: Arms_Sprint's top reaches NDC y −0.175 to −0.238 over the allowed wrist z (limit −0.30), so it needs a wrist z of about −0.185. Options: (a) lower the wrist that far (undoes "a little higher"), (b) lower the sprint's lift/bob now, ahead of desert-arms-motion, (c) relax the limit for the sprint until desert-arms-motion. I'd pick (b).
+- Palm vs cuff: the 15% bulkier palm's wrist ring pokes out of the cuff at every cuff bulk up to 1.20. Options: (a) spare the palm's wrist ring from the bulk, so the glove tapers into the cuff, (b) lengthen the cuff forward. I'd pick (a).
+- Gauge vs cuff: the 1.10 cuff hides readout dots at every gauge position in the search. With the cuff at 1.0 the gauge passes at GAUGE_S −0.0385, GAUGE_TURN 0.55. Options: (a) CUFF_BULK 1.0 (fine if the palm answer is (a)), (b) more GAUGE_TURN steps at −0.0485, (c) another placement. Also, past −0.0535 the toggles fall off the bracer plate: extend the plate's wrist end, or shift the whole bracer? I'd pick (a), and extend the plate. Also accept the 12 extra triangles from the stitches following the bulk (the spec says none)? I'd accept them.
+- Whatever the answers, rerun pose_trials.py against them and require every check to pass before the spec is revised.
 
 ## desert-arms-gear: Arms: gear and palette after the concept art
 Status: queued
