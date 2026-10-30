@@ -1,7 +1,7 @@
 # The desert's ground after the concept art
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Rework the desert's ground toward `desert/docs/concept/wanderers.png`:
@@ -174,3 +174,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base c5d362b
