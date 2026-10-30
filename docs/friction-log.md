@@ -162,10 +162,10 @@ Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": a tempo
 
 ## F-021: Clipping captures by temporary source edits to the desert's spawn
 Kind: tool
-Status: open
+Status: actioned
 Seen: desert-arms (2026-10-29), desert-arms-detail (2026-10-29)
 Detail: Both tasks moved the desert's spawn (`kSpawn`) and pitch by temporary edits to desert/src/main.cpp, rebuilt, captured and reverted. `pxe_desert` has no flag for the spawn pose. A third sighting queues a tooling task (likely `--spawn X,Z` and `--pitch` flags, or a script).
-Action: none yet (two sightings).
+Action: folded into F-038 (the general temporary-edit capture loop): `tools/captures.sh --edit` (task `capture-tool`, queued 2026-10-30) covers spawn-pose edits.
 
 ## F-022: Headless Blender exits 0 when the build script fails
 Kind: doc-gap
@@ -204,10 +204,10 @@ Action: tooling task glb-tool queued (`tools/glb.py`: `read`, `accessor`, `node_
 
 ## F-027: Where the view model is in a capture
 Kind: tool
-Status: open
-Seen: desert-arms-detail (2026-10-29, a pixel diff against arms-day.png, by hand), desert-arms-walk (2026-10-30, docs/tasks/desert-arms-walk/scripts/arm_rows.py)
+Status: actioned
+Seen: desert-arms-detail (2026-10-29, a pixel diff against arms-day.png, by hand), desert-arms-walk (2026-10-30, docs/tasks/desert-arms-walk/scripts/arm_rows.py), view-model-edges (2026-10-29, docs/tasks/view-model-edges/scripts/diff_box.py, found at the retro of 2026-10-30), desert-lighting (2026-10-30, docs/tasks/desert-lighting/scripts/png-diff.py: mean per-channel change over the ground)
 Detail: Both tasks found the arms' top row and extent by diffing one capture against another. arm_rows.py needs a render without the arms, which takes a temporary edit of `arms.pose` in desert/src/main.cpp, because pxe_desert has no flag to hide them. Related to F-021 (temporary edits for the spawn pose). A third sighting queues a tooling task (likely a capture flag that hides the arms, and a tool that reports the difference's box).
-Action: none yet (two sightings).
+Action: four copies of "how do two captures differ": queued tooling task `png-diff-tool` (`tools/png-diff.py`: count, box, halves, mean change, region, mask), 2026-10-30. A flag to hide the arms stays out of scope until a task needs it again.
 
 ## F-028: A batch cut short after a task's merge
 Kind: instruction-gap
@@ -267,10 +267,10 @@ Action: none needed: the earlier assets.md files are the record, and the designe
 
 ## F-036: Running a set of captures and `cmp`-ing them, against a base build or twice for determinism
 Kind: tool
-Status: open
-Seen: desert-settings-menu (2026-10-30, docs/tasks/desert-settings-menu/scripts/walk-compare.sh: three `--walk` captures, base build from perspective-check.sh's scratch directory vs the worktree), perspective-smooth-lighting (2026-10-30, docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh: seven captures into the task folder, each run twice and `cmp`-ed)
+Status: actioned
+Seen: desert-settings-menu (2026-10-30, docs/tasks/desert-settings-menu/scripts/walk-compare.sh: three `--walk` captures, base build from perspective-check.sh's scratch directory vs the worktree), perspective-smooth-lighting (2026-10-30, docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh: seven captures into the task folder, each run twice and `cmp`-ed), desert-lighting (2026-10-30, developer: three captures each twice by hand, and a no-bounce capture `cmp`-ed against the base's from the check script's scratch directory), perspective-sky-clouds (2026-10-30, developer: three captures pairwise `cmp`-ed by hand)
 Detail: The check tools cover only their fixed cases. Specs ask for extra cases (walks, hours) compared against base, or captures shown deterministic, and each task writes its own loop. walk-compare.sh also needs the full base sha to find the base build.
-Action: none yet (2 sightings). On a third, queue a tooling task: extra cases for `perspective-check.sh`/`ortho-check.sh`, and a "run twice and cmp" mode, building on both scripts.
+Action: queued tooling task `capture-tool` (`tools/captures.sh`: a cases file, `--twice`, `--base` with `--expect`, `--distinct`, `--edit`), 2026-10-30. A separate tool rather than flags on the check scripts, so their fixed cases stay as they are.
 
 ## F-037: The sort order of `PXE_SHADERS`
 Kind: doc-gap
@@ -278,3 +278,24 @@ Status: actioned
 Seen: perspective-smooth-lighting (2026-10-30, developer)
 Detail: The spec said "in alphabetical order"; whether `mesh.vert` or `mesh_perspective.frag` comes first wasn't written anywhere, and the developer worked it out by sorting.
 Action: CLAUDE.md "Build": `PXE_SHADERS` is sorted in plain byte order (`.` before `_`) (retro commit).
+
+## F-038: Temporary source edit, rebuild, capture, restore
+Kind: tool
+Status: actioned
+Seen: desert-arms (2026-10-29), desert-arms-detail (2026-10-29) (both as F-021), perspective-sky-clouds (2026-10-30, developer: three cover edits to examples/minimal/main.cpp by `sed`; one rebuild after an in-place edit didn't take, so two captures came out identical until redone), desert-lighting (2026-10-30, developer: the no-bounce edit to desert/src/world.cpp, rebuilt, captured, restored and touched)
+Detail: Verification steps prove a change by a temporary edit, and each task applies it, rebuilds, captures, restores and touches by hand. A stale build after an edit is easy to miss (F-020).
+Action: queued tooling task `capture-tool` (`tools/captures.sh --edit <file> <old> <new>`: exact-text edit, touched, restored and touched on exit or interrupt), 2026-10-30.
+
+## F-039: Running the check scripts' base build by hand
+Kind: doc-gap
+Status: actioned
+Seen: desert-lighting (2026-10-30, developer: found the base binaries' path in perspective-check.sh's source to compare a no-bounce capture with the base)
+Detail: tools/README.md said so for `ortho-check.sh` only; the `perspective-check.sh` row said "the same base build" without the path.
+Action: tools/README.md's `perspective-check.sh` row names the base binaries' directory and that the base's captures stay in the run directory's `base/` (retro commit).
+
+## F-040: An ImGui widget ID that must survive a label change
+Kind: instruction-gap
+Status: actioned
+Seen: desert-lighting (2026-10-30, developer and orchestrator: the spec gave `"Sun##c"`/`"Moon##c"` and said the IDs stay the same; ImGui hashes the whole label when it has `##`, and only the part after `###` when it has `###`)
+Detail: The developer had to read imgui.cpp to resolve a contradiction inside the spec; it chose `###`, which meets the spec's stated intent.
+Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": when a spec states how a library call behaves (an ID, an order, a flag's effect), check the library; for ImGui, a label whose ID must stay fixed while its text changes uses `###<id>` (retro workflow commit).

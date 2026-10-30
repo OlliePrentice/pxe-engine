@@ -142,6 +142,22 @@ Touches: engine/include/pxe/scene.hpp, engine/src/scene.cpp, engine/include/pxe/
 Assets: no
 Merged: 3eaf280
 
+## capture-tool: A capture runner: sets of captures, twice, against a base, under a temporary edit
+Status: queued
+Type: tooling
+Spec: docs/tasks/capture-tool/task.md
+Depends on: none
+Touches: tools/captures.sh, tools/README.md, docs/tasks/capture-tool/
+Assets: no
+
+## png-diff-tool: A PNG difference reporter
+Status: queued
+Type: tooling
+Spec: docs/tasks/png-diff-tool/task.md
+Depends on: none
+Touches: tools/png-diff.py, tools/README.md, docs/tasks/png-diff-tool/
+Assets: no
+
 ## perspective-dust: Airborne dust in perspective mode
 Status: queued
 Type: feature
