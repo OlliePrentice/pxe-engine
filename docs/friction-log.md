@@ -243,3 +243,24 @@ Status: actioned
 Seen: glb-tool (2026-10-30, developer and orchestrator: the `info` example listed the animations in a different order from the text's "in file order")
 Detail: The developer kept file order, rightly, since the sketch wasn't binding, but had to decide which one wins.
 Action: .claude/skills/feature/SKILL.md: a sketch must agree with the rules written around it (retro workflow commit).
+
+## F-033: `\b` in `git grep -E` matches nothing on this Mac
+Kind: doc-gap
+Status: actioned
+Seen: desert-arms-revision (2026-10-30, planning)
+Detail: A spec's "no output" grep used `\bBAR\b` with `git grep -nE`. On this Mac's git it matched nothing, even with `BAR = (...)` in the file, so the check would have passed with the identifier still there. Caught by running the grep against the base before queueing, as `/feature` requires; `git grep -w` works.
+Action: CLAUDE.md, shell notes: `git grep -E` doesn't support `\b`; use `-w` or explicit context (retro commit).
+
+## F-034: Running a build script with a constant overridden
+Kind: tool
+Status: open
+Seen: desert-arms-revision (2026-10-30, planning: a trial of `HAND_ROLL` 90 by `sed` on a scratch copy of build_arms.py, with `HERE` pinned to the repo), desert-arms-revision (2026-10-30, designer: negative runs of the new checks the same way, with `PXE_SKIP_EXPORT=1`)
+Detail: Trying a value, or proving a check fails, means copying `desert/tools/blender/build_arms.py` to scratch, `sed`-editing a constant (and `HERE`, so the copy still finds the repo's paths), and running it headless. Two sightings so far, both in one task; a third queues a tooling task (likely a `PXE_OVERRIDE=NAME=value` hook in the build scripts, or a wrapper in `tools/`).
+Action: none yet.
+
+## F-035: The orchestrator named the wrong assets.md revision number
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-revision (2026-10-30, designer)
+Detail: The orchestrator's delegation asked for "Revision: 3", but desert-arms-walk had already recorded Revision 3 for the arms. The designer followed the earlier assets.md files and wrote Revision 4.
+Action: none needed: the earlier assets.md files are the record, and the designer read them. Delegations shouldn't restate numbers the task folders already hold.
