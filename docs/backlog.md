@@ -143,7 +143,7 @@ Assets: no
 Merged: 3eaf280
 
 ## capture-tool: A capture runner: sets of captures, twice, against a base, under a temporary edit
-Status: queued
+Status: in-progress
 Type: tooling
 Spec: docs/tasks/capture-tool/task.md
 Depends on: none
@@ -159,7 +159,7 @@ Touches: tools/png-diff.py, tools/README.md, docs/tasks/png-diff-tool/
 Assets: no
 
 ## perspective-dust: Airborne dust in perspective mode
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/perspective-dust/task.md
 Depends on: perspective-sky-clouds
@@ -175,7 +175,7 @@ Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp,
 Assets: no
 
 ## desert-arms-pose: Arms: pointing forward, closer to the body, chunkier gloves
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms-pose/task.md
 Depends on: desert-lighting
