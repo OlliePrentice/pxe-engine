@@ -25,9 +25,10 @@ struct Clock {
   float windDegrees = 20.f;     // direction the wind blows toward, compass-style
   float windStrength = 1.f;     // how fast it drifts the clouds
   glm::vec2 cloudOffset{0.f};
+  glm::vec2 skyCloudOffset{0.f};  // metres the sky clouds have drifted
 
-  // Advance by `dt` real seconds: the hour and the clouds' drift, both held
-  // while paused.
+  // Advance by `dt` real seconds: the hour, the ground clouds' drift and the
+  // sky clouds' drift, all held while paused.
   void advance(float dt);
   // Unit vector, world XZ, the wind blows toward.
   glm::vec2 windDir() const;

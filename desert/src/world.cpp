@@ -213,6 +213,11 @@ World buildWorld() {
   scene.groundBounceStrength[pxe::kPhaseTwilight] = 0.05f;
   scene.groundBounce[pxe::kPhaseNight] = rgb(60, 65, 85);
   scene.groundBounceStrength[pxe::kPhaseNight] = 0.03f;
+  // the desert's sky: two streaky cloud layers, high and low, and a little airborne dust
+  scene.skyClouds[0].cover = 0.40f;
+  scene.skyClouds[0].opacity = 0.55f;
+  scene.skyClouds[1].cover = 0.25f;
+  scene.dustDensity = 0.4f;
   // The sun rises on the right of the spawn's view (it looks along +z),
   // peaks behind it toward -z, and sets on the left, so through the
   // afternoon the palm's shadow falls across the sand to the view's right.
