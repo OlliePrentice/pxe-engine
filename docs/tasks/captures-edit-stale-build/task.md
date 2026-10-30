@@ -1,7 +1,7 @@
 # captures.sh: rebuild the edited file after its edit and after its restore
 Type: fix
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 `tools/captures.sh --edit` can capture from a stale binary. The presets build with Unix Makefiles, and macOS `make` compares timestamps to the whole second. A desert capture takes under a second, so the restore's `touch` on exit often lands in the same second as the edited file's compile, and the next build (the next `captures.sh` run, or the developer's) skips the file and keeps the edit in the binary. The same happens to an edit applied within a second of the previous restore. Seen in `perspective-surface-detail` (2026-10-30): an unedited `off.png` came out byte-identical to the previous edit's `terminator.png`; `world.cpp` was touched at .605 s and its object compiled at .053 s of the same second. Friction log F-045.
@@ -44,3 +44,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base c5d362b
