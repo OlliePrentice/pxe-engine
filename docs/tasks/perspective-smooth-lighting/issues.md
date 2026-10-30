@@ -1,7 +1,7 @@
 # Issues
 
 ## ISSUE-001: Lighting::sunDir's comment says it follows the moon
-Status: fixed
+Status: resolved
 Severity: minor
 Source: review
 Found in cycle: 1

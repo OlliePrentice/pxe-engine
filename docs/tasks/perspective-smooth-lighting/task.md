@@ -1,6 +1,6 @@
 # Smooth lighting in perspective mode
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -280,13 +280,13 @@ Run in the task's worktree, against the cycle base:
    - No orthographic code reads any new `Lighting` field.
 
 ## Acceptance criteria
-- [ ] `Scene` and `Lighting` have the binding fields with the defaults in Decisions. `Scene::albedo` defaults to each surface's day mid band, and `lightingAt` fills the new `Lighting` fields as §2 says.
-- [ ] Perspective mode draws meshes with `mesh_perspective.frag` + `lit_perspective.glsl` implementing the binding lit model, soft shadow (16 fixed taps, receiver-plane bias), continuous cloud shade, the softened horizon ridge, linear lighting with an sRGB write, exposure and clamp. Actors use their colour as albedo, and glow materials stay unlit.
-- [ ] `backdrop.frag` draws the continuous gradient, sun glow and soft sun disc as specified. `edge_perspective.frag`'s haze is exponential, full at the far plane, and glows toward the sun. Its edges are otherwise unchanged.
-- [ ] `testColours` in perspective shows the sun, fill and bounce terms as red, green and blue on white.
-- [ ] `Renderer::render`'s perspective contract and `FirstPersonCamera::setFarPlane`'s comment describe the new behaviour, including the dropped indoor, dark-region and firelight lighting.
-- [ ] Verification 2, 3 and 5 pass. Verification 4's three cases run and differ. Verification 6's captures are in the task folder, deterministic, and described.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `Scene` and `Lighting` have the binding fields with the defaults in Decisions. `Scene::albedo` defaults to each surface's day mid band, and `lightingAt` fills the new `Lighting` fields as §2 says. — `scene.hpp`/`scene.cpp` (`Scene::Scene` sets the Decisions table, `albedo[s] = palette[kPhaseDay][s].band[1]`); `lighting.hpp`/`lightingAt` fill `sunLight`, `skyFillLight`, `bounceLight`, `sunDir`, `sunGlowColour`, `phaseWeight` and the single values.
+- [x] Perspective mode draws meshes with `mesh_perspective.frag` + `lit_perspective.glsl` implementing the binding lit model, soft shadow (16 fixed taps, receiver-plane bias), continuous cloud shade, the softened horizon ridge, linear lighting with an sRGB write, exposure and clamp. Actors use their colour as albedo, and glow materials stay unlit. — `renderer_perspective.cpp` `progMesh_ = progMeshLit_` with `bindLit`; `lit_perspective.glsl` `litColour`, `softVisible` (16 Poisson taps, receiver-plane bias), continuous `cloudShade`, smoothstep `horizonLight`, `toSrgb`; `mesh_perspective.frag` glow actors unlit.
+- [x] `backdrop.frag` draws the continuous gradient, sun glow and soft sun disc as specified. `edge_perspective.frag`'s haze is exponential, full at the far plane, and glows toward the sun. Its edges are otherwise unchanged. — `backdrop.frag` `sunGlowAt` + disc, no `kBands`; `edge_perspective.frag` `distanceHaze` exponential with far-plane ramp and sun glow; edge code otherwise untouched.
+- [x] `testColours` in perspective shows the sun, fill and bounce terms as red, green and blue on white. — `bindLit`: with `testColours` albedo white, sun (1,0,0), fill (0,1,0), bounce (0,0,1).
+- [x] `Renderer::render`'s perspective contract and `FirstPersonCamera::setFarPlane`'s comment describe the new behaviour, including the dropped indoor, dark-region and firelight lighting. — `renderer.hpp` perspective `render()` comment lists indoor window and fill light, dark regions, firelight as unsupported; `first_person_camera.hpp` `setFarPlane` comment updated.
+- [x] Verification 2, 3 and 5 pass. Verification 4's three cases run and differ. Verification 6's captures are in the task folder, deterministic, and described. — Orchestrator: ortho-check 6/6 identical; protected-file diff empty; greps empty; perspective-check 3 cases run and differ; seven captures in the task folder, d1818 re-rendered and cmp-identical; described in handoff.
+- [x] Project builds cleanly from a fresh build directory with CMake — Orchestrator fresh `check` build (cycle 2): only the stb_image_write `sprintf` warning.
 
 ## Assets
 None.
@@ -305,3 +305,13 @@ None.
 - Cycle 1, 2026-10-30: base 1722db0
 - Cycle 1 review, 2026-10-30: build, verification 2-6 pass (orchestrator: ortho 6/6, perspective 3 run and differ, d1818 deterministic); ISSUE-001 (minor, comment).
 - Cycle 2, 2026-10-30: base eb84614; outstanding ISSUE-001
+- Cycle 2 review, 2026-10-30: ISSUE-001 resolved (comment only; dev ran ortho 6/6 and perspective 3/3 identical vs cycle base); fresh build passes.
+
+## Playtest checklist
+- `pxe_desert` at the default hour: dunes shade continuously (no bands), sunlit slopes warm and turned-away slopes cooler; the palm's shadow has a soft edge.
+- Turn toward the sun at `--hour 7` and `--hour 18.3`: the sky brightens into a glow round the sun with a small soft disc, and distant sand on that side hazes toward the sun's colour. Nothing like it at `--hour 21` (no moon disc).
+- Walk toward the edge: distance fades smoothly into the horizon colour from close in, and the end of the ground never shows.
+- The arms keep their outlines and rims; the gauge's LCD and lamp stay full colour. Their colours read differently from before (expected).
+- In the settings menu (Tab): Test colours shows the sun term red, fill green and bounce blue on white; cloud cover gives soft-edged cloud shadows; the clock running through dusk and night changes the light smoothly.
+- `pxe_minimal --first-person`: the stone, tree and ground are lit smoothly with soft shadows.
+- The orthographic game (`pxe`) looks exactly as before.
