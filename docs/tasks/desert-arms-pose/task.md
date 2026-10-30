@@ -1,6 +1,6 @@
 # Arms: pointing forward, closer to the body, chunkier gloves
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -59,12 +59,12 @@ Run in the task's worktree, against the cycle base:
 8. `git diff <cycle base> -- desert/tools/blender/build_arms.py` matches `build_arms-unblock.patch` apart from the docstring: `git apply --check -R docs/tasks/desert-arms-pose/scripts/build_arms-unblock.patch` passes on the result.
 
 ## Acceptance criteria
-- [ ] `HAND_YAW` −8.0, `HAND_PITCH` 4.0, `HAND_ROLL` 90.0. `WRIST` is (0.200, −0.330, −0.150). `GLOVE_BULK` 1.15 is applied as Approach §2 says, sparing `PALM`'s first ring; `CUFF` is applied unscaled.
-- [ ] `GAUGE_S` −0.035, `GAUGE_TURN` 0.55, `BRACER_S` (−0.160, −0.020), `COMPASS_STRAP` (−0.0155, −0.011, −0.0065), as constants with no search in the build.
-- [ ] `Arms_Sprint` has `lift` 0.0 and `bob` 0.020 in `CLIPS`, and `mean` 0.0 and `bob` 0.020 in `CLIP_TARGETS`; every other `CLIPS` and `CLIP_TARGETS` value is as shipped.
-- [ ] Every existing build check passes with today's values. Materials, joints, clip names and lengths, and key counts are as shipped.
-- [ ] Verification 2–8 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `HAND_YAW` −8.0, `HAND_PITCH` 4.0, `HAND_ROLL` 90.0. `WRIST` is (0.200, −0.330, −0.150). `GLOVE_BULK` 1.15 is applied as Approach §2 says, sparing `PALM`'s first ring; `CUFF` is applied unscaled. — build_arms.py constants, from build_arms-unblock.patch (Verification 8 reverse-apply passes); GLOVE_BULK in Side finger frames, gloves() PALM rings 1+, thumb _segments; CUFF unscaled
+- [x] `GAUGE_S` −0.035, `GAUGE_TURN` 0.55, `BRACER_S` (−0.160, −0.020), `COMPASS_STRAP` (−0.0155, −0.011, −0.0065), as constants with no search in the build. — build_arms.py constants; diff vs base+patch is docstrings only, no search
+- [x] `Arms_Sprint` has `lift` 0.0 and `bob` 0.020 in `CLIPS`, and `mean` 0.0 and `bob` 0.020 in `CLIP_TARGETS`; every other `CLIPS` and `CLIP_TARGETS` value is as shipped. — CLIPS / CLIP_TARGETS in build_arms.py, from the patch
+- [x] Every existing build check passes with today's values. Materials, joints, clip names and lengths, and key counts are as shipped. — headless build exit 0 (c38792c); glb.py info: 15 materials, 39 joints, 2 clips 1.0 s 31 keys; 16,396 tris
+- [x] Verification 2–8 pass. — V2 cmp-identical; V3 glb.py info; V4 ortho 6/6, perspective example identical, both desert differ; V5 empty; V6 captures.sh --twice; V7 assets.md table equals trial; V8 apply -R OK
+- [x] Project builds cleanly from a fresh build directory with CMake — check preset --fresh --clean-first: only stb sprintf warning
 
 ## Assets
 - **arms** (revised): `desert/assets/characters/arms.glb`, rebuilt by `desert/tools/blender/build_arms.py`, with all six previews rewritten.
@@ -89,6 +89,13 @@ Run in the task's worktree, against the cycle base:
 - Moving the shoulders; moving the compass other than along its strap's line (Decisions); joints renamed or added.
 - Engine or game code.
 
+## Playtest checklist
+`tools/build.sh release desert`, then:
+- At rest: hands point mostly forward, palms facing, thumbs up, wrists nearly straight; gloves look chunkier and taper into the cuffs; little forearm shows.
+- The gauge's "47%" readout (left wrist) and the compass face (right wrist) are wholly in view and readable while standing still.
+- Walk (W) and sprint (Shift): the arms never rise above the lower third of the view; the sprint bobs without lifting the hands. Known: mid-walk the gauge, and mid-sprint the compass, dip below the bottom edge (left for desert-arms-motion).
+- Golden hour (`--hour 18`): gloves, gauge and compass read clearly.
+
 ## Spec revisions
 - **Unblock of replan 1, 2026-10-30, user decisions** (replan-1.md's four failures). Compass: slides toward the hand along the cuff (replan option 1a). Sprint: `lift` and `bob` lowered now (2b). Palm vs cuff: `PALM`'s wrist ring spared from the bulk (3a). Gauge vs cuff: no cuff bulk (4a). Bracer: the plate's wrist end extends (4, plate). Triangles: the 12 extra from the stitches accepted (5). Compass fallback: 5 mm steps along the strap, blocking if none passes. The planner ran every search through the build's whole `check()` and `clip_checks()` (`scripts/unblock_trials.py`) and fixed the results as constants. Changed: Goal, Decisions (Placement z −0.150, Chunkier gloves, gauge, bracer, compass, walk fallback, sprint, fixed constants), Approach, Verification 7–8, Acceptance criteria, Assets, Out of scope. Knock-on: `desert-arms-gear`'s vambrace length range becomes 0.12–0.15 m (user), because this plate is now 0.140 m.
 
@@ -97,3 +104,4 @@ Run in the task's worktree, against the cycle base:
 - Cycle 1, 2026-10-30: designer returned NEEDS INPUT (5f8386c): four binding checks fail at the spec's values and its fallbacks can't recover them (gauge readout, compass in view, palm vs cuff, sprint framing); reproduced by the orchestrator. Fixes change Decisions: blocked, see replan-1.md.
 - Unblocked: 2026-10-30, replan 1 answered by the user; values fixed from a full-check trial (build_arms-unblock.patch)
 - Cycle 2, 2026-10-30: base e9a5b3c (run branch merged in at e9a5b3c so captures show today's desert; build_arms.py unchanged by the merge)
+- Cycle 2, 2026-10-30: designer c38792c, every check passes at the fixed values; orchestrator build, V4, V5, V8 pass, no issues. Complete.
