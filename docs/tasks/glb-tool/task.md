@@ -1,6 +1,6 @@
 # A shared glb reader and checker
 Type: tooling
-Status: open
+Status: complete
 Cycle: 1
 
 ## Goal
@@ -166,3 +166,10 @@ None.
 ## Cycle log
 - Cycle 1, 2026-10-30: base 5548df0.
 - Cycle 1 review: fresh build and Verification 1-9 pass; ISSUE-001 wont-fix (gitignore-pycache queued).
+
+## Playtest checklist
+Not a game change: nothing to play. To try the tool:
+- `tools/glb.py info desert/assets/characters/arms.glb`: the 14 materials, the 39-joint skin, both clips and `total triangles: 15844`.
+- `tools/glb.py info assets/characters/fox.glb`: the fox's clips and its triangle count.
+- `tools/glb.py compare <old.glb> <new.glb>` after an asset rebuild: `glb compare: identical` (exit 0) when the rig, materials and rest mesh were kept.
+- In a Blender script: `sys.path.insert(0, "<repo>/tools"); import glb; glb.read(...)`.
