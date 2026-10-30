@@ -89,7 +89,7 @@ Assets: no
 Merged: 0476111
 
 ## gitignore-pycache: Ignore Python bytecode caches
-Status: queued
+Status: in-progress
 Type: fix
 Spec: docs/tasks/gitignore-pycache/task.md
 Depends on: none
