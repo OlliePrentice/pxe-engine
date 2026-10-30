@@ -151,6 +151,14 @@ Touches: tools/captures.sh, tools/README.md, docs/tasks/capture-tool/
 Assets: no
 Merged: 96fbfa8
 
+## blender-override-tool: Run a Blender build script with constants overridden
+Status: queued
+Type: tooling
+Spec: docs/tasks/blender-override-tool/task.md
+Depends on: none
+Touches: tools/blender-override.py, tools/README.md, docs/tasks/blender-override-tool/
+Assets: no
+
 ## png-diff-tool: A PNG difference reporter
 Status: queued
 Type: tooling

@@ -205,7 +205,7 @@ Action: tooling task glb-tool queued (`tools/glb.py`: `read`, `accessor`, `node_
 ## F-027: Where the view model is in a capture
 Kind: tool
 Status: actioned
-Seen: desert-arms-detail (2026-10-29, a pixel diff against arms-day.png, by hand), desert-arms-walk (2026-10-30, docs/tasks/desert-arms-walk/scripts/arm_rows.py), view-model-edges (2026-10-29, docs/tasks/view-model-edges/scripts/diff_box.py, found at the retro of 2026-10-30), desert-lighting (2026-10-30, docs/tasks/desert-lighting/scripts/png-diff.py: mean per-channel change over the ground)
+Seen: desert-arms-detail (2026-10-29, a pixel diff against arms-day.png, by hand), desert-arms-walk (2026-10-30, docs/tasks/desert-arms-walk/scripts/arm_rows.py), view-model-edges (2026-10-29, docs/tasks/view-model-edges/scripts/diff_box.py, found at the retro of 2026-10-30), desert-lighting (2026-10-30, docs/tasks/desert-lighting/scripts/png-diff.py: mean per-channel change over the ground), perspective-dust (2026-10-30, developer: inline Pillow count of changed pixels, their neighbours and rows)
 Detail: Both tasks found the arms' top row and extent by diffing one capture against another. arm_rows.py needs a render without the arms, which takes a temporary edit of `arms.pose` in desert/src/main.cpp, because pxe_desert has no flag to hide them. Related to F-021 (temporary edits for the spawn pose). A third sighting queues a tooling task (likely a capture flag that hides the arms, and a tool that reports the difference's box).
 Action: four copies of "how do two captures differ": queued tooling task `png-diff-tool` (`tools/png-diff.py`: count, box, halves, mean change, region, mask), 2026-10-30. A flag to hide the arms stays out of scope until a task needs it again.
 
@@ -253,10 +253,10 @@ Action: CLAUDE.md, shell notes: `git grep -E` doesn't support `\b`; use `-w` or 
 
 ## F-034: Running a build script with a constant overridden
 Kind: tool
-Status: open
-Seen: desert-arms-revision (2026-10-30, planning: a trial of `HAND_ROLL` 90 by `sed` on a scratch copy of build_arms.py, with `HERE` pinned to the repo), desert-arms-revision (2026-10-30, designer: negative runs of the new checks the same way, with `PXE_SKIP_EXPORT=1`)
+Status: actioned
+Seen: desert-arms-revision (2026-10-30, planning: a trial of `HAND_ROLL` 90 by `sed` on a scratch copy of build_arms.py, with `HERE` pinned to the repo), desert-arms-revision (2026-10-30, designer: negative runs of the new checks the same way, with `PXE_SKIP_EXPORT=1`), desert-arms-pose (2026-10-30, designer: docs/tasks/desert-arms-pose/scripts/pose_trials.py on branch desert-arms-pose, runpy with constants set in the functions' globals over pose variants)
 Detail: Trying a value, or proving a check fails, means copying `desert/tools/blender/build_arms.py` to scratch, `sed`-editing a constant (and `HERE`, so the copy still finds the repo's paths), and running it headless. Two sightings so far, both in one task; a third queues a tooling task (likely a `PXE_OVERRIDE=NAME=value` hook in the build scripts, or a wrapper in `tools/`).
-Action: none yet.
+Action: third sighting: queued tooling task `blender-override-tool` (`tools/blender-override.py -- <script> NAME=expr ...`), 2026-10-30.
 
 ## F-035: The orchestrator named the wrong assets.md revision number
 Kind: instruction-gap
@@ -268,9 +268,9 @@ Action: none needed: the earlier assets.md files are the record, and the designe
 ## F-036: Running a set of captures and `cmp`-ing them, against a base build or twice for determinism
 Kind: tool
 Status: actioned
-Seen: desert-settings-menu (2026-10-30, docs/tasks/desert-settings-menu/scripts/walk-compare.sh: three `--walk` captures, base build from perspective-check.sh's scratch directory vs the worktree), perspective-smooth-lighting (2026-10-30, docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh: seven captures into the task folder, each run twice and `cmp`-ed), desert-lighting (2026-10-30, developer: three captures each twice by hand, and a no-bounce capture `cmp`-ed against the base's from the check script's scratch directory), perspective-sky-clouds (2026-10-30, developer: three captures pairwise `cmp`-ed by hand)
+Seen: desert-settings-menu (2026-10-30, docs/tasks/desert-settings-menu/scripts/walk-compare.sh: three `--walk` captures, base build from perspective-check.sh's scratch directory vs the worktree), perspective-smooth-lighting (2026-10-30, docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh: seven captures into the task folder, each run twice and `cmp`-ed), desert-lighting (2026-10-30, developer: three captures each twice by hand, and a no-bounce capture `cmp`-ed against the base's from the check script's scratch directory), perspective-sky-clouds (2026-10-30, developer: three captures pairwise `cmp`-ed by hand), perspective-dust (2026-10-30, docs/tasks/perspective-dust/scripts/dust-captures.sh, written before capture-tool merged)
 Detail: The check tools cover only their fixed cases. Specs ask for extra cases (walks, hours) compared against base, or captures shown deterministic, and each task writes its own loop. walk-compare.sh also needs the full base sha to find the base build.
-Action: queued tooling task `capture-tool` (`tools/captures.sh`: a cases file, `--twice`, `--base` with `--expect`, `--distinct`, `--edit`), 2026-10-30. A separate tool rather than flags on the check scripts, so their fixed cases stay as they are.
+Action: queued tooling task `capture-tool` (`tools/captures.sh`: a cases file, `--twice`, `--base` with `--expect`, `--distinct`, `--edit`), 2026-10-30. A separate tool rather than flags on the check scripts, so their fixed cases stay as they are. capture-tool merged 96fbfa8; CLAUDE.md "Verifying a change" points to it (commit ee16c7f).
 
 ## F-037: The sort order of `PXE_SHADERS`
 Kind: doc-gap
@@ -282,7 +282,7 @@ Action: CLAUDE.md "Build": `PXE_SHADERS` is sorted in plain byte order (`.` befo
 ## F-038: Temporary source edit, rebuild, capture, restore
 Kind: tool
 Status: actioned
-Seen: desert-arms (2026-10-29), desert-arms-detail (2026-10-29) (both as F-021), perspective-sky-clouds (2026-10-30, developer: three cover edits to examples/minimal/main.cpp by `sed`; one rebuild after an in-place edit didn't take, so two captures came out identical until redone), desert-lighting (2026-10-30, developer: the no-bounce edit to desert/src/world.cpp, rebuilt, captured, restored and touched)
+Seen: desert-arms (2026-10-29), desert-arms-detail (2026-10-29) (both as F-021), perspective-sky-clouds (2026-10-30, developer: three cover edits to examples/minimal/main.cpp by `sed`; one rebuild after an in-place edit didn't take, so two captures came out identical until redone), desert-lighting (2026-10-30, developer: the no-bounce edit to desert/src/world.cpp, rebuilt, captured, restored and touched), perspective-dust (2026-10-30, same script as F-036)
 Detail: Verification steps prove a change by a temporary edit, and each task applies it, rebuilds, captures, restores and touches by hand. A stale build after an edit is easy to miss (F-020).
 Action: queued tooling task `capture-tool` (`tools/captures.sh --edit <file> <old> <new>`: exact-text edit, touched, restored and touched on exit or interrupt), 2026-10-30.
 
@@ -299,3 +299,31 @@ Status: actioned
 Seen: desert-lighting (2026-10-30, developer and orchestrator: the spec gave `"Sun##c"`/`"Moon##c"` and said the IDs stay the same; ImGui hashes the whole label when it has `##`, and only the part after `###` when it has `###`)
 Detail: The developer had to read imgui.cpp to resolve a contradiction inside the spec; it chose `###`, which meets the spec's stated intent.
 Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": when a spec states how a library call behaves (an ID, an order, a flag's effect), check the library; for ImGui, a label whose ID must stay fixed while its text changes uses `###<id>` (retro workflow commit).
+
+## F-041: A planning trial that measured only some of the build's checks
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-pose (2026-10-30, designer: the spec's pose failed four binding checks: the compass leaves the view even in the trial's own pose, the bulkier palm leaves the cuff, the 1.10 cuff hides the gauge readout at every search step, and the sprint breaks the clip limit at every allowed wrist z; the trial had measured a few framing numbers only)
+Detail: The spec's expected values came from a trial that ran a subset of `check()` and none of `clip_checks()`, and its fallbacks (gauge search, wrist steps) were never run. The spec also said the bracer moves "only as far as it must" without saying how. The task blocked (replan-1.md).
+Action: .claude/skills/feature/SKILL.md, assets in the interview: a planning trial runs the build's whole checks at every value the fallbacks allow, and the spec says how dependent parts follow a moved part (retro workflow commit).
+
+## F-042: Testing a signal trap from a non-interactive shell
+Kind: instruction-gap
+Status: actioned
+Seen: capture-tool (2026-10-30, developer and orchestrator: Verification 7's "start it in the background, kill -INT it" can't reach the trap, since background jobs start with SIGINT ignored; the developer wrote scripts/interrupt-test.py)
+Detail: A spec's verification step assumed shell job control.
+Action: .claude/skills/feature/SKILL.md: a step that signals a process starts it with the default disposition, e.g. from Python's subprocess (retro workflow commit).
+
+## F-043: Parallel tasks racing on the check scripts' shared base build
+Kind: instruction-gap
+Status: actioned
+Seen: capture-tool, perspective-dust, desert-arms-pose (2026-10-30, orchestrator: three tasks would have run the check scripts against the same unbuilt base at once; each `rm -rf`s and rebuilds `${TMPDIR}/pxe-render-check/<sha>` when its binary is missing. Pre-built it before delegating)
+Detail: Nothing in the run skill said to build the shared base first.
+Action: .claude/skills/backlog-run/SKILL.md, "Run the cycles": build the cycle base's base once before the first delegation and tell agents not to delete it (retro workflow commit).
+
+## F-044: runpy.run_path returns a copy of a build script's globals
+Kind: doc-gap
+Status: actioned
+Seen: desert-arms-pose (2026-10-30, designer: the first live trial gave the same numbers for every candidate, because constants were set in the returned copy)
+Detail: Setting `am["GAUGE_S"]` on the dict from `runpy.run_path` doesn't reach the script's functions.
+Action: desert/docs/art-style.md, next to "Never hand-edit the glb": set the functions' own globals, or use `tools/blender-override.py` (retro commit).

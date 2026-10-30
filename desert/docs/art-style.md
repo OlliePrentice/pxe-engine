@@ -18,7 +18,7 @@ The standing style for every asset in the desert game (`desert/`, the `pxe_deser
 
 ## Scenery and props
 Static assets: plants, rocks, buildings and props. The reference asset is the date palm (`desert/tools/blender/build_date_palm.py`).
-- Built by a reproducible Blender Python script in `desert/tools/blender/build_<name>.py` and exported to `desert/assets/scenes/<name>.glb`. The script is the source of truth: build step by step in the user's live Blender session through the Blender MCP so the user can watch, then rebuild and export headless. Never hand-edit the glb.
+- Built by a reproducible Blender Python script in `desert/tools/blender/build_<name>.py` and exported to `desert/assets/scenes/<name>.glb`. The script is the source of truth: build step by step in the user's live Blender session through the Blender MCP so the user can watch, then rebuild and export headless. Never hand-edit the glb. To run a build script with a constant changed (a trial, or proving a check fails), don't set it in the dict `runpy.run_path` returns: that is a copy of the script's globals, and its functions keep reading the originals. Set it in a function's own globals (`am["main"].__globals__`), or use `tools/blender-override.py` once it exists.
 - Each asset documents its origin. For scenery, that is the base centre at ground level.
 - **Materials** are the engine's surfaces, named as the asset contract lists. The desert uses `Sand` (ground), `Bark` (palm trunks, frond stubs, dates) and `Leaf` (palm fronds). Colours in the .blend are for previews only.
 - **Name what code uses.** Every point and size the code needs, such as a trunk's collision radius, an asset's height and its extent, is printed by the build and recorded in the task's assets.md, in engine coordinates.
