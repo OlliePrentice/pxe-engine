@@ -152,12 +152,13 @@ Assets: no
 Merged: 96fbfa8
 
 ## blender-override-tool: Run a Blender build script with constants overridden
-Status: in-progress
+Status: done
 Type: tooling
 Spec: docs/tasks/blender-override-tool/task.md
 Depends on: none
 Touches: tools/blender-override.py, tools/README.md, docs/tasks/blender-override-tool/
 Assets: no
+Merged: 087a0f1
 
 ## png-diff-tool: A PNG difference reporter
 Status: queued
@@ -177,12 +178,13 @@ Assets: no
 Merged: 135a6e3
 
 ## desert-sky: The desert's sky clouds and dust, and their menu controls
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-sky/task.md
 Depends on: perspective-dust, desert-lighting
 Touches: desert/src/world.cpp, desert/src/settings.hpp, desert/src/settings.cpp, docs/tasks/desert-sky/
 Assets: no
+Merged: 73ba6c1
 
 ## desert-arms-pose: Arms: pointing forward, closer to the body, chunkier gloves
 Status: blocked
