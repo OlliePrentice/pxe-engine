@@ -49,7 +49,7 @@ void Player::update(const PlayerInput& in, float dt) {
   glm::vec2 xz{eye.x, eye.z};
   const glm::vec2 before = xz;
   if (amount > 0.f) {
-    xz += move * (in.sprint ? kSprintSpeed : kWalkSpeed) * dt;
+    xz += move * (in.sprint ? sprintSpeed : walkSpeed) * dt;
     // Each axis held separately at the edge, so walking into it slides
     // along it.
     xz = glm::clamp(xz, glm::vec2{-kPlayHalf}, glm::vec2{kPlayHalf});

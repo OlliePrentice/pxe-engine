@@ -9,7 +9,7 @@ namespace desert {
 
 // The player is an eye. Its arms are drawn attached to the view (arms.hpp); it has no body or tools.
 constexpr float kEyeHeight = 1.7f;  // metres above the ground, at real scale
-constexpr float kWalkSpeed = 3.5f;  // metres a second
+constexpr float kWalkSpeed = 3.5f;  // metres a second: the defaults of Player::walkSpeed and sprintSpeed
 constexpr float kSprintSpeed = 6.f;
 constexpr float kMaxPitch = 85.f * 3.14159265358979323846f / 180.f;  // up or down
 // The player is held inside the middle 160 x 160 m of the ground.
@@ -34,6 +34,10 @@ struct Player {
   glm::vec3 eye{0.f};
   float yaw = 0.f;    // as FirstPersonCamera's: 0 looks along +z, larger turns left
   float pitch = 0.f;  // positive looks down
+  // Metres a second walking and sprinting: the settings menu's, kWalkSpeed
+  // and kSprintSpeed unless it changes them. sprintSpeed > walkSpeed.
+  float walkSpeed = kWalkSpeed;
+  float sprintSpeed = kSprintSpeed;
   // How far the eye moved over the ground in the last update, metres:
   // across it only, after the trunk and the play area's edge held it.
   float moved = 0.f;

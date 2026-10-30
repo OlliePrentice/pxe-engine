@@ -4,11 +4,16 @@
 //
 // Keyboard and mouse: the mouse looks, WASD walks, Shift sprints. The cursor
 // is held while playing; Escape lets it go, Escape again quits, and a click
-// in the window takes it back. Gamepad: the left stick walks, the right
-// stick looks, and the left stick pressed in sprints while held.
+// in the window takes it back. Tab opens and closes the settings menu (the
+// clock, clouds and wind, the player's speeds and view, the arms, and the
+// rendering switches), which frees the cursor while it is open and stops the
+// player looking and walking; Escape closes the menu first, and leaves the
+// cursor free. Gamepad: the left stick walks, the right stick looks, the left
+// stick pressed in sprints while held, and Start opens and closes the menu.
 
 #include "arms.hpp"
 #include "player.hpp"
+#include "settings.hpp"
 #include "world.hpp"
 
 #include "pxe/config.hpp"
@@ -16,9 +21,11 @@
 #include "pxe/image.hpp"
 #include "pxe/input.hpp"
 #include "pxe/lighting.hpp"
+#include "pxe/overlay.hpp"
 #include "pxe/renderer.hpp"
 #include "pxe/window.hpp"
 
+#include <glm/trigonometric.hpp>
 #include <glm/vec2.hpp>
 
 #include <algorithm>
@@ -27,6 +34,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -51,6 +59,7 @@ struct Options {
   float hour = kHour;
   float walk = 0.f;     // seconds walked from the spawn before a capture
   bool sprint = false;  // that walk is a sprint
+  bool menu = false;    // play starts with the settings menu open
 };
 
 void printUsage(std::FILE* out) {
@@ -61,10 +70,12 @@ void printUsage(std::FILE* out) {
                "  --hour H                 time of day, 0-24 (default %.4g); the clock doesn't run\n"
                "  --walk S                 walk straight ahead from the spawn for S seconds (0-10) first\n"
                "  --sprint                 with --walk: sprint instead\n"
+               "  --menu                   start with the settings menu open (Tab)\n"
                "  --help                   this list\n"
-               "Play: the mouse looks, WASD walks, Shift sprints, and the arms walk with you; Escape\n"
-               "frees the cursor, a click takes it back, Escape with it free quits. Gamepad: left\n"
-               "stick walks (pressed in: sprint), right stick looks.\n",
+               "Play: the mouse looks, WASD walks, Shift sprints, and the arms walk with you. Tab (pad:\n"
+               "Start) opens and closes the settings menu, which frees the cursor while it is open;\n"
+               "Escape closes the menu first, then frees the cursor, a click takes it back, and Escape\n"
+               "with it free quits. Gamepad: left stick walks (pressed in: sprint), right stick looks.\n",
                pxe::RenderConfig::kViewW, pxe::RenderConfig::kViewH, static_cast<double>(kHour));
 }
 
@@ -90,6 +101,8 @@ int parseArgs(int argc, char** argv, Options& opt) {
       ok = *end == '\0' && opt.walk > 0.f && opt.walk <= 10.f;
     } else if (arg == "--sprint") {
       opt.sprint = true;
+    } else if (arg == "--menu") {
+      opt.menu = true;
     } else {
       ok = false;
     }
@@ -111,12 +124,17 @@ int parseArgs(int argc, char** argv, Options& opt) {
     printUsage(stderr);
     return 1;
   }
+  if (opt.menu && headless) {
+    std::fprintf(stderr, "pxe_desert: bad argument: --menu is for play, not with --capture or --window-png\n");
+    printUsage(stderr);
+    return 1;
+  }
   return -1;
 }
 
 // The game's input actions: what the keys, mouse and pad ask the player to
-// do this frame, over `dt` seconds.
-desert::PlayerInput readInput(const pxe::Input& input, float dt) {
+// do this frame, over `dt` seconds. `lookScale` scales the mouse's turning.
+desert::PlayerInput readInput(const pxe::Input& input, float dt, float lookScale) {
   desert::PlayerInput in;
   glm::vec2 keys{0.f};
   if (input.keyDown(pxe::Key::kW)) keys.y += 1.f;
@@ -132,18 +150,19 @@ desert::PlayerInput readInput(const pxe::Input& input, float dt) {
   // Mouse right turns right and down looks down; the right stick the same
   // way, pushed up looking up.
   const glm::vec2 look = input.gamepadStick(pxe::GamepadStick::kRight);
-  in.look = input.mouseDelta() * kLookPerPoint + glm::vec2{look.x * kStickTurnRate, look.y * kStickTiltRate} * dt;
+  in.look = input.mouseDelta() * kLookPerPoint * lookScale + glm::vec2{look.x * kStickTurnRate, look.y * kStickTiltRate} * dt;
   return in;
 }
 
-// One frame's draw list, built fresh: the scene lit at the fixed hour under
-// a clear, still sky. The player's arms are added on top (Arms::pose).
-pxe::FrameParams frameParams(const desert::World& world, glm::ivec2 framebuffer, float time, float hour) {
+// One frame's draw list, built fresh: the scene lit at `hour` under
+// `weather`. The player's arms are added on top (Arms::pose).
+pxe::FrameParams frameParams(const desert::World& world, glm::ivec2 framebuffer, float time, float hour,
+                             const pxe::Weather& weather) {
   pxe::FrameParams params;
   params.framebufferW = framebuffer.x;
   params.framebufferH = framebuffer.y;
   params.time = time;
-  params.lighting = pxe::lightingAt(world.scene, hour, pxe::Weather{});
+  params.lighting = pxe::lightingAt(world.scene, hour, weather);
   return params;
 }
 
@@ -188,17 +207,17 @@ int main(int argc, char** argv) {
         in.move = {0.f, 1.f};
         in.sprint = opt.sprint;
         player.update(in, 1.f / 60.f);
-        arms.walk(player.moved, 1.f / 60.f);
+        arms.walk(player.moved, 1.f / 60.f, player.walkSpeed, player.sprintSpeed);
       }
       player.aim(camera);
 
       // A few frames at fixed times, so a capture is the same on every run.
       for (int f = 0; f < kCaptureFrames; ++f) {
         pxe::FrameParams params =
-            frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f, opt.hour);
-        const pxe::PerspectiveFrame view = camera.frame(renderer.rtW(), renderer.rtH());
-        arms.pose(view, params);
-        renderer.render(world.scene, view, params);
+            frameParams(world, window.framebufferSize(), static_cast<float>(f) / 60.f, opt.hour, pxe::Weather{});
+        const pxe::PerspectiveFrame eyeView = camera.frame(renderer.rtW(), renderer.rtH());
+        arms.pose(eyeView, params);
+        renderer.render(world.scene, eyeView, params);
       }
       bool ok = true;
       if (!opt.capture.empty()) {
@@ -217,9 +236,24 @@ int main(int argc, char** argv) {
     }
 
     pxe::Input input;
-    // Mouse look holds the cursor in the window.
-    window.setCursorCaptured(true);
+    // The settings menu, drawn through the overlay: play only, so captures
+    // never touch the overlay. Made after the window, destroyed before it.
+    std::optional<pxe::Overlay> overlay;
+    overlay.emplace(window);
+    desert::SettingsMenu menu;
+    menu.init(*overlay);
+    desert::Clock clock;
+    clock.hour = opt.hour;
+    desert::PlayerSettings tuning;
+    desert::ViewSettings viewSettings;
+    if (opt.menu) menu.toggle();
+    // Mouse look holds the cursor in the window, unless the menu starts open.
+    window.setCursorCaptured(!menu.open());
     double previous = window.time();
+    // fps: frames counted over each half second.
+    float fps = 0.f;
+    double fpsStart = previous;
+    int fpsFrames = 0;
     while (!window.shouldClose()) {
       const double now = window.time();
       const float dt = std::min(static_cast<float>(now - previous), kMaxStep);
@@ -227,24 +261,51 @@ int main(int argc, char** argv) {
 
       window.pollEvents();
       input.update(window);
-      // Escape lets the cursor go, and quits once it is free; a click takes
-      // it back. The player looks and walks only while it is held.
-      if (input.keyPressed(pxe::Key::kEscape)) {
-        if (window.cursorCaptured()) {
+      // Tab or Start opens and closes the menu, even while a widget has the
+      // keyboard. Opening frees the cursor and closing takes it back, but
+      // Escape closing the menu leaves it free. Otherwise Escape (when no
+      // widget has the keyboard) closes the menu, then lets the cursor go,
+      // and quits once it is free; a click takes it back, unless the menu
+      // is open. The player looks and walks only while the cursor is held
+      // and the menu is closed.
+      const bool wasOpen = menu.open();
+      bool escapeClosed = false;
+      if (input.keyPressed(pxe::Key::kTab) || input.gamepadPressed(pxe::GamepadButton::kStart)) {
+        menu.toggle();
+      } else if (input.keyPressed(pxe::Key::kEscape) && !menu.wantsKeyboard()) {
+        if (menu.open()) {
+          menu.close();
+          escapeClosed = true;
+        } else if (window.cursorCaptured()) {
           window.setCursorCaptured(false);
         } else {
           window.requestClose();
         }
-      } else if (!window.cursorCaptured() && input.mousePressed(pxe::MouseButton::kLeft)) {
+      } else if (!menu.open() && !window.cursorCaptured() && input.mousePressed(pxe::MouseButton::kLeft)) {
         window.setCursorCaptured(true);
       }
-      if (window.cursorCaptured()) {
-        player.update(readInput(input, dt), dt);
+      if (menu.open() != wasOpen && !escapeClosed) window.setCursorCaptured(!menu.open());
+
+      clock.advance(dt);
+      player.walkSpeed = tuning.walkSpeed;
+      player.sprintSpeed = tuning.sprintSpeed;
+      const bool playing = window.cursorCaptured() && !menu.open();
+      if (playing) {
+        player.update(readInput(input, dt, tuning.lookScale), dt);
         player.aim(camera);
-        arms.walk(player.moved, dt);
+      }
+      // The arms walk with the player, or settle when play is paused; a
+      // preview plays a clip as if the player walked or sprinted.
+      float distance = playing ? player.moved : 0.f;
+      if (viewSettings.armsPreview != desert::ViewSettings::kPreviewOff) {
+        const bool sprintPreview = viewSettings.armsPreview == desert::ViewSettings::kPreviewSprint;
+        distance = (sprintPreview ? player.sprintSpeed : player.walkSpeed) * dt;
+      }
+      arms.walk(distance, dt, player.walkSpeed, player.sprintSpeed);
+      if (viewSettings.holdPose && viewSettings.armsPreview != desert::ViewSettings::kPreviewOff) {
+        arms.hold(viewSettings.armsPreview == desert::ViewSettings::kPreviewSprint, viewSettings.holdPhase);
       } else {
-        // Play is paused: the arms settle.
-        arms.walk(0.f, dt);
+        arms.release();
       }
 
       // A minimised window can have a 0x0 framebuffer, and render throws when
@@ -254,10 +315,26 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
         continue;
       }
-      pxe::FrameParams params = frameParams(world, framebuffer, static_cast<float>(now), opt.hour);
-      const pxe::PerspectiveFrame view = camera.frame(renderer.rtW(), renderer.rtH());
-      arms.pose(view, params);
-      renderer.render(world.scene, view, params);
+      ++fpsFrames;
+      if (now - fpsStart >= 0.5) {
+        fps = static_cast<float>(fpsFrames / (now - fpsStart));
+        fpsStart = now;
+        fpsFrames = 0;
+      }
+      camera.setFovYRadians(glm::radians(tuning.fovDegrees));
+      camera.setFarPlane(viewSettings.viewDistance);
+      pxe::FrameParams params =
+          frameParams(world, framebuffer, static_cast<float>(now), clock.hour, clock.weather());
+      params.edges = viewSettings.edges;
+      params.showNdl = viewSettings.showNdl;
+      params.testColours = viewSettings.testColours;
+      const pxe::PerspectiveFrame eyeView = camera.frame(renderer.rtW(), renderer.rtH());
+      if (viewSettings.showArms) arms.pose(eyeView, params);
+      renderer.render(world.scene, eyeView, params);
+      const bool openBeforeDraw = menu.open();
+      menu.draw(clock, tuning, viewSettings, fps);
+      // The menu's close button closes it in draw(): take the cursor back.
+      if (openBeforeDraw && !menu.open()) window.setCursorCaptured(true);
       window.swap();
     }
   } catch (const std::exception& e) {

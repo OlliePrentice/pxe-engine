@@ -5,6 +5,7 @@ add_executable(pxe_desert
   src/arms.cpp
   src/main.cpp
   src/player.cpp
+  src/settings.cpp
   src/world.cpp
 )
 
