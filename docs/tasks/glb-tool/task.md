@@ -134,13 +134,20 @@ Run in the task's worktree, with `/tmp/glb-check` as scratch (`mkdir -p /tmp/glb
 9. `git diff <cycle base> --stat` lists only `tools/glb.py`, `tools/README.md` and `docs/tasks/glb-tool/`.
 
 ## Acceptance criteria
-- [ ] `tools/glb.py` exists, is executable, uses only the standard library, and has the binding `read`, `accessor`, `node_trs` and `GlbError`.
-- [ ] `info` prints what the `info` section lists, and Verification 3 and 4 show it.
-- [ ] `compare` compares what the `compare` section lists, prints its last line and exits as specified, and Verification 5, 6 and 7 show it.
-- [ ] The module imports and reads under Blender's Python (Verification 8).
-- [ ] `tools/README.md` has the binding row.
-- [ ] Nothing outside `tools/glb.py`, `tools/README.md` and the task folder changed (Verification 9).
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `tools/glb.py` exists, is executable, uses only the standard library, and has the binding `read`, `accessor`, `node_trs` and `GlbError`.
+  Evidence: `tools/glb.py` mode rwxr-xr-x, imports only argparse, json, struct, sys; `GlbError`, `read`, `accessor`, `node_trs` at the top of the file with the binding docstrings.
+- [x] `info` prints what the `info` section lists, and Verification 3 and 4 show it.
+  Evidence: `cmd_info`; arms.glb shows 14 materials Arms_Wrap..Arms_Amber, `Arms_Rig: 39 joints`, both clips `1.000 s, 117 channels, keys {31}, LINEAR`, `total triangles: 15844`; fox, hero, ruins, date palm exit 0 and the fox lists all five `kClips`.
+- [x] `compare` compares what the `compare` section lists, prints its last line and exits as specified, and Verification 5, 6 and 7 show it.
+  Evidence: `cmd_compare`; V5 `glb compare: identical` exit 0 (`a: none; b: Arms_Walk, Arms_Sprint`); V6 joints equal, transforms and IBMs 0, `materials: differ (5 vs 14)`, `primitive counts differ`, exit 1; V7 date palm exit 1, perturbed copy exit 1, `--tolerance 1` exit 0 `glb compare: within 1`.
+- [x] The module imports and reads under Blender's Python (Verification 8).
+  Evidence: Blender -b printed `ANIMS 2`, `POS 1488` (primitive 0 has 1488 vertices in `compare`), exit 0.
+- [x] `tools/README.md` has the binding row.
+  Evidence: `tools/README.md`, row after `perspective-check.sh`, identical to the spec's text.
+- [x] Nothing outside `tools/glb.py`, `tools/README.md` and the task folder changed (Verification 9).
+  Evidence: `git diff 5548df0 --stat` lists only tools/glb.py, tools/README.md and docs/tasks/glb-tool/.
+- [x] Project builds cleanly from a fresh build directory with CMake
+  Evidence: `cmake --preset check --fresh && cmake --build --preset check --clean-first` in the worktree, exit 0, only the stb_image_write `sprintf` warning.
 
 ## Assets
 None.
@@ -158,3 +165,4 @@ None.
 
 ## Cycle log
 - Cycle 1, 2026-10-30: base 5548df0.
+- Cycle 1 review: fresh build and Verification 1-9 pass; ISSUE-001 wont-fix (gitignore-pycache queued).
