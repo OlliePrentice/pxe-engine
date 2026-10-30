@@ -1,7 +1,7 @@
 # Arms: gear and palette after the concept art
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 Restyle the desert player's arms' gear and palette after `desert/docs/concept/wanderers.png`:
@@ -156,3 +156,4 @@ Run in the task's worktree, against the cycle base:
 ## Cycle log
 - Cycle 1, 2026-10-30: base 1657933.
 - Cycle 1, 2026-10-30: designer NEEDS INPUT (undersuit check infeasible on the left); replan 1 applied (Approach only).
+- Cycle 2, 2026-10-30: base 14ce794 (first cycle after revision 1).
