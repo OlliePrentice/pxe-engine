@@ -1,7 +1,7 @@
 # A capture runner: sets of captures, twice, against a base, under a temporary edit
 Type: tooling
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Verification steps keep running sets of captures by hand: each twice and `cmp`-ed for determinism, against a base commit's build, or under a temporary source edit that is applied, built, captured and restored. Copies so far: `docs/tasks/desert-settings-menu/scripts/walk-compare.sh` (cases against the base build), `docs/tasks/perspective-smooth-lighting/scripts/capture-all.sh` (cases into the task folder, each twice), and by hand in `desert-arms`, `desert-arms-detail` (spawn-pose edits), `perspective-sky-clouds` (three edits of the cloud cover) and `desert-lighting` (a no-bounce edit compared with the base; three captures each twice). Friction log F-036, F-038 and F-021. Turn them into one tool, `tools/captures.sh`.
@@ -132,3 +132,4 @@ None.
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 010f23d
