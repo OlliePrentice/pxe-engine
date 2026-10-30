@@ -62,6 +62,8 @@ target_compile_features(imgui PUBLIC cxx_std_11)
 set(PXE_SHADERS
   backdrop.frag
   common.glsl
+  dust.frag
+  dust.vert
   edge.frag
   edge.vert
   edge_perspective.frag

@@ -186,7 +186,8 @@ class Renderer {
   // lightning as a second light with its own shadows. Haze is continuous and
   // exponential, fading surfaces into the sky's horizon colour, fully by the
   // far plane, and glowing toward the sun. The sky behind is a continuous
-  // gradient with a glow round the sun and a soft sun disc. The sun's shadow
+  // gradient with a glow round the sun and a soft sun disc. Scene::dustDensity
+  // adds drifting dust motes over them, behind the view model. The sun's shadow
   // map covers 60 m round the eye, pushed ahead along the view, and nothing
   // beyond it is shadowed. Not yet supported, and skipped whatever params
   // says: grass and leaf sprites, water and its reflections, god rays, rain
@@ -353,6 +354,16 @@ class Renderer {
   // The sky behind a perspective view, over the whole target at the far
   // plane; perspective mode only.
   unsigned progBackdrop_ = 0;
+  // The airborne dust over a perspective view: motes generated in the vertex
+  // shader from their index (the VAO is empty), so there is no particle
+  // state; perspective mode only. dustOffset_ is the metres the wind has
+  // carried the dust, accumulated each frame so a change of wind never makes
+  // it jump; dustTime_ is the last frame's FrameParams::time (-1 for none).
+  static constexpr int kDustMax = 6000;  // motes at Scene::dustDensity 1
+  unsigned progDust_ = 0;
+  unsigned dustVao_ = 0;
+  glm::vec3 dustOffset_{0.f};
+  float dustTime_ = -1.f;
 
   RenderMode mode_ = RenderMode::kOrthographic;
   bool ready_ = false;

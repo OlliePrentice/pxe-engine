@@ -172,6 +172,11 @@ struct Scene {
   static constexpr int kSkyCloudLayers = 2;
   SkyCloudLayer skyClouds[kSkyCloudLayers];
   float skyCloudBrightness = 1.f;  // scales the clouds' colour
+  // Perspective mode's airborne dust: tiny half-transparent motes drifting
+  // on the wind round the eye, out to 40 m, coloured from the haze and
+  // glinting toward the sun. Not drawn under Camera.
+  float dustDensity = 0.f;  // 0 none .. 1 the most (Renderer's kDustMax motes)
+  float dustSize = 1.f;     // pixels for motes nearer than 4 m, 1..2; farther ones are 1
 
   // N·L thresholds for the toon ramp with the sun high. They scale down as
   // the sun drops so a low sun still lights flat ground.
