@@ -1,7 +1,7 @@
 # Arms: a natural walk and a pumping sprint
 Type: feature
 Status: open
-Cycle: 1
+Cycle: 2
 
 ## Goal
 Replace the arms' mechanical walk and sprint clips (`Arms_Walk`, `Arms_Sprint` in `desert/tools/blender/build_arms.py`) with more natural motion.
@@ -157,3 +157,4 @@ Run in the task's worktree, against the cycle base:
 - Cycle 1, 2026-10-31, base 0a63800.
 - Cycle 1, 2026-10-31: blocked. Arms_Sprint passes at no k in CLIP_SCALES: the forward-peak wrist target is out of the rotation-only chain's reach (46.7 mm short at k 1), and closing the elbows 18° or more pushes R.tube.1 out of its sleeve. Arms_Walk passes at k 1.0 (db6e434). See replan-1.md.
 - Unblocked: 2026-10-31, sprint driven up and in (back 0.080, swing 0.035, in 0.030), R.tube.1 end −0.195, ELBOW_SPAN dropped, closed test pose 30°.
+- Cycle 2, 2026-10-31, base d5bccf4 (first cycle after revision 1; no outstanding issues).
