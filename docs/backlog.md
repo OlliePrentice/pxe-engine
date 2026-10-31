@@ -215,7 +215,7 @@ Assets: yes
 Merged: 255a676
 
 ## desert-arms-motion: Arms: a natural walk and a pumping sprint
-Status: queued
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms-motion/task.md
 Depends on: desert-arms-gear
