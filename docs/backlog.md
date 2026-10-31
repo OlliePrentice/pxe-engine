@@ -206,12 +206,13 @@ Assets: yes
 Merged: 7ffff71
 
 ## desert-arms-gear: Arms: gear and palette after the concept art
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-arms-gear/task.md
 Depends on: desert-arms-pose
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, desert/src/arms.hpp, desert/src/arms.cpp, docs/tasks/desert-arms-gear/
 Assets: yes
+Merged: 255a676
 
 ## desert-arms-motion: Arms: a natural walk and a pumping sprint
 Status: queued
