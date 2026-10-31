@@ -1,0 +1,79 @@
+# PXE_SKIP_EXPORT=1 headless build of build_arms.py as specified (exit 1): the fallback's tries
+Arms_Sprint at k = 1.0 fails:
+  Arms_Sprint: 24 wrist targets out of reach (the solve misses them), worst R at phase 0.600 by 505.3 mm
+  Arms_Sprint: L hand z offset spans -0.1129..0.0016, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: L hand furthest forward at phase 0.800, wants 0.0 +- 1/30
+  Arms_Sprint: L hand y offset at phase 0.0 is 0.0149, wants 0.0180 within 0.003
+  Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0421, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint: R hand z offset spans -0.0900..0.0016, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: R hand furthest forward at phase 0.300, wants 0.5 +- 1/30
+  Arms_Sprint: R hand y offset at phase 0.5 is 0.0261, wants 0.0180 within 0.003
+  Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0192, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint phase 3/8: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.301, -0.211, -0.268)
+  Arms_Sprint phase 4/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.207, -0.272)
+  Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.209, -0.273)
+  Arms_Sprint phase 6/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.309, -0.199, -0.276)
+Arms_Sprint at k = 0.9 fails:
+  Arms_Sprint: 22 wrist targets out of reach (the solve misses them), worst L at phase 0.033 by 101.6 mm
+  Arms_Sprint: L hand z offset spans -0.1009..0.0016, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: L hand furthest forward at phase 0.200, wants 0.0 +- 1/30
+  Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0396, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint: R hand z offset spans -0.0900..0.0016, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: R hand furthest forward at phase 0.300, wants 0.5 +- 1/30
+  Arms_Sprint: R hand y offset at phase 0.5 is 0.0243, wants 0.0140 within 0.003
+  Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0174, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint phase 3/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.303, -0.209, -0.269)
+  Arms_Sprint phase 4/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.300, -0.206, -0.273)
+  Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.208, -0.273)
+Arms_Sprint at k = 0.8 fails:
+  Arms_Sprint: 20 wrist targets out of reach (the solve misses them), worst L at phase 0.067 by 192.4 mm
+  Arms_Sprint: L hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: L hand furthest forward at phase 0.833, wants 0.0 +- 1/30
+  Arms_Sprint: L hand y offset at phase 0.0 is 0.0149, wants 0.0100 within 0.003
+  Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0368, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint: R hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: R hand furthest forward at phase 0.333, wants 0.5 +- 1/30
+  Arms_Sprint: R hand y offset at phase 0.5 is 0.0253, wants 0.0100 within 0.003
+  Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0131, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint phase 3/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.298, -0.221, -0.269)
+  Arms_Sprint phase 4/8: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.297, -0.218, -0.267)
+  Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.298, -0.219, -0.268)
+Arms_Sprint at k = 0.7 fails:
+  Arms_Sprint: 18 wrist targets out of reach (the solve misses them), worst R at phase 0.533 by 56.0 mm
+  Arms_Sprint: L hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: L hand furthest forward at phase 0.167, wants 0.0 +- 1/30
+  Arms_Sprint: L hand y offset at phase 0.0 is 0.0144, wants 0.0060 within 0.003
+  Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0335, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint: R hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: R hand furthest forward at phase 0.667, wants 0.5 +- 1/30
+  Arms_Sprint: R hand y offset at phase 0.5 is 0.0226, wants 0.0060 within 0.003
+  Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0114, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint phase 4/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.216, -0.269)
+  Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.217, -0.270)
+Arms_Sprint at k = 0.6 fails:
+  Arms_Sprint: 16 wrist targets out of reach (the solve misses them), worst R at phase 0.533 by 39.4 mm
+  Arms_Sprint: L hand z offset spans -0.0900..0.0268, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: L hand furthest forward at phase 0.867, wants 0.0 +- 1/30
+  Arms_Sprint: L hand y offset at phase 0.0 is 0.0135, wants 0.0020 within 0.003
+  Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0298, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint: R hand z offset spans -0.0900..0.0268, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: R hand furthest forward at phase 0.367, wants 0.5 +- 1/30
+  Arms_Sprint: R hand y offset at phase 0.5 is 0.0212, wants 0.0020 within 0.003
+  Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0075, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint phase 4/8: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.295, -0.226, -0.270)
+Arms_Sprint at k = 0.5 fails:
+  Arms_Sprint: 12 wrist targets out of reach (the solve misses them), worst R at phase 0.533 by 23.0 mm
+  Arms_Sprint: L hand z offset spans -0.0900..0.0366, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: L hand furthest forward at phase 0.900, wants 0.0 +- 1/30
+  Arms_Sprint: L hand y offset at phase 0.0 is 0.0122, wants -0.0020 within 0.003
+  Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0258, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint: R hand z offset spans -0.0900..0.0366, wants -0.0900..0.0500 within 0.003
+  Arms_Sprint: R hand furthest forward at phase 0.400, wants 0.5 +- 1/30
+  Arms_Sprint: R hand y offset at phase 0.5 is 0.0177, wants -0.0020 within 0.003
+  Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0043, wants -0.0100..0.0000 within 0.003
+  Arms_Sprint passes its checks at no scale in (1.0, 0.9, 0.8, 0.7, 0.6, 0.5): k 1.0: ['Arms_Sprint: 24 wrist targets out of reach (the solve misses them), worst R at phase 0.600 by 505.3 mm', 'Arms_Sprint: L hand z offset spans -0.1129..0.0016, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: L hand furthest forward at phase 0.800, wants 0.0 +- 1/30', 'Arms_Sprint: L hand y offset at phase 0.0 is 0.0149, wants 0.0180 within 0.003', 'Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0421, wants -0.0100..0.0000 within 0.003', 'Arms_Sprint: R hand z offset spans -0.0900..0.0016, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: R hand furthest forward at phase 0.300, wants 0.5 +- 1/30', 'Arms_Sprint: R hand y offset at phase 0.5 is 0.0261, wants 0.0180 within 0.003', 'Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0192, wants -0.0100..0.0000 within 0.003', "Arms_Sprint phase 3/8: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.301, -0.211, -0.268)", "Arms_Sprint phase 4/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.207, -0.272)", "Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.209, -0.273)", "Arms_Sprint phase 6/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.309, -0.199, -0.276)"]; k 0.9: ['Arms_Sprint: 22 wrist targets out of reach (the solve misses them), worst L at phase 0.033 by 101.6 mm', 'Arms_Sprint: L hand z offset spans -0.1009..0.0016, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: L hand furthest forward at phase 0.200, wants 0.0 +- 1/30', 'Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0396, wants -0.0100..0.0000 within 0.003', 'Arms_Sprint: R hand z offset spans -0.0900..0.0016, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: R hand furthest forward at phase 0.300, wants 0.5 +- 1/30', 'Arms_Sprint: R hand y offset at phase 0.5 is 0.0243, wants 0.0140 within 0.003', 'Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0174, wants -0.0100..0.0000 within 0.003', "Arms_Sprint phase 3/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.303, -0.209, -0.269)", "Arms_Sprint phase 4/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.300, -0.206, -0.273)", "Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.208, -0.273)"]; k 0.8: ['Arms_Sprint: 20 wrist targets out of reach (the solve misses them), worst L at phase 0.067 by 192.4 mm', 'Arms_Sprint: L hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: L hand furthest forward at phase 0.833, wants 0.0 +- 1/30', 'Arms_Sprint: L hand y offset at phase 0.0 is 0.0149, wants 0.0100 within 0.003', 'Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0368, wants -0.0100..0.0000 within 0.003', 'Arms_Sprint: R hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: R hand furthest forward at phase 0.333, wants 0.5 +- 1/30', 'Arms_Sprint: R hand y offset at phase 0.5 is 0.0253, wants 0.0100 within 0.003', 'Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0131, wants -0.0100..0.0000 within 0.003', "Arms_Sprint phase 3/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.298, -0.221, -0.269)", "Arms_Sprint phase 4/8: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.297, -0.218, -0.267)", "Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.298, -0.219, -0.268)"]; k 0.7: ['Arms_Sprint: 18 wrist targets out of reach (the solve misses them), worst R at phase 0.533 by 56.0 mm', 'Arms_Sprint: L hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: L hand furthest forward at phase 0.167, wants 0.0 +- 1/30', 'Arms_Sprint: L hand y offset at phase 0.0 is 0.0144, wants 0.0060 within 0.003', 'Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0335, wants -0.0100..0.0000 within 0.003', 'Arms_Sprint: R hand z offset spans -0.0900..0.0150, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: R hand furthest forward at phase 0.667, wants 0.5 +- 1/30', 'Arms_Sprint: R hand y offset at phase 0.5 is 0.0226, wants 0.0060 within 0.003', 'Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0114, wants -0.0100..0.0000 within 0.003', "Arms_Sprint phase 4/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.216, -0.269)", "Arms_Sprint phase 5/8: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.299, -0.217, -0.270)"]; k 0.6: ['Arms_Sprint: 16 wrist targets out of reach (the solve misses them), worst R at phase 0.533 by 39.4 mm', 'Arms_Sprint: L hand z offset spans -0.0900..0.0268, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: L hand furthest forward at phase 0.867, wants 0.0 +- 1/30', 'Arms_Sprint: L hand y offset at phase 0.0 is 0.0135, wants 0.0020 within 0.003', 'Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0298, wants -0.0100..0.0000 within 0.003', 'Arms_Sprint: R hand z offset spans -0.0900..0.0268, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: R hand furthest forward at phase 0.367, wants 0.5 +- 1/30', 'Arms_Sprint: R hand y offset at phase 0.5 is 0.0212, wants 0.0020 within 0.003', 'Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0075, wants -0.0100..0.0000 within 0.003', "Arms_Sprint phase 4/8: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.295, -0.226, -0.270)"]; k 0.5: ['Arms_Sprint: 12 wrist targets out of reach (the solve misses them), worst R at phase 0.533 by 23.0 mm', 'Arms_Sprint: L hand z offset spans -0.0900..0.0366, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: L hand furthest forward at phase 0.900, wants 0.0 +- 1/30', 'Arms_Sprint: L hand y offset at phase 0.0 is 0.0122, wants -0.0020 within 0.003', 'Arms_Sprint: L hand x offset toward the middle spans -0.0100..0.0258, wants -0.0100..0.0000 within 0.003', 'Arms_Sprint: R hand z offset spans -0.0900..0.0366, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: R hand furthest forward at phase 0.400, wants 0.5 +- 1/30', 'Arms_Sprint: R hand y offset at phase 0.5 is 0.0177, wants -0.0020 within 0.003', 'Arms_Sprint: R hand x offset toward the middle spans -0.0100..0.0043, wants -0.0100..0.0000 within 0.003']
+
+RuntimeError: the arms fail their checks:
+  Arms_Sprint passes its checks at no scale in (1.0, 0.9, 0.8, 0.7, 0.6, 0.5): k 1.0: ['Arms_Sprint: 24 wrist targets out of reach (the solve misses them), worst R at phase 0.600 by 505.3 mm', 'Arms_Sprint: L hand z offset spans -0.1129..0.0016, wants -0.0900..0.0500 within 0.003', 'Arms_Sprint: L hand furthest forward at phase 0.800, wants 0.0 +- 1/30', 'Arms_Sprint: L hand y offset at phase 0.0 
+
+clip_scale: {"Arms_Walk": 1.0, "Arms_Sprint": 0.5}

@@ -1,0 +1,10 @@
+# Negative run of the new hand-lag check (walk only; the sprint is blocked):
+#   PXE_SKIP_EXPORT=1 PXE_DESERT_OUT=<scratch> Blender -b --python-exit-code 1 -P tools/blender-override.py -- \
+#     desert/tools/blender/build_arms.py 'CLIP_ORDER=("Arms_Walk",)' \
+#     'CLIPS={**CLIPS, "Arms_Walk": dict(CLIPS["Arms_Walk"], hand_lag=0.30)}'
+# exit 1, at every k in CLIP_SCALES:
+  Arms_Walk: L hand most fingertips-up at phase 0.300, wants 0.150 +- 1/30
+  Arms_Walk: R hand most fingertips-up at phase 0.800, wants 0.650 +- 1/30
+# The same without the CLIPS override: exit 0, Arms_Walk passes at k 1.0 (highest NDC y -0.335,
+# nearest 0.235 m, z -0.035..0.035 peak at phase 0 / 0.5, y at phases 0 and 0.5 -0.006,
+# elbow most closed at 0.033 / 0.533, hand most fingertips-up at 0.133 / 0.633, largest key step 4.79 deg).
