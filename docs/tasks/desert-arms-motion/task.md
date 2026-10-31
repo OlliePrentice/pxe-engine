@@ -1,7 +1,7 @@
 # Arms: a natural walk and a pumping sprint
 Type: feature
-Status: queued
-Cycle: 0
+Status: open
+Cycle: 1
 
 ## Goal
 Replace the arms' mechanical walk and sprint clips (`Arms_Walk`, `Arms_Sprint` in `desert/tools/blender/build_arms.py`) with more natural motion.
@@ -138,3 +138,4 @@ Run in the task's worktree, against the cycle base:
 None.
 
 ## Cycle log
+- Cycle 1, 2026-10-31, base 0a63800.
