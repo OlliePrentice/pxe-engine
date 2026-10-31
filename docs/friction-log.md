@@ -345,9 +345,9 @@ Action: docs/engine-guide.md, end of the perspective "Light" paragraph, and the 
 ## F-047: A capture asked to show something outside its view
 Kind: instruction-gap
 Status: actioned
-Seen: desert-sky (2026-10-30, developer and orchestrator: Verification 4 asked the captures to show the sun disc and sun-facing dust glints, but the desert's spawn view looks along +z and never faces the sun at the listed hours)
+Seen: desert-sky (2026-10-30, developer and orchestrator: Verification 4 asked the captures to show the sun disc and sun-facing dust glints, but the desert's spawn view looks along +z and never faces the sun at the listed hours), desert-arms-gear (2026-10-31, developer: Verification 7 asked the standard captures to show the strips, undersuit and vambrace scratches, which sit below the 960x540 frame at rest)
 Detail: The spec described what to look for without checking that the capture pose and hour could show it.
-Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": check every capture can show what it is asked to (in view, sun up); move what it can't to the playtest (retro workflow commit).
+Action: .claude/skills/feature/SKILL.md, "Make it implementation-ready": check every capture can show what it is asked to (in view, sun up); move what it can't to the playtest (retro workflow commit). desert-arms-gear retro: the same check names a view model's parts, which the frame shows only partly (5e9953a).
 
 ## F-048: Defaults of the sky cloud layers not in the guide
 Kind: doc-gap
@@ -408,3 +408,59 @@ Status: actioned
 Seen: desert-arms-pose (2026-10-30, designer: Approach §3 named only the module docstring; `compass()`'s docstring and the material list also said the strap sits at the cuff's back end, which the compass slide made wrong. The designer fixed them, correctly)
 Detail: Specs list the docstring edits they foresee; the change can make others wrong.
 Action: `.claude/agents/designer.md`, Building assets: fix every docstring or comment the change makes wrong and list each in the report (6a9fc51).
+
+## F-057: A "must be seen" check the spec's own placements cover
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-gear (2026-10-30, designer: "at least 8 `Arms_Undersuit` vertices seen per forearm" couldn't hold on the left, where the plate the spec sized and placed covers every in-view part of the forearm; 0 of 156 seen, measured with `docs/tasks/desert-arms-gear/scripts/undersuit_visibility.py`; replan 1)
+Detail: The spec added a visibility check without measuring what region of the forearm is in view at rest, nor whether the vambrace it fixed left any of it uncovered.
+Action: .claude/skills/feature/SKILL.md, step 1.7 "Each asset": measure the in-view, eye-facing region for any "must be seen" check against the spec's placements (5e9953a).
+
+## F-058: Detail bound rigid to a joint over a blended skin surface
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-gear (2026-10-31, designer: the hand plates and knuckle guards, bound rigid to `hand.<S>`, sit on a palm weighted 0.16-0.98 to the hand on the pinky side; the pinky guard lost contact in the ±30° wrist test poses. The designer stood the guards on an extended last plate segment; the plate slides up to ~6 mm over the glove in those poses)
+Detail: A planning-side counterpart of F-017: the spec fixed the weights of new detail without looking at the weights of the surface under it.
+Action: .claude/skills/feature/SKILL.md, step 1.7 "Each asset": check the surface's weights before binding detail rigid, and say how it attaches (5e9953a). The slide is in the task's playtest checklist.
+
+## F-059: Measuring what part of a view model's limb is in view
+Kind: tool
+Status: open
+Seen: desert-arms-gear (2026-10-30, designer: `docs/tasks/desert-arms-gear/scripts/undersuit_visibility.py`)
+Detail: The in-view, eye-facing region of each forearm surface and how many ring vertices the eye sees with the rest of the model in place. Nothing in `tools/` measures it. First sighting.
+Action: none yet; a third sighting queues a tooling task.
+
+## F-060: Ad-hoc inspection renders of a built asset
+Kind: tool
+Status: open
+Seen: desert-arms-gear (2026-10-31, designer: `docs/tasks/desert-arms-gear/scripts/gear_views.py`, close Workbench renders of each forearm and hand from chosen directions)
+Detail: The six standard previews don't show close detail; the designer wrote its own camera-and-render script. First sighting.
+Action: none yet; a third sighting queues a tooling task.
+
+## F-061: A batch of negative runs through blender-override
+Kind: tool
+Status: open
+Seen: desert-arms-gear (2026-10-31, designer: 17 checks proved by a shell loop over a `tag|override` list, `docs/tasks/desert-arms-gear/scripts/negative_runs.txt`)
+Detail: Each designer writes the loop that runs each override and reports which runs failed. A `--negatives <file>` mode in `tools/blender-override.py` was suggested. First sighting.
+Action: none yet; a third sighting queues a tooling task.
+
+## F-062: Resuming a task whose worktree holds uncommitted work
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-gear (2026-10-31, orchestrator: the batch that started cycle 2 was cut short mid-designer, leaving ~270 changed lines of build_arms.py uncommitted; the skill said only to resume from the cycle log and issues)
+Detail: Nothing said whether uncommitted changes in a resumed worktree are kept or discarded.
+Action: .claude/skills/backlog-run/SKILL.md, Preflight 4: leave them, and have the resuming agent review and continue from them (5e9953a).
+
+## F-063: Proving a check that no constant controls
+Kind: doc-gap
+Status: actioned
+Seen: desert-arms-gear (2026-10-31, designer: the knuckle-guard count; wrote `scripts/negative_guard.py`, which drops a guard and calls the check)
+Detail: `tools/blender-override.py` only overrides constants, so a count of built pieces can't be made to fail through it.
+Action: tools/README.md, blender-override row: build, delete a piece and call the check in a short headless script (3d17fed).
+
+## F-064: captures.sh writes a log per case into the output directory
+Kind: doc-gap
+Status: actioned
+Seen: desert-arms-gear (2026-10-31, developer: found and deleted the `.log` files in the task folder)
+Detail: Not in `tools/README.md`, so captures written into a task folder come with logs.
+Action: tools/README.md, captures.sh row (3d17fed).
