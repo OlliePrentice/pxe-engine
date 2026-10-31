@@ -1,0 +1,13 @@
+elbows closed 10.0: 0 attachment problems
+elbows closed 15.0: 0 attachment problems
+elbows closed 18.0: 1 attachment problems 
+  elbows closed 18: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.297, -0.169, -0.275)
+elbows closed 20.0: 1 attachment problems 
+  elbows closed 20: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.297, -0.167, -0.276)
+elbows closed 22.0: 1 attachment problems 
+  elbows closed 22: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.294, -0.167, -0.279)
+elbows closed 24.0: 1 attachment problems 
+  elbows closed 24: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.294, -0.165, -0.280)
+elbows closed 27.0: 1 attachment problems 
+  elbows closed 27: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.294, -0.162, -0.279)
+

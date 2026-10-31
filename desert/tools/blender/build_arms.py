@@ -11,9 +11,10 @@ Or step by step in an open Blender, to watch it go together:
     import runpy; am = runpy.run_path(".../build_arms.py", run_name="arms")
     b = am["Builder"](); b.start(); b.arms(); b.gloves(); b.fingers(); b.glove_detail(); b.wrap_detail()
     b.vambraces(); b.gauge(); b.bracer_detail(); b.compass(); b.tubes(); b.rig(); b.animate()
-    problems, m = am["check"](b); clip_problems, cm = am["clip_checks"](b)
+    problems, m = am["check"](b); clip_problems, cm = am["fit_clips"](b)
 Each step adds its pieces to the Arms collection of the current scene, leaving
-the rest of the file alone.
+the rest of the file alone. b.animate() keys both clips at scale 1;
+fit_clips(b) re-keys each at the first scale that passes its clip_checks.
 
 A view model: the wanderer's two arms, modelled round the eye at real adult
 scale (desert/docs/art-style.md). The origin is the eye. The model faces -Y
@@ -121,23 +122,33 @@ patches take the weights of the glove surface under them, the strips the
 sleeve's; the hand plates and knuckle guards are rigid to the hand. The attachment check runs in the
 rest pose and in test poses: each wrist twisted, flexed and bent sideways 30
 degrees each way, every finger and thumb joint curled 60 degrees, each elbow
-opened 30 degrees and closed 10.
+opened 30 degrees and closed 30.
 
-Two looping clips (task desert-arms-walk), a first-person carry in place,
+Two looping clips (task desert-arms-motion), a first-person carry in place,
 each 1.0 s at 30 fps, 31 keys (the last the first), linear, every joint keyed
 on every frame: Arms_Walk (2.0 m walked per cycle) and Arms_Sprint (3.0 m).
-Both hands bob twice per cycle and counter-swing once, the left furthest
-forward at phase 0, the bob's low points at phases 0 and 0.5; each forearm
-rocks at the elbow with its swing and the hand trails it at the wrist; the
-shoulder and upper arm turn the least they can to put each wrist on its
-target. Arms_Sprint bobs the hands 20 mm (no lift), swings them wider and
-curls every finger and thumb joint 25 degrees into a loose fist. Only
-shoulder, upper_arm, forearm and hand turn (and the digits in the sprint);
-every other joint, and every translation and scale, is keyed at exactly
-rest. They are kept as actions on the rig, and the build appends them to the
-exported glb itself (add_clips), so the rest keys are exact. The checks
-(clip_checks, check_glb_clips) sample every key and half-key as the engine
-does.
+The left hand is furthest forward at phase 0, in opposition to the stride,
+and the footfalls are at phases 0 and 0.5. In Arms_Walk the arms swing from
+the shoulder along a pendulum arc, drifting a little toward the body's middle
+on the forward swing; the elbows give a little just after each forward peak,
+the hands follow through at the wrist, and a sharp small dip marks each
+footfall. Arms_Sprint is a pumping motion: the elbows held closed by 15
+degrees, the hands lifted 15 mm and drawn back 80 mm, near where the bent arm
+puts them; the forward peak is driven up and in toward the body's middle, not
+out, and the back swing goes out away from it; the elbow closes a further 12
+degrees at the front and opens 8 at the back, a little after the swing; a
+harder footfall; and every finger and thumb joint curled 25 degrees toward
+the palm into a loose fist. The
+formulas are above CLIPS. The wrist targets are reached by the least turn of
+the shoulder and upper arm; the forearm's and hand's turns are fixed by the
+formulas. If a clip fails its checks, the build retries it with its vertical
+and angle terms scaled down (CLIP_SCALES) and keeps the first scale that
+passes (fit_clips). Only shoulder, upper_arm, forearm and hand turn (and the
+digits in the sprint); every other joint, and every translation and scale,
+is keyed at exactly rest. They are kept as actions on the rig, and the build
+appends them to the exported glb itself (add_clips), so the rest keys are
+exact. The checks (clip_checks, check_glb_clips) sample every key and
+half-key as the engine does.
 
 Material order is the contract with the engine: glTF material i is actor
 slot firstMaterial + i (desert::Arms loads into slots 0-14).
@@ -520,7 +531,7 @@ TUBES_L = (-0.008, 0.013)
 TUBE_LIFT = (TUBE_R - 0.0003, 0.0003)
 TUBE_STEP = 0.004       # along the plate
 TUBE_R_ANGLE = -40.0    # the right tube's angle round the right forearm, from its back
-TUBE_R_END = -0.205     # the right tube's end along the forearm, past the plate's elbow end
+TUBE_R_END = -0.195     # the right tube's end along the forearm, past the plate's elbow end
 # The sun compass, right forearm.
 COMPASS_STRAP = (-0.0155, -0.011, -0.0065)  # strap rear edge, the post's line, front edge
 COMPASS_POST = 0.008
@@ -533,36 +544,62 @@ NEEDLE = (0.0105, 0.006, 0.0034, 50.0)  # tip radius, tail radius, width, direct
 LAMP = (0.0131, 0.0018, 135.0)    # centre radius, radius, direction round the face
 
 # ---- clips (desert-arms-walk) ----------------------------------------------
-# A first-person carry, in place: both hands bob twice per stride cycle and
-# counter-swing fore and aft once, the left forward at phase 0; the forearms
-# rock at the elbow with the swing and the hands trail it at the wrist.
-# Phase is time / 1.0 s. The game drives it by the distance walked: `cycle`
-# metres per cycle (two steps). Offsets are each hand joint's head from rest,
-# engine y (up) and z (forward); angles in degrees.
+# A first-person carry, in place (task desert-arms-motion). Phase is
+# time / 1.0 s; the game drives it by the distance walked: `cycle` metres per
+# cycle (two steps). With sgn +1 for the left arm and -1 for the right,
+# c = sgn cos 2 pi phase (the side's swing, +1 at its forward peak) and
+# s = |sin 2 pi phase|, each wrist's offset from rest in engine axes (x the
+# player's left, y up, z forward; metres) is
+#     dz = -back + swing c
+#     dy = k (lift + arc c^2 + drive max(c, 0)) - bob (1 - s)^bob_pow
+#     |dx| = drift max(c, 0) toward the body's middle, out max(-c, 0) away from it
+# the forearm closes at the elbow by (degrees)
+#     e = k (hold + give max(c', 0) + (pump[0] c' if c' > 0 else pump[1] c')),  c' = sgn cos 2 pi (phase - elbow_lag)
+# and the hand turns about engine x at the wrist, fingertips up for positive h, by
+#     h = k hand sgn cos 2 pi (phase - hand_lag)
+# The left hand is furthest forward at phase 0; the bob's low points (the
+# footfalls) are at phases 0 and 0.5. k is the clip's scale (CLIP_SCALES).
+# Arms_Sprint curls every finger and thumb joint `fist` degrees toward the palm.
 FPS = 30
 CLIP_FRAMES = 30          # 1.0 s: 31 keys, the last equal to the first
 CLIPS = {
-    "Arms_Walk": dict(cycle=2.0, bob=0.015, swing=0.025, lift=0.0, elbow=4.0, wrist=6.0, fist=0.0),
-    "Arms_Sprint": dict(cycle=3.0, bob=0.020, swing=0.050, lift=0.0, elbow=8.0, wrist=6.0, fist=25.0),
+    "Arms_Walk": dict(cycle=2.0, swing=0.035, back=0.0, lift=0.0, arc=0.006, drive=0.0, bob=0.012, bob_pow=2,
+                      drift=0.006, out=0.0, hold=0.0, give=6.0, pump=(0.0, 0.0), elbow_lag=0.05,
+                      hand=5.0, hand_lag=0.15, fist=0.0),
+    "Arms_Sprint": dict(cycle=3.0, swing=0.035, back=0.080, lift=0.015, arc=0.0, drive=0.025, bob=0.022, bob_pow=3,
+                        drift=0.030, out=0.010, hold=15.0, give=0.0, pump=(12.0, 8.0), elbow_lag=0.03,
+                        hand=8.0, hand_lag=0.10, fist=25.0),
 }
 CLIP_ORDER = ("Arms_Walk", "Arms_Sprint")
-# What the checks hold the clips to (task desert-arms-walk, Assets), kept
-# apart from CLIPS on purpose so a slip in the motion's numbers fails the
-# build: each hand's y offset reaches mean +- bob, its z offset +- swing (m).
+FRAME_TOP_CLIP = {"Arms_Walk": -0.30, "Arms_Sprint": -0.10}   # nothing in view above this NDC y at any frame
+# If a clip fails its checks, the build retries it with its vertical and
+# angle terms (lift, arc, drive, hold, give, pump, hand) times each of these in
+# turn and keeps the first that passes; if none does, the build fails.
+CLIP_SCALES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)
+# What the checks hold the clips to (task desert-arms-motion, Decisions),
+# kept apart from CLIPS on purpose so a slip in the motion's numbers fails
+# the build. For each side, its hand joint head's offset from rest (engine
+# axes, m): z spans z_min..z_max, the max at the side's forward phase; y at
+# the side's forward and back phases is y_fwd and y_back, each (a, b) meaning
+# a + b k for the clip's scale k; x toward the body's middle spans
+# x_in_min..x_in_max. The forearm is most closed elbow_lag after the side's
+# forward phase, the hand most fingertips-up hand_lag after it.
 CLIP_TARGETS = {
-    "Arms_Walk": dict(mean=0.0, bob=0.015, swing=0.025),
-    "Arms_Sprint": dict(mean=0.0, bob=0.020, swing=0.050),
+    "Arms_Walk": dict(z_max=0.035, z_min=-0.035, y_fwd=(-0.012, 0.006), y_back=(-0.012, 0.006),
+                      x_in_max=0.006, x_in_min=0.0, elbow_lag=0.05, hand_lag=0.15),
+    "Arms_Sprint": dict(z_max=-0.045, z_min=-0.115, y_fwd=(-0.022, 0.040), y_back=(-0.022, 0.015),
+                        x_in_max=0.030, x_in_min=-0.010, elbow_lag=0.03, hand_lag=0.10),
 }
 LIMBS = ("shoulder", "upper_arm", "forearm", "hand")   # the joints a clip may turn
 DIGITS = ("thumb", "index", "middle", "ring", "pinky")  # and, curled into a fist, these in Arms_Sprint
 SOLVE_WEIGHT = (1.0, 1.0)  # how hard the shoulder and the upper arm resist turning when placing the wrist
+SOLVE_TOL = 1e-7          # the solved wrist within this of its target (m)
 AMP_TOL = 0.003           # each offset's reach within this of the spec (m)
 TIMING_TOL = 1.0 / 30.0   # each peak within this of its phase
 WRIST_MAX = 30.0          # the test poses' ranges from rest: a hand about each axis,
 FINGER_MAX = 60.0         # a finger or thumb joint,
-ELBOW_SPAN = (-10.0, 30.0)  # an elbow closed (-) or opened (+)
 STEP_MAX = 45.0           # no joint turns more than this between adjacent keys
-ELBOW_CLOSE_TEST = 10.0   # the closed-elbow test pose
+ELBOW_CLOSE_TEST = 30.0   # the closed-elbow test pose
 ATTACH_FRAMES = 8         # attachment is checked at this many evenly spaced phases of each clip
 SHEET = (4, 2, 640, 360)  # clip preview sheets: columns, rows, tile size
 
@@ -2357,25 +2394,38 @@ class Builder:
             prev = n
         return M[:3, 3]
 
-    def carry(self, spec, phase, S, guess):
-        """One side's joint turns at `phase` of a clip: the forearm rocks with
-        the swing, the hand trails it, and the shoulder and upper arm turn
-        (least turn, weighted by SOLVE_WEIGHT) to put the wrist on its target.
-        Returns (name -> basis quaternion, the solved rotation vectors)."""
+    def carry(self, spec, phase, S, guess, k=1.0):
+        """One side's joint turns at `phase` of a clip, its vertical and angle
+        terms scaled by k (the formulas above CLIPS): the forearm closes at
+        the elbow by e, the hand turns by h about engine x at the wrist, and
+        the shoulder and upper arm turn (least turn, weighted by SOLVE_WEIGHT)
+        to put the wrist on its target. A target the solve misses by more
+        than SOLVE_TOL (out of reach) is recorded in self.solve_misses and the
+        guess kept, and clip_checks fails the clip at this scale. Returns
+        (name -> basis quaternion, the solved rotation vectors)."""
         sd = self.sides[S]
         sgn = 1.0 if S == "L" else -1.0
-        c1, s1 = math.cos(2 * math.pi * phase), math.sin(2 * math.pi * phase)
-        dy = spec["lift"] - spec["bob"] * math.cos(4 * math.pi * phase)   # engine y: up
-        dz = sgn * spec["swing"] * c1                                      # engine z: forward
-        target = np.array(sd.W + Vector((0.0, -dz, dy)), dtype=np.float64)
-        # The elbow's hinge: a turn by -a about it opens the elbow by a (the
-        # opened test pose); the hand pitches about the same hinge, in the
-        # arm's plane. The forearm opens as the hand swings forward; the hand
-        # lags the forearm by a quarter cycle's worth of its own swing.
+        tau = 2 * math.pi
+        c = sgn * math.cos(tau * phase)          # the side's swing: +1 at its forward peak
+        s = abs(math.sin(tau * phase))
+        dz = -spec["back"] + spec["swing"] * c   # engine z: forward
+        dy = k * (spec["lift"] + spec["arc"] * c * c + spec["drive"] * max(c, 0.0)) \
+            - spec["bob"] * (1.0 - s) ** spec["bob_pow"]   # engine y: up
+        # Engine x is the player's left, so toward the body's middle is -x on
+        # the left arm and +x on the right.
+        dx = sgn * (spec["out"] * max(-c, 0.0) - spec["drift"] * max(c, 0.0))
+        target = np.array(sd.W + Vector((dx, -dz, dy)), dtype=np.float64)   # engine (x, y, z) is Blender (x, -z, y)
+        # The elbow's hinge: a turn by +e about it closes the elbow by e (the
+        # closed test pose, checked in check()).
+        cl = sgn * math.cos(tau * (phase - spec["elbow_lag"]))
+        pump = spec["pump"][0] * cl if cl > 0 else spec["pump"][1] * cl
+        e = k * (spec["hold"] + spec["give"] * max(cl, 0.0) + pump)
+        # The hand turns about Blender +X (engine x) at the wrist; the fingers
+        # point along -Y, so a turn by -h about +X raises the fingertips by h.
+        h = k * spec["hand"] * sgn * math.cos(tau * (phase - spec["hand_lag"]))
         hinge = np.array(sd.au.cross(sd.af).normalized(), dtype=np.float64)
-        opened = sgn * spec["elbow"] * c1
-        trail = sgn * spec["wrist"] * s1
-        fixed = {f"forearm.{S}": hinge * math.radians(-opened), f"hand.{S}": hinge * math.radians(-trail)}
+        fixed = {f"forearm.{S}": hinge * math.radians(e),
+                 f"hand.{S}": np.array((1.0, 0.0, 0.0)) * math.radians(-h)}
         wgt = np.array([SOLVE_WEIGHT[0]] * 3 + [SOLVE_WEIGHT[1]] * 3)
 
         def wrist(x):
@@ -2400,8 +2450,11 @@ class Builder:
             Wi = 1.0 / wgt
             mu = np.linalg.solve((J * Wi) @ J.T, r + J @ x)
             x = Wi * (J.T @ mu)
-        if np.linalg.norm(target - wrist(x)) > 1e-7:
-            raise RuntimeError(f"{S} wrist misses its target at phase {phase:.3f} by {np.linalg.norm(target - wrist(x))}")
+        miss = float(np.linalg.norm(target - wrist(x)))
+        if miss > SOLVE_TOL:
+            # Out of the arm's reach (or the solve didn't converge): clip_checks fails the clip at this scale.
+            self.solve_misses.append((S, phase, miss))
+            x = np.array(guess, dtype=np.float64)
         q = {f"shoulder.{S}": self.world_quat(f"shoulder.{S}", x[:3]),
              f"upper_arm.{S}": self.world_quat(f"upper_arm.{S}", x[3:]),
              f"forearm.{S}": self.world_quat(f"forearm.{S}", fixed[f"forearm.{S}"]),
@@ -2415,15 +2468,16 @@ class Builder:
                 q[f"thumb.{i + 1}.{S}"] = self.world_quat(f"thumb.{i + 1}.{S}", sd.thumb[2] * math.radians(spec["fist"]))
         return q, x
 
-    def clip_keys(self, spec):
-        """The clip's 31 keys: name -> basis quaternion for every joint (rest
-        is the identity). The last key is the first, so it loops."""
+    def clip_keys(self, spec, k=1.0):
+        """The clip's 31 keys at scale k: name -> basis quaternion for every
+        joint (rest is the identity). The last key is the first, so it loops."""
         keys = []
+        self.solve_misses = []
         guess = {S: np.zeros(6) for S in "LR"}
         for frame in range(CLIP_FRAMES):
             qs = {n: Quaternion() for n in JOINTS}
             for S in "LR":
-                q, guess[S] = self.carry(spec, frame / CLIP_FRAMES, S, guess[S])
+                q, guess[S] = self.carry(spec, frame / CLIP_FRAMES, S, guess[S], k)
                 qs.update(q)
             for n, qq in qs.items():
                 if qq.w < 0:
@@ -2439,13 +2493,19 @@ class Builder:
             pb.location = Vector()
             pb.scale = Vector((1, 1, 1))
 
-    def animate(self):
-        """The clips, as actions on the rig: every joint keyed on every frame
-        0..30 (rotation, location, scale), linear, the last key the first."""
+    def animate(self, scales=None):
+        """The clips, as actions on the rig, each at its scale k (`scales`:
+        name -> k, default 1.0; kept in self.scales): every joint keyed on
+        every frame 0..30 (rotation, location, scale), linear, the last key
+        the first."""
         scene = bpy.context.scene
         scene.render.fps, scene.render.fps_base = FPS, 1.0
         self._rest = self.rest_np()
-        self.keys = {name: self.clip_keys(CLIPS[name]) for name in CLIP_ORDER}
+        self.scales = {name: (scales or {}).get(name, 1.0) for name in CLIP_ORDER}
+        self.keys, self.misses = {}, {}
+        for name in CLIP_ORDER:
+            self.keys[name] = self.clip_keys(CLIPS[name], self.scales[name])
+            self.misses[name] = self.solve_misses
         rig = self.rig_obj
         rig.animation_data_create()
         for name in CLIP_ORDER:
@@ -3181,8 +3241,9 @@ def phase_gap(a, c):
     return min(d, 1.0 - d)
 
 
-def clip_checks(b):
-    """Every binding check on the clips (task desert-arms-walk, Assets).
+def clip_checks(b, names=CLIP_ORDER):
+    """Every binding check on the clips `names`, each at its scale in
+    b.scales (task desert-arms-motion, Approach), against CLIP_TARGETS.
     Returns (problems, measurements)."""
     problems, m = [], {}
     rig = b.rig_obj
@@ -3194,24 +3255,32 @@ def clip_checks(b):
     edges = edges.reshape(-1, 2)
     if rig.animation_data and rig.animation_data.action:
         problems.append("the rig has an active action; the checks pose it directly")
-    for name in CLIP_ORDER:
+    for name in names:
         spec = CLIPS[name]
+        k = b.scales[name]
         keys = b.keys[name]
-        cm = {"cycle_m": spec["cycle"], "keys": len(keys)}
+        cm = {"cycle_m": spec["cycle"], "clip_scale": k, "keys": len(keys)}
         movers = {f"{j}.{S}" for j in LIMBS for S in "LR"}
         if spec["fist"]:
             movers |= {n for n in JOINTS if n.split(".")[0] in DIGITS}
         if len(keys) != CLIP_FRAMES + 1:
             problems.append(f"{name} has {len(keys)} keys, wants {CLIP_FRAMES + 1}")
+        # Reach: every key's wrist on its target.
+        misses = b.misses[name]
+        cm["wrist_target_misses"] = len(misses)
+        if misses:
+            worst = max(misses, key=lambda t: t[2])
+            problems.append(f"{name}: {len(misses)} wrist targets out of reach (the solve misses them), worst "
+                            f"{worst[0]} at phase {worst[1]:.3f} by {worst[2] * 1000:.1f} mm")
         # Loops: the last key equals the first, exactly.
         for n in JOINTS:
             if tuple(keys[-1][n]) != tuple(keys[0][n]):
                 problems.append(f"{name}: {n}'s last key is not its first")
         # Joints: everything but the movers keyed at exactly rest.
-        still = [n for n in JOINTS if n not in movers and any(tuple(k[n]) != (1.0, 0.0, 0.0, 0.0) for k in keys)]
+        still = [n for n in JOINTS if n not in movers and any(tuple(q[n]) != (1.0, 0.0, 0.0, 0.0) for q in keys)]
         if still:
             problems.append(f"{name}: joints that must stay at rest turn: {still}")
-        moved = sorted({n for n in JOINTS if any(tuple(k[n]) != tuple(keys[0][n]) for k in keys)})
+        moved = sorted({n for n in JOINTS if any(tuple(q[n]) != tuple(keys[0][n]) for q in keys)})
         cm["joints_changing_between_keys"] = moved
         # The actions as keyed: 31 keys a channel, linear, the last the first.
         act = bpy.data.actions.get(name)
@@ -3225,17 +3294,28 @@ def clip_checks(b):
                 problems.append(f"{name}: {fc.data_path}[{fc.array_index}] is not 31 linear keys ending on its first")
                 break
         # Steps: no joint turns more than STEP_MAX between adjacent keys.
-        step = max(quat_deg(keys[k][n].rotation_difference(keys[k + 1][n])) for n in JOINTS for k in range(CLIP_FRAMES))
+        step = max(quat_deg(keys[f][n].rotation_difference(keys[f + 1][n])) for n in JOINTS for f in range(CLIP_FRAMES))
         cm["largest_key_step_deg"] = round(step, 2)
         if step > STEP_MAX:
             problems.append(f"{name}: a joint turns {step:.1f} degrees between adjacent keys (max {STEP_MAX})")
         # Every sampled frame (keys and half-keys, as the engine samples).
         rest_head = {S: bones[f"hand.{S}"].head_local.copy() for S in "LR"}
         rest_elbow = {S: math.degrees((b.sides[S].S - b.sides[S].E).angle(b.sides[S].W - b.sides[S].E)) for S in "LR"}
-        off = {S: [] for S in "LR"}
+        hinge = {S: b.sides[S].au.cross(b.sides[S].af).normalized() for S in "LR"}
+        off = {S: [] for S in "LR"}          # (x, y, z) engine axes
+        closed = {S: [] for S in "LR"}       # the forearm's turn about the hinge from rest (+ closes), degrees
+        tips_up = {S: [] for S in "LR"}      # the hand's turn about engine x, fingertips up (+), degrees
         tops, nears, exits = [], [], {S: [] for S in "LR"}
         hand_deg, hand_axes, finger_deg = 0.0, {"twist": 0.0, "flex": 0.0, "sideways": 0.0}, 0.0
         elbow = {S: [1e9, -1e9] for S in "LR"}
+
+        def world_turn(q, n):
+            """Joint n's basis quaternion as a rotation vector in world axes at rest (degrees)."""
+            ax, a = q.to_axis_angle()
+            if a > math.pi:
+                a -= 2 * math.pi
+            return bones[n].matrix_local.to_3x3() @ ax * math.degrees(a)
+
         for i in range(2 * CLIP_FRAMES + 1):
             qs = b.sample(name, i / 2)
             b.set_pose(qs)
@@ -3248,7 +3328,7 @@ def clip_checks(b):
                 pbs = rig.pose.bones
                 Wp, Ep, Sp = pbs[f"hand.{S}"].head.copy(), pbs[f"forearm.{S}"].head.copy(), pbs[f"upper_arm.{S}"].head.copy()
                 dlt = Wp - rest_head[S]
-                off[S].append((dlt.z, -dlt.y))
+                off[S].append(to_engine(dlt))
                 q = forearm_exit(Wp, Ep)
                 if q is None or q[1] >= -1.0 or abs(q[0]) > 1.0:
                     problems.append(f"{name} frame {i / 2}: {S} forearm does not leave through the bottom edge (at {q})")
@@ -3256,13 +3336,12 @@ def clip_checks(b):
                     exits[S].append(q[0])
                 ang = math.degrees((Sp - Ep).angle(Wp - Ep)) - rest_elbow[S]
                 elbow[S] = [min(elbow[S][0], ang), max(elbow[S][1], ang)]
+                closed[S].append(world_turn(qs[f"forearm.{S}"], f"forearm.{S}").dot(hinge[S]))
                 hq = qs[f"hand.{S}"]
                 hand_deg = max(hand_deg, quat_deg(hq))
-                # The hand's turn as a rotation vector in world axes at rest, about the test poses' axes.
-                ax, a = hq.to_axis_angle()
-                if a > math.pi:
-                    a -= 2 * math.pi
-                wv = bones[f"hand.{S}"].matrix_local.to_3x3() @ ax * math.degrees(a)
+                # The hand's turn relative to the forearm, in world axes at rest.
+                wv = world_turn(hq, f"hand.{S}")
+                tips_up[S].append(-wv.x)
                 for kind, axis in (("twist", sd.af), ("flex", sd.t), ("sideways", sd.n)):
                     hand_axes[kind] = max(hand_axes[kind], abs(wv.dot(axis)))
                 for n in JOINTS:
@@ -3270,65 +3349,105 @@ def clip_checks(b):
                         finger_deg = max(finger_deg, quat_deg(qs[n]))
         b.clear_pose()
         top, near = max(tops), min(nears)
+        frame_top = FRAME_TOP_CLIP[name]
         cm["highest_ndc_y_in_view"] = round(top, 3)
+        cm["highest_ndc_y_at_frame"] = tops.index(top) / 2
         cm["nearest_in_view_m"] = round(near, 3)
         cm["forearm_exit_ndc_x"] = {S: [round(min(exits[S]), 3), round(max(exits[S]), 3)] for S in "LR" if exits[S]}
-        if top > FRAME_TOP:
-            problems.append(f"{name}: something in view reaches NDC y {top:.3f}, above {FRAME_TOP} "
+        if top > frame_top:
+            problems.append(f"{name}: something in view reaches NDC y {top:.3f}, above {frame_top} "
                             f"(at frame {tops.index(top) / 2})")
         if near < CLEARANCE:
             problems.append(f"{name}: something in view is only {near:.3f} m ahead of the eye (needs {CLEARANCE})")
-        # Ranges.
-        cm["hand_turn_deg"] = {"total": round(hand_deg, 2), **{k: round(x, 2) for k, x in hand_axes.items()}}
+        # Ranges (the attachment test poses'; the elbow's range is the clip's
+        # own, covered by the attachment check at ATTACH_FRAMES phases).
+        cm["hand_turn_deg"] = {"total": round(hand_deg, 2), **{kk: round(x, 2) for kk, x in hand_axes.items()}}
         cm["elbow_opened_deg"] = {S: [round(x, 2) for x in elbow[S]] for S in "LR"}
         cm["finger_turn_deg"] = round(finger_deg, 2)
         if hand_deg > WRIST_MAX:
             problems.append(f"{name}: a hand turns {hand_deg:.1f} degrees from rest (max {WRIST_MAX} about each axis)")
         if finger_deg > FINGER_MAX:
             problems.append(f"{name}: a finger joint turns {finger_deg:.1f} degrees from rest (max {FINGER_MAX})")
-        for S in "LR":
-            if elbow[S][0] < ELBOW_SPAN[0] or elbow[S][1] > ELBOW_SPAN[1]:
-                problems.append(f"{name}: the {S} elbow goes {elbow[S]} degrees from rest (allowed {ELBOW_SPAN})")
-        # Amplitudes and timing.
+        # Offsets and timing, per side.
         phases = [i / (2 * CLIP_FRAMES) for i in range(2 * CLIP_FRAMES + 1)]
         tg = CLIP_TARGETS[name]
-        want = {"y": (tg["mean"] + tg["bob"], tg["mean"] - tg["bob"]), "z": (tg["swing"], -tg["swing"])}
         amp = {}
         for S in "LR":
-            ys = [o[0] for o in off[S]]
-            zs = [o[1] for o in off[S]]
-            amp[S] = {"y_max": round(max(ys), 4), "y_min": round(min(ys), 4), "y_mean": round(sum(ys[:-1]) / (len(ys) - 1), 4),
-                      "z_max": round(max(zs), 4), "z_min": round(min(zs), 4)}
-            for axis, vals in (("y", ys), ("z", zs)):
-                hi, lo = want[axis]
-                if abs(max(vals) - hi) > AMP_TOL or abs(min(vals) - lo) > AMP_TOL:
-                    problems.append(f"{name}: {S} hand {axis} offset spans {min(vals):.4f}..{max(vals):.4f}, "
-                                    f"wants {lo:.4f}..{hi:.4f} within {AMP_TOL}")
-            if abs(amp[S]["y_mean"] - tg["mean"]) > AMP_TOL:
-                problems.append(f"{name}: {S} hand y mean {amp[S]['y_mean']}, wants {tg['mean']}")
+            sgn = 1.0 if S == "L" else -1.0
+            fwd = 0.0 if S == "L" else 0.5
+            xin = [-sgn * o[0] for o in off[S]]
+            ys = [o[1] for o in off[S]]
+            zs = [o[2] for o in off[S]]
+            y_at = {ph: ys[phases.index(ph)] for ph in (0.0, 0.5)}
+            want_y = {fwd: tg["y_fwd"][0] + tg["y_fwd"][1] * k, (fwd + 0.5) % 1.0: tg["y_back"][0] + tg["y_back"][1] * k}
             zpeak = phases[zs.index(max(zs))]
-            want_z = 0.0 if S == "L" else 0.5
-            low = {}
-            for centre in (0.0, 0.5):
-                half = [k for k, ph in enumerate(phases) if phase_gap(ph, centre) < 0.25]
-                kk = min(half, key=lambda k: ys[k])
-                low[centre] = phases[kk]
-            amp[S]["z_peak_phase"] = round(zpeak, 4)
-            amp[S]["y_low_phases"] = [round(low[0.0], 4), round(low[0.5], 4)]
-            if phase_gap(zpeak, want_z) > TIMING_TOL + 1e-9:
-                problems.append(f"{name}: {S} hand furthest forward at phase {zpeak:.3f}, wants {want_z} +- 1/30")
-            for centre, ph in low.items():
-                if phase_gap(ph, centre) > TIMING_TOL + 1e-9:
-                    problems.append(f"{name}: {S} hand lowest near phase {centre} at {ph:.3f}, wants within 1/30")
+            ylow = phases[ys.index(min(ys))]
+            epeak = phases[closed[S].index(max(closed[S]))]
+            hpeak = phases[tips_up[S].index(max(tips_up[S]))]
+            amp[S] = {"z": [round(min(zs), 4), round(max(zs), 4)], "z_max_phase": round(zpeak, 4),
+                      "y": [round(min(ys), 4), round(max(ys), 4)], "y_min_phase": round(ylow, 4),
+                      "y_at_phase_0_0.5": [round(y_at[0.0], 4), round(y_at[0.5], 4)],
+                      "x_toward_middle": [round(min(xin), 4), round(max(xin), 4)],
+                      "elbow_closed_deg": [round(min(closed[S]), 2), round(max(closed[S]), 2)],
+                      "elbow_most_closed_phase": round(epeak, 4),
+                      "hand_tips_up_deg": [round(min(tips_up[S]), 2), round(max(tips_up[S]), 2)],
+                      "hand_most_up_phase": round(hpeak, 4)}
+            if abs(max(zs) - tg["z_max"]) > AMP_TOL or abs(min(zs) - tg["z_min"]) > AMP_TOL:
+                problems.append(f"{name}: {S} hand z offset spans {min(zs):.4f}..{max(zs):.4f}, "
+                                f"wants {tg['z_min']:.4f}..{tg['z_max']:.4f} within {AMP_TOL}")
+            if phase_gap(zpeak, fwd) > TIMING_TOL + 1e-9:
+                problems.append(f"{name}: {S} hand furthest forward at phase {zpeak:.3f}, wants {fwd} +- 1/30")
+            for ph, want in want_y.items():
+                if abs(y_at[ph] - want) > AMP_TOL:
+                    problems.append(f"{name}: {S} hand y offset at phase {ph} is {y_at[ph]:.4f}, wants {want:.4f} "
+                                    f"within {AMP_TOL}")
+            if min(phase_gap(ylow, 0.0), phase_gap(ylow, 0.5)) > TIMING_TOL + 1e-9:
+                problems.append(f"{name}: {S} hand lowest at phase {ylow:.3f}, wants within 1/30 of 0 or 0.5")
+            if abs(max(xin) - tg["x_in_max"]) > AMP_TOL or abs(min(xin) - tg["x_in_min"]) > AMP_TOL:
+                problems.append(f"{name}: {S} hand x offset toward the middle spans {min(xin):.4f}..{max(xin):.4f}, "
+                                f"wants {tg['x_in_min']:.4f}..{tg['x_in_max']:.4f} within {AMP_TOL}")
+            want_e = (fwd + tg["elbow_lag"]) % 1.0
+            if phase_gap(epeak, want_e) > TIMING_TOL + 1e-9:
+                problems.append(f"{name}: {S} elbow most closed at phase {epeak:.3f}, wants {want_e:.3f} +- 1/30")
+            want_h = (fwd + tg["hand_lag"]) % 1.0
+            if phase_gap(hpeak, want_h) > TIMING_TOL + 1e-9:
+                problems.append(f"{name}: {S} hand most fingertips-up at phase {hpeak:.3f}, wants {want_h:.3f} +- 1/30")
         cm["hand_offsets_m"] = amp
         # Attachment at evenly spaced phases.
-        for k in range(ATTACH_FRAMES):
-            b.set_pose(b.sample(name, CLIP_FRAMES * k / ATTACH_FRAMES))
+        for j in range(ATTACH_FRAMES):
+            b.set_pose(b.sample(name, CLIP_FRAMES * j / ATTACH_FRAMES))
             pts = evaluated_points(b)
-            problems += attachment_problems(b, f"{name} phase {k}/{ATTACH_FRAMES}", pts, idx, polys)
+            problems += attachment_problems(b, f"{name} phase {j}/{ATTACH_FRAMES}", pts, idx, polys)
         b.clear_pose()
-        cm["attachment_phases"] = [f"{k}/{ATTACH_FRAMES}" for k in range(ATTACH_FRAMES)]
+        cm["attachment_phases"] = [f"{j}/{ATTACH_FRAMES}" for j in range(ATTACH_FRAMES)]
         m[name] = cm
+    return problems, m
+
+
+def fit_clips(b):
+    """Each clip at the first scale in CLIP_SCALES whose clip_checks pass
+    (task desert-arms-motion, Decisions: automatic fallback). Leaves the rig's
+    actions and b.keys at those scales. Returns (problems, measurements):
+    problems only if some clip passes at no scale, listing each try's."""
+    problems, m = [], {}
+    scales = {name: CLIP_SCALES[0] for name in CLIP_ORDER}
+    for name in CLIP_ORDER:
+        tries = {}
+        for k in CLIP_SCALES:
+            scales[name] = k
+            b.animate(scales)
+            cp, cm = clip_checks(b, (name,))
+            if not cp:
+                m[name] = cm[name]
+                break
+            tries[k] = cp
+            print(f"{name} at k = {k} fails:\n  " + "\n  ".join(cp))
+        else:
+            problems.append(f"{name} passes its checks at no scale in {CLIP_SCALES}: "
+                            + "; ".join(f"k {k}: {p}" for k, p in tries.items()))
+        m.setdefault("tries_failed", {})[name] = {str(k): len(p) for k, p in tries.items()}
+    b.animate(scales)
+    m["clip_scale"] = dict(scales)
     return problems, m
 
 
@@ -3745,8 +3864,9 @@ def main():
     b.build_all()
     problems, m = check(b)
     print("arms:", json.dumps(m, indent=1))
-    cp, cm = clip_checks(b)
+    cp, cm = fit_clips(b)
     print("clips:", json.dumps(cm, indent=1))
+    print("clip_scale:", json.dumps(cm["clip_scale"]))
     problems += cp
     if problems:
         raise RuntimeError("the arms fail their checks:\n  " + "\n  ".join(problems))

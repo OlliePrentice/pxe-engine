@@ -1,0 +1,37 @@
+# Blender -b --python-exit-code 1 -P docs/tasks/desert-arms-motion/scripts/rest_compare.py -- $TMPDIR/build_arms_base.py   (base d5bccf4)
+TUBE_R_END base -0.205 new -0.195
+vertices base 13454 new 13454 ; polygons base 11438 new 11438
+largest move outside R.tube.1: 0.000e+00 m
+R.tube.1: 408 vertices, 51 rings of 8 (+0 cap vertices); 16 moved, in rings [49, 50], largest 0.0114 m
+  ring 49: moved 8/8, largest 0.0021 m
+  ring 50: moved 8/8, largest 0.0114 m
+rest mesh: OK
+
+# exit 0
+
+# The build's own clip read-back (check_glb_clips: the glb with clips against the one just exported):
+"rest_vertices": 43859, "rest_vertex_max_diff_m": 0.0, "rest_joint_nodes_changed": [], "rest_ibm_max_diff": 0.0}
+
+# python3 tools/glb.py compare --tolerance 1e-6 <d5bccf4 arms.glb> desert/assets/characters/arms.glb
+materials: equal (15)
+joints: skin 0 equal (39)
+joint transforms: skin 0 largest difference 0
+inverse bind matrices: skin 0 largest difference 0
+mesh Arms primitive 0: vertices 1536/1536, indices 2304/2304, largest position difference 0, indices equal
+mesh Arms primitive 1: vertices 5616/5616, indices 9240/9240, largest position difference 0, indices equal
+mesh Arms primitive 2: vertices 1836/1836, indices 3600/3600, largest position difference 0, indices equal
+mesh Arms primitive 3: vertices 3000/3000, indices 4632/4632, largest position difference 0, indices equal
+mesh Arms primitive 4: vertices 4602/4602, indices 7740/7740, largest position difference 8.271e-03, indices differ
+mesh Arms primitive 5: vertices 4541/4541, indices 7872/7872, largest position difference 0, indices equal
+mesh Arms primitive 6: vertices 2316/2316, indices 3480/3480, largest position difference 0, indices equal
+mesh Arms primitive 7: vertices 810/810, indices 1392/1392, largest position difference 0, indices equal
+mesh Arms primitive 8: vertices 11448/11448, indices 17172/17172, largest position difference 0, indices equal
+mesh Arms primitive 9: vertices 3342/3342, indices 5688/5688, largest position difference 0, indices equal
+mesh Arms primitive 10: vertices 1440/1440, indices 2160/2160, largest position difference 0, indices equal
+mesh Arms primitive 11: vertices 144/144, indices 276/276, largest position difference 0, indices equal
+mesh Arms primitive 12: vertices 528/528, indices 864/864, largest position difference 0, indices equal
+mesh Arms primitive 13: vertices 2676/2676, indices 6168/6168, largest position difference 0, indices equal
+mesh Arms primitive 14: vertices 24/24, indices 36/36, largest position difference 0, indices equal
+animations (not compared): a: Arms_Walk, Arms_Sprint; b: Arms_Walk, Arms_Sprint
+glb compare: differs: mesh Arms primitive 4 positions: 8.271e-03 over tolerance 1e-06
+# exit 1 (expected 1: only primitive 4, Arms_Glow, which holds R.tube.1, differs; inverse bind matrices identical)
