@@ -20,7 +20,7 @@ This skill usually runs headless from `tools/backlog-loop.sh`: `claude -p`, one 
 The same rules hold when the user runs `/backlog-run` in a session. Report the questions at the end rather than asking mid-batch.
 
 ## Files
-- `docs/backlog.md`: the queue, with each task's status, dependencies and the files it touches. Only you edit it, and only in the main working tree on the run's branch.
+- `docs/backlog.md`: the queue, with each task's status, dependencies and the files it touches. Only you edit it, and only in the main working tree on the run's branch. Edit it with an exact replacement (the Edit tool, or a script that asserts the old text matches once), and check `git diff --stat` shows only the lines you meant to change before committing.
 - `docs/tasks/<task-id>/`, in the task's worktree:
   - `task.md`: the spec, written by `/feature`. You tick criteria, keep the cycle log and set the status.
   - `issues.md`: build errors and review findings, written by you.
