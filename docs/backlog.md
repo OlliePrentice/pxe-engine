@@ -240,3 +240,19 @@ Depends on: perspective-surface-detail, desert-sky
 Touches: desert/src/world.hpp, desert/src/world.cpp, desert/src/main.cpp, desert/src/settings.cpp, desert/docs/art-style.md, docs/tasks/desert-ground/
 Assets: no
 Merged: f7fc8c9
+
+## module-index-tools: Module index check, and overrides that reach a build script's modules
+Status: queued
+Type: tooling
+Spec: docs/tasks/module-index-tools/task.md
+Depends on: none
+Touches: tools/module_index.py, tools/blender-override.py, tools/README.md, docs/tasks/module-index-tools/
+Assets: no
+
+## arms-build-split: Split the arms build script into modules
+Status: queued
+Type: tooling
+Spec: docs/tasks/arms-build-split/task.md
+Depends on: module-index-tools
+Touches: desert/tools/blender/build_arms.py, desert/tools/blender/arms_parts/, desert/assets/characters/, .claude/agents/designer.md, .claude/skills/backlog-run/SKILL.md, desert/docs/art-style.md, docs/tasks/arms-build-split/
+Assets: yes
