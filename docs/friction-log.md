@@ -464,3 +464,45 @@ Status: actioned
 Seen: desert-arms-gear (2026-10-31, developer: found and deleted the `.log` files in the task folder)
 Detail: Not in `tools/README.md`, so captures written into a task folder come with logs.
 Action: tools/README.md, captures.sh row (3d17fed).
+
+## F-065: A clip's numbers planned without checking the chain's reach
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-motion (2026-10-31, designer: the sprint's forward-peak wrist target is 46.7 mm beyond what the rotation-only arm reaches with the elbow closed the specified 26.8°; no fallback k passes; `docs/tasks/desert-arms-motion/scripts/sprint_reach.py`)
+Detail: The spec fixed the wrist offsets and the elbow angles independently, and the fallback scaled the angles but not the swing. Nothing at planning built the clip or checked reach. The 10° closed-elbow test pose also hid that R.tube.1 leaves its sleeve at 18° or more (`scripts/elbow_close_attachment.py`), and the walk task's ELBOW_SPAN check (10° at most) contradicted the sprint's 15° hold.
+Action: .claude/skills/feature/SKILL.md, step 1.7 "Each asset": build new motion numbers and run the whole set of checks before queueing, checking IK reach with margin, attachment at the clip's extreme joint angles, and existing joint-range checks (a42cb8e). The task is blocked with replan-1.md.
+
+## F-066: A fallback's trigger stated differently in two sections
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-motion (2026-10-31, designer: Decisions retried "if a clip breaks its frame limit", Approach "keeps the first k that passes" clip_checks; the designer retried on any failing check)
+Detail: The two sections disagreed on which failures the fallback covers.
+Action: .claude/skills/feature/SKILL.md, step 1.7: state a fallback's trigger the same way in every section (a42cb8e).
+
+## F-067: The orchestrator wiped the backlog with a range `sed -n`
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-motion (2026-10-31, orchestrator: `sed -n '/A/,/B/ s/.../.../'` printed only the range, so the redirected backlog lost every other entry; caught by `git diff --stat` and amended before anything was built on it)
+Detail: The skill didn't say how to edit the backlog safely.
+Action: .claude/skills/backlog-run/SKILL.md, Files: edit backlog.md with an exact replacement and check `git diff --stat` before committing (a42cb8e).
+
+## F-068: Overriding one key of a dict constant through blender-override
+Kind: doc-gap
+Status: actioned
+Seen: desert-arms-motion (2026-10-31, designer: `CLIPS["Arms_Walk"]["hand_lag"]=0.3` is refused as malformed)
+Detail: `tools/blender-override.py` takes only `NAME=expr`, and tools/README.md didn't show how to change one key of a dict.
+Action: tools/README.md, blender-override row: rebind the whole name with `{**CLIPS, ...}` (retro commit).
+
+## F-069: Checking a wrist-target clip's reach against the shoulder chain
+Kind: tool
+Status: open
+Seen: desert-arms-motion (2026-10-31, designer: `docs/tasks/desert-arms-motion/scripts/sprint_reach.py`)
+Detail: The reach of the rotation-only chain per frame, the solve's misses, and the most the elbow can close and still reach. Nothing in `tools/` does it. First sighting.
+Action: none yet; a third sighting queues a tooling task.
+
+## F-070: Attachment at joint angles beyond the test poses
+Kind: tool
+Status: open
+Seen: desert-arms-motion (2026-10-31, designer: `docs/tasks/desert-arms-motion/scripts/elbow_close_attachment.py`)
+Detail: Runs the attachment check with the elbows closed at a range of angles. First sighting.
+Action: none yet; a third sighting queues a tooling task.
