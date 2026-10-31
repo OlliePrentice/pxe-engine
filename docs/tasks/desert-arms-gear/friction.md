@@ -7,3 +7,7 @@
 - tool: `docs/tasks/desert-arms-gear/scripts/gear_views.py`: close Workbench renders of each forearm and hand from chosen directions, for inspecting detail the six standard previews don't show. Nothing in tools/blender/ renders ad-hoc inspection views of a built asset.
 - tool: negative runs batched in parallel through tools/blender-override.py from a `tag|override` list (`docs/tasks/desert-arms-gear/scripts/negative_runs.txt`, a 5-line wrapper in /tmp). Proving 17 checks took one shell loop, but each designer writes that loop by hand. A `--negatives <file>` mode in blender-override.py, which runs each override and reports which ones failed, would make this shared.
 - doc-gap: no constant controls some counts (the knuckle guards), so a constant override can't make them fail. I wrote a scratch script that drops a piece and calls the check function. tools/README.md could say how to prove such a check.
+
+## game-developer cycle 2
+- instruction-gap: the task asked to describe the frayed khaki strips, scratches and undersuit against the concept art, but the standard 960x540 first-person captures barely show them (forearms are below the frame at rest). I said so in the handoff instead of rendering extra views. Item 7's description list could name which captures can show which part.
+- tool: `docs/tasks/desert-arms-gear/scripts/gear_captures.txt`: the four item-7 cases for `tools/captures.sh --twice` (no new script needed; captures.sh covered it, and it also writes a .log per case into --out, which I deleted).
