@@ -215,16 +215,12 @@ Assets: yes
 Merged: 255a676
 
 ## desert-arms-motion: Arms: a natural walk and a pumping sprint
-Status: blocked
+Status: in-progress
 Type: feature
 Spec: docs/tasks/desert-arms-motion/task.md
 Depends on: desert-arms-gear
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, docs/tasks/desert-arms-motion/
 Assets: yes
-Questions:
-- The sprint as specified can't be built. Its forward-peak wrist target (+50 mm forward, +18 mm up) is 46.7 mm beyond what the arm reaches with the elbow closed the specified 26.8°, and no fallback k passes (the fallback doesn't scale the swing). The walk is built and passes at k 1.0 (branch desert-arms-motion, db6e434). Evidence and options are in docs/tasks/desert-arms-motion/replan-1.md. Choose: (a) keep the forward swing and limit the front elbow close to about 13° (a weaker "bent" read); (b) keep a ~27° pump and drive the forward peak up toward the chest instead of out (new sprint numbers, chosen with scripts/sprint_reach.py so every frame keeps 10 mm of reach margin); (c) let the fallback scale the swing and draw-back as well. I'd pick (b).
-- Closing both elbows 18° or more pushes the end of the right tube (R.tube.1) out of its sleeve, so any sprint with the elbow past about 17° needs a gear change, which this task rules out. Should the right tube be revised so it stays sleeved up to about 30° closed (the mesh changes, so "rest pose unchanged" and the perspective-identical checks would exclude the tube)? Or should the sprint's elbow stay at 17° or less? I'd revise the tube; (b) needs it.
-- The desert-arms-walk check ELBOW_SPAN (elbows closed at most 10° in clips) contradicts the sprint's 15° hold. The designer dropped it for clips, since the per-clip attachment check at 8 phases covers each clip's range. Confirm, or name the limit that replaces it. I'd drop it.
 
 ## perspective-surface-detail: Terminator sharpness and surface ripples in perspective mode
 Status: done
