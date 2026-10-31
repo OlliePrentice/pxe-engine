@@ -1,6 +1,6 @@
 # Arms: gear and palette after the concept art
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -129,11 +129,11 @@ Run in the task's worktree, against the cycle base:
 8. `git diff <cycle base> -- desert/docs/art-style.md` shows exactly the three changes in §2.
 
 ## Acceptance criteria
-- [ ] `MATERIALS`, `CREASED` and `TRI_BUDGET` are as binding. The gear is built as Decisions say, and every new check in §1 runs and passes alongside every existing one.
-- [ ] `arms.cpp` and `arms.hpp` use the new names, with crease ink on wrap, glove, gunmetal, worn and grime.
-- [ ] `desert/docs/art-style.md` has exactly the three changes.
-- [ ] Verification 2–8 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `MATERIALS`, `CREASED` and `TRI_BUDGET` are as binding. The gear is built as Decisions say, and every new check in §1 runs and passes alongside every existing one. (`build_arms.py` lines 229–266, `gear_problems()` and `framing()`; headless build exits 0, cycle 2 orchestrator run.)
+- [x] `arms.cpp` and `arms.hpp` use the new names, with crease ink on wrap, glove, gunmetal, worn and grime. (`Arms::pose` crease line; `arms.hpp` slot comment.)
+- [x] `desert/docs/art-style.md` has exactly the three changes. (`git diff 14ce794 -- desert/docs/art-style.md`.)
+- [x] Verification 2–8 pass. (2: two headless runs exit 0, glbs `cmp`-identical to the committed one; 3–4, 7: handoff cycle 2; 5–6: empty diff and grep, orchestrator re-run; 8: as above.)
+- [x] Project builds cleanly from a fresh build directory with CMake (check preset, `--clean-first`: only the stb `sprintf` warning).
 
 ## Assets
 - **arms** (revised): `desert/assets/characters/arms.glb`, rebuilt by `desert/tools/blender/build_arms.py`, with all six previews.
@@ -157,3 +157,12 @@ Run in the task's worktree, against the cycle base:
 - Cycle 1, 2026-10-30: base 1657933.
 - Cycle 1, 2026-10-30: designer NEEDS INPUT (undersuit check infeasible on the left); replan 1 applied (Approach only).
 - Cycle 2, 2026-10-30: base 14ce794 (first cycle after revision 1).
+- Cycle 2, 2026-10-31: resumed after an interrupted batch; designer 27c6762, developer 66cf1e4. Build check and review: no issues. Complete.
+
+## Playtest checklist
+- `tools/build.sh release desert`: at rest, the gloves read grey-brown with gunmetal back plates (three segments) and raised knuckle guards; the left wrist's gauge shows `47%▮` in cyan on a dark teal panel in a gunmetal bezel; the right wrist's compass has a dark face with cyan ticks, needle and lamp (no amber lamp).
+- Look down / sprint (Shift): the left forearm's gunmetal vambrace with buckled straps and two cyan tubes running off the bottom of the view; on the right, a plainer vambrace set back from the cuff, frayed khaki strips with the dark undersuit showing between them, and one cyan tube.
+- No bright colour but cyan anywhere on the arms; copper only on the small coil by the gauge.
+- `--hour 21`: the cyan parts (readout, compass marks and lamp, tubes) still glow while the rest goes dark.
+- Walk and sprint: the gear stays attached through the stride; watch the back-of-hand plates at the pinky side — rigid to the hand, they can slide up to ~6 mm over the glove in strong wrist bends (the clips bend the wrist far less). Tell us if it shows.
+- Edge ink: creases on the wrap, glove, gunmetal plates, knuckle guards and grimy strip; none on straps or glowing parts.
