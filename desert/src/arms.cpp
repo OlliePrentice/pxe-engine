@@ -17,7 +17,7 @@ namespace {
 constexpr int kWrap = 0;
 constexpr int kGlove = 1;
 [[maybe_unused]] constexpr int kStrap = 2;
-constexpr int kBrass = 3;
+constexpr int kGunmetal = 3;
 [[maybe_unused]] constexpr int kGlow = 4;
 [[maybe_unused]] constexpr int kSteel = 5;
 [[maybe_unused]] constexpr int kCopper = 6;
@@ -26,8 +26,8 @@ constexpr int kBrass = 3;
 constexpr int kWorn = 9;
 constexpr int kGrime = 10;
 [[maybe_unused]] constexpr int kDial = 11;
-[[maybe_unused]] constexpr int kPaint = 12;
-[[maybe_unused]] constexpr int kAmber = 13;
+[[maybe_unused]] constexpr int kRust = 12;
+[[maybe_unused]] constexpr int kUndersuit = 13;
 [[maybe_unused]] constexpr int kScreen = 14;
 
 // Metres walked per cycle of each clip (two steps), and how fast the walk's
@@ -99,7 +99,7 @@ void Arms::pose(const pxe::PerspectiveFrame& view, pxe::FrameParams& params) {
   const auto& mats = model_.materials();
   for (int i = 0; i < static_cast<int>(mats.size()) && kFirstMaterial + i < pxe::kActorMaterials; ++i) {
     params.actorMaterials[kFirstMaterial + i] = mats[static_cast<std::size_t>(i)];
-    params.actorMaterials[kFirstMaterial + i].crease = i == kWrap || i == kGlove || i == kBrass || i == kWorn || i == kGrime;
+    params.actorMaterials[kFirstMaterial + i].crease = i == kWrap || i == kGlove || i == kGunmetal || i == kWorn || i == kGrime;
   }
 }
 

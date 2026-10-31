@@ -1,7 +1,7 @@
 # Arms: gear and palette after the concept art
 Type: feature
-Status: queued
-Cycle: 0
+Status: complete
+Cycle: 2
 
 ## Goal
 Restyle the desert player's arms' gear and palette after `desert/docs/concept/wanderers.png`:
@@ -74,7 +74,7 @@ Designer first, then the developer.
 - **Tubes:** a `tubes()` step using `Builder.tube`, rigid to each forearm (they leave the view, so their far ends need no attachment beyond the forearm). The copper cable's path becomes the first left tube's.
 - **New checks** in `check()` and `framing()` (binding):
   - Materials: the colours, names, order and emissive flags of the table. Every piece in `Arms_Copper` is named `*.coil*`.
-  - Undersuit seen: at least 8 `Arms_Undersuit` vertices per forearm are `seen` from the eye at rest.
+  - Undersuit seen: at least 8 `Arms_Undersuit` vertices on the right forearm are `seen` from the eye at rest. On the left the plate covers every in-view part of the forearm, so the left forearm is not checked for it. The right vambrace's plate sits with its wrist end toward the elbow far enough for this to pass, with a gap between strips behind the right cuff; prefer its wrist end at s −0.045 to −0.066 so part of it stays in view, and move it further back only if the check can't pass there.
   - Strips: each forearm has 2–3 strip pieces. Each strip edge has at least 8 notches, a notch being a dip of 3–6 mm in the edge's offset along the forearm. Each forearm has 2–3 tails.
   - Vambraces: one `Arms_Gunmetal` plate per forearm, 0.12–0.15 m long along the forearm axis and spanning 140° ± 10° round it. At least 4 `Arms_Steel` scratch pieces per plate, each 15–40 mm long and at most 1.2 mm wide. Two straps per vambrace, each with a buckle.
   - Hand plates: three `Arms_Gunmetal` segments per hand, each touching the next (overlap). Four `Arms_Worn` knuckle guards per hand.
@@ -129,11 +129,11 @@ Run in the task's worktree, against the cycle base:
 8. `git diff <cycle base> -- desert/docs/art-style.md` shows exactly the three changes in §2.
 
 ## Acceptance criteria
-- [ ] `MATERIALS`, `CREASED` and `TRI_BUDGET` are as binding. The gear is built as Decisions say, and every new check in §1 runs and passes alongside every existing one.
-- [ ] `arms.cpp` and `arms.hpp` use the new names, with crease ink on wrap, glove, gunmetal, worn and grime.
-- [ ] `desert/docs/art-style.md` has exactly the three changes.
-- [ ] Verification 2–8 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `MATERIALS`, `CREASED` and `TRI_BUDGET` are as binding. The gear is built as Decisions say, and every new check in §1 runs and passes alongside every existing one. (`build_arms.py` lines 229–266, `gear_problems()` and `framing()`; headless build exits 0, cycle 2 orchestrator run.)
+- [x] `arms.cpp` and `arms.hpp` use the new names, with crease ink on wrap, glove, gunmetal, worn and grime. (`Arms::pose` crease line; `arms.hpp` slot comment.)
+- [x] `desert/docs/art-style.md` has exactly the three changes. (`git diff 14ce794 -- desert/docs/art-style.md`.)
+- [x] Verification 2–8 pass. (2: two headless runs exit 0, glbs `cmp`-identical to the committed one; 3–4, 7: handoff cycle 2; 5–6: empty diff and grep, orchestrator re-run; 8: as above.)
+- [x] Project builds cleanly from a fresh build directory with CMake (check preset, `--clean-first`: only the stb `sprintf` warning).
 
 ## Assets
 - **arms** (revised): `desert/assets/characters/arms.glb`, rebuilt by `desert/tools/blender/build_arms.py`, with all six previews.
@@ -151,5 +151,18 @@ Run in the task's worktree, against the cycle base:
 
 ## Spec revisions
 - 2026-10-30, from the unblock of `desert-arms-pose` (user): each vambrace is 0.12–0.15 m long along the forearm (was 0.11–0.13 m), in Decisions and the check. `desert-arms-pose` extended the left plate's wrist end to s −0.020 to keep the gauge's toggles on it, so the plate is 0.140 m (`BRACER_S` (−0.160, −0.020)).
+- Revision 1, 2026-10-30: the "Undersuit seen" check applies to the right forearm only, and the right vambrace's placement is set so it passes (Approach §1). The left plate covers the whole in-view part of the left forearm, so the check contradicted its size and placement. See replan-1.md.
 
 ## Cycle log
+- Cycle 1, 2026-10-30: base 1657933.
+- Cycle 1, 2026-10-30: designer NEEDS INPUT (undersuit check infeasible on the left); replan 1 applied (Approach only).
+- Cycle 2, 2026-10-30: base 14ce794 (first cycle after revision 1).
+- Cycle 2, 2026-10-31: resumed after an interrupted batch; designer 27c6762, developer 66cf1e4. Build check and review: no issues. Complete.
+
+## Playtest checklist
+- `tools/build.sh release desert`: at rest, the gloves read grey-brown with gunmetal back plates (three segments) and raised knuckle guards; the left wrist's gauge shows `47%▮` in cyan on a dark teal panel in a gunmetal bezel; the right wrist's compass has a dark face with cyan ticks, needle and lamp (no amber lamp).
+- Look down / sprint (Shift): the left forearm's gunmetal vambrace with buckled straps and two cyan tubes running off the bottom of the view; on the right, a plainer vambrace set back from the cuff, frayed khaki strips with the dark undersuit showing between them, and one cyan tube.
+- No bright colour but cyan anywhere on the arms; copper only on the small coil by the gauge.
+- `--hour 21`: the cyan parts (readout, compass marks and lamp, tubes) still glow while the rest goes dark.
+- Walk and sprint: the gear stays attached through the stride; watch the back-of-hand plates at the pinky side — rigid to the hand, they can slide up to ~6 mm over the glove in strong wrist bends (the clips bend the wrist far less). Tell us if it shows.
+- Edge ink: creases on the wrap, glove, gunmetal plates, knuckle guards and grimy strip; none on straps or glowing parts.

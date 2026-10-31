@@ -1,0 +1,4 @@
+gear-day desert/pxe_desert
+gear-golden desert/pxe_desert --hour 18
+gear-night desert/pxe_desert --hour 21
+gear-sprint desert/pxe_desert --walk 3 --sprint

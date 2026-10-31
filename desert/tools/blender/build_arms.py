@@ -10,7 +10,7 @@ then renders the previews beside the glb):
 Or step by step in an open Blender, to watch it go together:
     import runpy; am = runpy.run_path(".../build_arms.py", run_name="arms")
     b = am["Builder"](); b.start(); b.arms(); b.gloves(); b.fingers(); b.glove_detail(); b.wrap_detail()
-    b.bracer(); b.gauge(); b.bracer_detail(); b.compass(); b.rig(); b.animate()
+    b.vambraces(); b.gauge(); b.bracer_detail(); b.compass(); b.tubes(); b.rig(); b.animate()
     problems, m = am["check"](b); clip_problems, cm = am["clip_checks"](b)
 Each step adds its pieces to the Arms collection of the current scene, leaving
 the rest of the file alone.
@@ -31,54 +31,83 @@ pointing mostly forward (8 degrees outward) on a firm, almost straight wrist
 holding something, fingers relaxed and a little curled, thumbs resting along
 the index fingers. The gloves are chunky (GLOVE_BULK) and taper into the cuff.
 With real proportions the forearm rises steeply, so only a few centimetres
-behind the glove show; the cuff is kept short and the bracer's gauge sits at
-its wrist end, the plate reaching under the cuff, so the gauge is in view.
+behind the glove show; the cuff is kept short and the left vambrace's gauge
+sits at its wrist end, the plate reaching under the cuff, so the gauge is in
+view. The right vambrace sits back from the cuff, so the dark undersuit shows
+between the strips behind the right cuff.
 The build checks the framing through the eye camera (60 degree vertical field
-of view, 16:9), the near clearance and the gauge, and fails if any is off.
+of view, 16:9), the near clearance, the gauge, the compass, the undersuit seen
+on the right forearm and the tubes leaving the view, and the gear's sizes and
+counts (GEAR_TARGETS), and fails if any is off.
 
 Every piece is a closed volume (the engine culls back faces), flat-shaded,
-one solid colour per material. A view model carries detail down to about
-3 px on screen (desert/docs/art-style.md, "View models are the exception"):
-    arm tube      Arms_Wrap   shoulder cap to wrist; the forearm wrapped in
-                              six stepped cloth bands, each lip standing
-                              4-6 mm proud of the band under it, uneven in
-                              width and angle
-                  Arms_Grime  the 2nd and 5th band from the wrist; a frayed
-                              tail of three strands from the band nearest
-                              the cuff, on the forearm's outer side
+one solid colour per material (a few carry a worn Arms_Steel rim on their own
+faces). The gear follows desert/docs/concept/wanderers.png: dusty khaki cloth
+over a dark undersuit, grey-brown gloves, worn gunmetal scratched to the
+steel, copper only on the coil, and cyan the only bright colour. A view model
+carries detail down to about 3 px on screen (desert/docs/art-style.md, "View
+models are the exception"):
+    arm tube      Arms_Undersuit  shoulder cap to wrist: the dark undersuit
+                                  sleeve
+    wrap          Arms_Wrap   three khaki cloth strips wound over each forearm,
+                              each leaning a little, both edges frayed into 12
+                              uneven notches 3-4 mm deep; the undersuit shows
+                              in the gaps and toward the elbow
+                  Arms_Grime  one strip on each forearm; a frayed tail of three
+                              strands knotted on a strip, on the forearm's
+                              outer side
     glove         Arms_Glove  a flared cuff over the wraps, a faceted hand,
                               four fingers and a thumb in blocky 12-sided
                               segments that overlap at the knuckles
+                  Arms_Gunmetal a back-of-hand plate of three overlapping 2 mm
+                              segments, their rims worn to Arms_Steel
                   Arms_Thread stitch dashes along both sides of every finger
                               and thumb, and round the cuff's flare
-                  Arms_Worn   knuckle pads, a palm patch, a back-of-hand
-                              patch and a patch on every fingertip
+                  Arms_Worn   four raised knuckle guards on the plate's last
+                              segment, a palm patch, a back-of-hand patch and
+                              a patch on every fingertip
                   Arms_Strap  a strap round each cuff, Arms_Steel snap rivet
-    bracer (left) Arms_Brass  a bevelled brass plate in four facets
-                  Arms_Strap  two straps, Arms_Thread stitched edges, each
-                              buckle an Arms_Steel frame and tongue and an
-                              Arms_Strap keeper loop
-    gauge (left)  Arms_Brass  a bezel on the plate's wrist end, turned toward
+    vambraces     Arms_Gunmetal a plate over each forearm in four facets, 4 mm
+                              thick, spanning 140 degrees round it, its
+                              bevelled edges worn to Arms_Steel; the left
+                              0.140 m long reaching under the cuff, the right
+                              0.128 m sitting back from it
+                  Arms_Steel  five scratches on each plate, 0.9 mm wide,
+                              18-34 mm long
+                  Arms_Rust   two rust patches on each plate
+                  Arms_Strap  two straps on each, Arms_Thread stitched edges,
+                              each buckle an Arms_Steel frame and tongue and
+                              an Arms_Strap keeper loop
+    gauge (left)  Arms_Gunmetal a bezel on the plate's wrist end, turned toward
                               the eye, its window recessed 3 mm, long side
                               level across the view
-                  Arms_Screen a backlit panel on the window floor (emissive)
+                  Arms_Screen a dark teal backlit panel on the window floor
+                              (emissive)
                   Arms_Glow   the readout: 47% and a block cursor in lit
-                              2.4 mm dots (emissive)
+                              2.4 mm cyan dots (emissive)
                   Arms_Steel  four slotted screws on the bezel's corners; a
-                              knurled dial on its inner side (Arms_Paint
-                              index mark); three toggles at the plate's wrist
-                              end (steel base, Arms_Rubber lever, Arms_Paint
-                              tip); a canister with a clip and valve wheel
-                  Arms_Copper a coil round a short brass tube, and a cable
-                  Arms_Rubber a second cable; both tuck under the wrap band
-                              past the plate's elbow end
+                              knurled dial on its inner side (Arms_Rust index
+                              mark); three toggles at the plate's wrist end
+                              (steel base, Arms_Rubber lever, Arms_Rust tip);
+                              a valve wheel and clip on an Arms_Gunmetal
+                              canister
+                  Arms_Copper a coil round a short Arms_Gunmetal tube
+                  Arms_Rubber a dark cable, tucked into the sleeve past the
+                              plate's elbow end
     compass       Arms_Strap  a strap over the middle of the right cuff,
-    (right)                   carrying an Arms_Steel post, housing, hinged
-                              sun-shade lid propped open, and Arms_Rubber
-                              side buttons
-                  Arms_Dial   the face, 30 mm across, turned toward the eye
-                  Arms_Paint  12 tick marks and a fixed needle
-                  Arms_Amber  the status lamp on the face's rim (emissive)
+    (right)                   carrying an Arms_Steel post, an Arms_Gunmetal
+                              housing and hinged sun-shade lid propped open,
+                              and Arms_Rubber side buttons
+                  Arms_Dial   the dark face, 30 mm across, turned toward the eye
+                  Arms_Glow   12 tick marks, a fixed needle and the status lamp
+                              on the face's rim (emissive)
+    tubes         Arms_Glow   glowing cyan tubes, 2.5 mm in radius, 8 sides
+                              (emissive): two out of the gauge's elbow-side
+                              wall, one out of the compass housing's bottom;
+                              each runs along its plate, dips under both
+                              straps, and goes down into the sleeve past the
+                              plate's elbow end, out of view below the bottom
+                              edge
 
 One skinned mesh (`Arms`) on one armature (`Arms_Rig`), 39 joints:
     root
@@ -86,9 +115,10 @@ One skinned mesh (`Arms`) on one armature (`Arms_Rig`), 39 joints:
     hand > thumb.1 > thumb.2 > thumb.3, and the same for index, middle,
     ring and pinky
 Weights blend over 4 cm across each elbow and wrist; every finger segment is
-rigid to its joint, and every gadget part (bracer, gauge, straps, devices,
-compass and its mount) to its forearm. Stitches, pads and patches take the
-weights of the glove surface under them. The attachment check runs in the
+rigid to its joint, and every gadget part (vambraces, gauge, straps,
+devices, tubes, tails, compass and its mount) to its forearm. Stitches and
+patches take the weights of the glove surface under them, the strips the
+sleeve's; the hand plates and knuckle guards are rigid to the hand. The attachment check runs in the
 rest pose and in test poses: each wrist twisted, flexed and bent sideways 30
 degrees each way, every finger and thumb joint curled 60 degrees, each elbow
 opened 30 degrees and closed 10.
@@ -179,28 +209,62 @@ def mirror(p):
 # Materials, in the engine's order: (name, sRGB mid tone, emissive).
 
 MATERIALS = [
-    ("Arms_Wrap", (206, 194, 168), False),   # bleached cloth bands
-    ("Arms_Glove", (78, 54, 40), False),     # dark leather gloves
-    ("Arms_Strap", (118, 84, 56), False),    # bracer straps and buckles
-    ("Arms_Brass", (176, 132, 64), False),   # worn brass bracer plate and bezel
-    ("Arms_Glow", (70, 255, 110), True),     # the gauge readout's lit dots (phosphor green)
-    ("Arms_Steel", (92, 96, 102), False),    # screws, canister, valve, compass housing and lid, buckles, rivets, toggle bases
-    ("Arms_Copper", (178, 98, 56), False),   # coil, copper cable
-    ("Arms_Rubber", (44, 40, 38), False),    # rubber cable, toggle levers, compass buttons
-    ("Arms_Thread", (132, 100, 70), False),  # glove and strap stitching
-    ("Arms_Worn", (112, 82, 62), False),     # knuckle pads, palm, back-of-hand and fingertip patches
-    ("Arms_Grime", (160, 146, 120), False),  # grime bands, frayed tails
-    ("Arms_Dial", (222, 212, 186), False),   # the compass face (ivory enamel)
-    ("Arms_Paint", (170, 64, 44), False),    # toggle tips, compass needle and ticks, dial index mark
-    ("Arms_Amber", (255, 170, 60), True),    # the compass's status lamp
-    ("Arms_Screen", (30, 46, 36), True),     # the gauge's backlit screen panel
+    ("Arms_Wrap", (176, 160, 128), False),     # khaki cloth strips
+    ("Arms_Glove", (104, 90, 76), False),      # grey-brown leather gloves
+    ("Arms_Strap", (86, 64, 48), False),       # dark leather straps and keepers
+    ("Arms_Gunmetal", (70, 74, 78), False),    # vambraces, hand plates, gauge bezel, compass housing and lid, canister
+    ("Arms_Glow", (60, 230, 230), True),       # readout dots, compass ticks, needle and lamp, tubes (cyan)
+    ("Arms_Steel", (120, 122, 124), False),    # scratches, worn plate edges, buckles, screws, rivets, toggle bases
+    ("Arms_Copper", (150, 96, 64), False),     # the coil only
+    ("Arms_Rubber", (40, 38, 36), False),      # the dark cable, toggle levers, compass buttons
+    ("Arms_Thread", (96, 80, 64), False),      # stitching
+    ("Arms_Worn", (130, 114, 96), False),      # knuckle guards, worn patches
+    ("Arms_Grime", (150, 136, 110), False),    # frayed tails, grimy strips
+    ("Arms_Dial", (34, 40, 42), False),        # the compass's dark face
+    ("Arms_Rust", (122, 70, 46), False),       # rust patches on the plates, toggle tips, the dial's index mark
+    ("Arms_Undersuit", (46, 44, 44), False),   # the dark sleeve under the wrap
+    ("Arms_Screen", (14, 32, 34), True),       # the gauge's dark teal backlit panel
 ]
 M = {name: i for i, (name, _, _) in enumerate(MATERIALS)}
-TRI_BUDGET = (12000, 20000)
+TRI_BUDGET = (18000, 30000)
 # The materials the game inks creases on: a round part in one of these takes
 # at least ROUND_MIN sides (36 degrees between them, under the 40 degree ink turn).
-CREASED = ("Arms_Wrap", "Arms_Glove", "Arms_Brass", "Arms_Worn", "Arms_Grime")
+CREASED = ("Arms_Wrap", "Arms_Glove", "Arms_Gunmetal", "Arms_Worn", "Arms_Grime")
 ROUND_MIN = 10
+
+# What the checks hold the gear to (task desert-arms-gear, Decisions and
+# Approach 1), kept apart from the constants that build it on purpose, so a
+# slip in those fails the build: the material table as the spec gives it
+# (name, sRGB, emissive), and the gear's binding sizes and counts.
+SPEC_MATERIALS = [
+    ("Arms_Wrap", (176, 160, 128), False), ("Arms_Glove", (104, 90, 76), False),
+    ("Arms_Strap", (86, 64, 48), False), ("Arms_Gunmetal", (70, 74, 78), False),
+    ("Arms_Glow", (60, 230, 230), True), ("Arms_Steel", (120, 122, 124), False),
+    ("Arms_Copper", (150, 96, 64), False), ("Arms_Rubber", (40, 38, 36), False),
+    ("Arms_Thread", (96, 80, 64), False), ("Arms_Worn", (130, 114, 96), False),
+    ("Arms_Grime", (150, 136, 110), False), ("Arms_Dial", (34, 40, 42), False),
+    ("Arms_Rust", (122, 70, 46), False), ("Arms_Undersuit", (46, 44, 44), False),
+    ("Arms_Screen", (14, 32, 34), True),
+]
+GEAR_TARGETS = dict(
+    undersuit_seen={"R": 8},          # Arms_Undersuit vertices seen at rest, per checked forearm
+    strips=(2, 3),                    # strip pieces per forearm
+    notches_min=8,                    # per strip edge
+    notch_dip=(0.003, 0.006),         # a notch's depth below the maxima either side (m)
+    tails=(2, 3),                     # per forearm
+    plate_len=(0.12, 0.15),           # each vambrace plate along the forearm (m)
+    plate_span=(130.0, 150.0),        # and round it (degrees)
+    scratches_min=4,                  # per plate
+    scratch_len=(0.015, 0.040),       # each scratch's length (m)
+    scratch_w_max=0.0012,             # and width (m)
+    straps=2,                         # per vambrace, each with a buckle
+    hand_plates=3,                    # Arms_Gunmetal back-of-hand segments per hand
+    knuckle_guards=4,                 # Arms_Worn per hand
+    tubes={"L": 2, "R": 1},           # Arms_Glow tubes per forearm
+    tube_sides=8,
+    tube_r=(0.0023, 0.0027),          # 2.5 mm +- 0.2
+    tube_start=0.001,                 # each tube's start within this of its device's housing (m)
+)
 
 # --------------------------------------------------------------------------
 # The eye camera the framing is checked through, as the engine's view.
@@ -285,17 +349,32 @@ HAND_YAW = -8.0                     # the hand turns this far outward (degrees; 
 HAND_PITCH = 4.0                    # and this far down: a firm, almost straight wrist
 HAND_ROLL = 90.0                    # the palm turns from facing down to facing inward: palms face each other, thumbs up
 
-# Forearm (cloth over it): radius at the wrist and at the elbow.
+# Forearm (the undersuit sleeve): radius at the wrist and at the elbow.
 FORE_R0, FORE_R1 = 0.030, 0.044
 UPPER_R = 0.050
 SIDES = 12        # 30 degrees between sides: under the 40 degree crease ink
-BAND_COUNT = 6
-BAND_START = -0.026            # the first band's foot, under the cuff (m from the wrist along the forearm)
-BAND_W = (0.024, 0.030)        # band widths
-BAND_H = (0.0042, 0.0058)      # how far each lip stands proud of the band under it
-BAND_TILT = (1.5, 4.5)         # degrees each band edge leans
-BEVEL = math.radians(60.0)     # each lip's bevel down to the band under it, from the axis
-CREASE_MIN = 40.0              # each band edge must turn more than this
+# The sleeve's rings along the forearm (m from the wrist): every 10 mm, and
+# every 2.5 mm just behind the cuff, where the eye sees it between the strips.
+SLEEVE_S = [round(-0.235 + 0.010 * i, 4) for i in range(17)] + \
+           [round(-0.070 + 0.0025 * i, 4) for i in range(18)] + [-0.020, -0.010]
+# The wrap: cloth strips wound over the sleeve, wrist to elbow, per side:
+# (wrist edge, elbow edge) as distances from the wrist along the forearm
+# before fraying, material, and how far the outer face stands off the sleeve.
+# The undersuit shows in the gaps; the vambrace straps lie on the strips.
+STRIPS = {
+    "L": ((0.030, 0.064, "Arms_Wrap", 0.0020), (0.073, 0.110, "Arms_Grime", 0.0024),
+          (0.119, 0.172, "Arms_Wrap", 0.0018)),
+    "R": ((0.028, 0.040, "Arms_Wrap", 0.0020), (0.060, 0.104, "Arms_Wrap", 0.0024),
+          (0.120, 0.180, "Arms_Grime", 0.0018)),
+}
+STRIP_SECTIONS = 24          # 15 degrees apart round the forearm, every other one over a sleeve vertex
+STRIP_TILT = (1.5, 2.5)      # degrees each strip leans
+STRIP_SINK = 0.0006          # each strip's inside sits this far into the sleeve
+# The frayed edges: a notch at every other section. Each tooth tip sits
+# up to FRAY_JITTER past the edge's line, each notch FRAY_DIP short of the
+# nearer tooth either side of it.
+FRAY_JITTER = 0.0006
+FRAY_DIP = (0.0033, 0.0043)
 
 # Glove cuff: (s from the wrist along the forearm, radius); the first is the rear face.
 CUFF = [(-0.036, 0.045), (-0.031, 0.046), (-0.019, 0.041), (-0.004, 0.036), (0.012, 0.034)]
@@ -339,16 +418,36 @@ THUMB_BEND = (0.0, 30.0, 16.0)
 THUMB_W = (0.026, 0.0205, 0.0185)
 THUMB_T = (0.022, 0.0180, 0.0160)
 
-# Bracer, left forearm: along the forearm (s from the wrist), angular span
-# about the back of the forearm, thickness.
-BRACER_S = (-0.160, -0.020)   # the wrist end reaches under the cuff, so the toggles stay on the plate
+# Vambraces, one on each forearm: along the forearm (s from the wrist),
+# angular span about the back of the forearm, thickness.
+BRACER_S = (-0.160, -0.020)   # the left plate: its wrist end reaches under the cuff, so the toggles stay on it
+# The right plate is plainer and sits back from the cuff, so the undersuit
+# shows between the strips behind the right cuff (the right plate's wrist end
+# a little past the strip gap, where only its edge is in view).
+VAMBRACE_S = {"L": BRACER_S, "R": (-0.190, -0.062)}
 BRACER_SPAN = 70.0     # degrees either side of the back of the forearm: four 35 degree facets
 BRACER_T = 0.004
-BRACER_SIT = 0.0045    # the plate's inside sits this far out from a band foot, into the lips
-STRAPS = (-0.148, -0.090)   # strap centres along the forearm, behind the gauge
+BRACER_SIT = 0.0045    # the plate's inside sits this far out from the sleeve, standing off the strips; the straps hold it
+STRAPS = {"L": (-0.148, -0.090), "R": (-0.165, -0.078)}   # strap centres along the forearm, each on a strip
 STRAP_W = 0.014
 STRAP_T = 0.003
 BUCKLE = (0.013, 0.013, 0.0035)
+STRAP_UNDER = 15       # strap sections round the underside, off the plate
+# Scratches, each a thin Arms_Steel sliver on one facet of a plate: (s of its
+# centre, angle round from the back (a facet's middle), length, skew from the
+# forearm's axis in degrees). Width, how far it stands proud and sinks in.
+SCRATCHES = {
+    "L": ((-0.074, -52.5, 0.024, 8.0), (-0.118, -17.5, 0.030, -12.0), (-0.124, 52.5, 0.020, 15.0),
+          (-0.066, 52.5, 0.018, -6.0), (-0.104, -52.5, 0.034, 5.0)),
+    "R": ((-0.082, -17.5, 0.026, 10.0), (-0.104, 17.5, 0.034, -8.0), (-0.132, 52.5, 0.022, 14.0),
+          (-0.146, -52.5, 0.030, -10.0), (-0.118, -17.5, 0.018, 20.0)),
+}
+SCRATCH = (0.0009, 0.0005, 0.0003)
+# Rust patches: (s, angle round from the back, radius); an uneven 7-sided
+# patch on one facet, standing RUST_PROUD proud (and sunk as far in).
+RUST = {"L": ((-0.100, -17.5, 0.0070), (-0.140, 52.5, 0.0055)),
+        "R": ((-0.090, 17.5, 0.0065), (-0.152, -17.5, 0.0060))}
+RUST_PROUD = 0.0004
 # Gauge: centre along the forearm, angle round from the back of the forearm
 # toward the eye side, how far its face turns from the plate toward the eye.
 GAUGE_S = -0.035
@@ -376,17 +475,31 @@ LCD_MIN_PX = 3.0             # each dot at least this wide on screen, both ways
 # Glove stitching: dash length, width, gap, and how far it stands proud (and sinks in).
 STITCH = (0.005, 0.0025, 0.0025, 0.0006, 0.0004)
 CUFF_SEAM = 0.7         # the cuff seam's place across the flare, from its rear ring (0) to its front ring (1)
-PAD = (0.012, 0.010, 0.0025, 0.001)   # knuckle pad: across, along, proud, bevel
+GUARD = (0.015, 0.011, 0.0035, 0.0012, 0.0012)   # knuckle guard: across, along, proud, bevel, sunk
+GUARD_BACK = 0.006      # each guard's centre this far behind its knuckle, along the hand
 PATCH = (0.0008, 0.0006)              # worn patches: proud, sunk
+# The back-of-hand plate: three overlapping segments over the palm's
+# dorsal side, wrist to knuckles, each (first ring, last ring) in the palm's
+# ring index, across from HAND_PLATE_K[0] to [1] round it. Each is
+# HAND_PLATE_T thick; the first lies on the glove, sunk HAND_PLATE_SINK in,
+# and each later one starts on the one before, HAND_PLATE_LAP up off the
+# glove, and slopes down onto it. Its rim drops HAND_PLATE_BEVEL in a worn
+# Arms_Steel bevel HAND_PLATE_RIM of the way in from each edge.
+HAND_PLATE_I = ((1.5, 3.0), (2.7, 4.2), (3.9, 5.3))
+HAND_PLATE_K = (1.35, 5.85)
+HAND_PLATE_T = 0.0020
+HAND_PLATE_SINK = 0.0004
+HAND_PLATE_LAP = 0.0014
+HAND_PLATE_BEVEL = 0.0005
+HAND_PLATE_RIM = 0.06
 CUFF_STRAP = (-0.014, -0.004, -0.002)  # the cuff strap's rear edge, the cuff ring under it, its front edge
 STRAP_PROUD = 0.0024    # straps over the glove stand this far out, and sink 0.6 mm in
-# Wrap tails: the band they hang from (0 = nearest the wrist), where along it,
-# strand lengths, width and thickness.
-GRIME_BANDS = (1, 4)    # the 2nd and 5th band from the wrist
-TAIL_S = -0.046
+# Wrap tails: where along the forearm they hang from a strip (each side's
+# knot on a strip, clear of the straps), strand lengths, width and thickness.
+TAIL_S = {"L": -0.050, "R": -0.092}
 TAIL_LEN = (0.088, 0.074, 0.064)
 TAIL_W, TAIL_T = 0.0055, 0.0016
-# Bracer devices.
+# The left vambrace's devices.
 PLATE_BEVEL = 0.0015
 SCREW = (0.005, 0.0012)            # head across, slot width
 SCREW_INSET = 0.0025               # head centre in from the bezel's edges
@@ -396,8 +509,18 @@ TOGGLE_W = (-0.018, -0.010, -0.002)  # toggle centres across the bezel (its long
 TOGGLE_TIP = 0.003
 COIL = (-0.1325, -0.1075, 8, 28.0)  # coil from/to (m from the wrist), turns, angle round the plate
 CANISTER = (-0.137, -0.087, 0.009, -76.0)  # elbow end, wrist end, radius, angle round the forearm
-CABLES = (("copper", "Arms_Copper", -0.008, 0.0013), ("rubber", "Arms_Rubber", 0.002, 0.0015))
-CABLE_END = -0.180      # each cable's end, tucked inside the wrap band past the plate's elbow end
+CABLE = (0.002, 0.0015)  # the dark rubber cable: across the bezel, radius
+CABLE_END = -0.180      # the cable's and the left tubes' end, tucked into the sleeve past the plate's elbow end
+# The glowing tubes: radius and sides; the left ones' places across the
+# gauge's bezel (the first on the old copper cable's path); how far each
+# lies off the plate, and under a strap (its top just under the strap's).
+TUBE_R = 0.0025
+TUBE_SIDES = 8
+TUBES_L = (-0.008, 0.013)
+TUBE_LIFT = (TUBE_R - 0.0003, 0.0003)
+TUBE_STEP = 0.004       # along the plate
+TUBE_R_ANGLE = -40.0    # the right tube's angle round the right forearm, from its back
+TUBE_R_END = -0.205     # the right tube's end along the forearm, past the plate's elbow end
 # The sun compass, right forearm.
 COMPASS_STRAP = (-0.0155, -0.011, -0.0065)  # strap rear edge, the post's line, front edge
 COMPASS_POST = 0.008
@@ -570,7 +693,7 @@ class Side:
             frames.append((dirv.copy(), up.copy()))
             pts.append(pts[-1] + dirv * L_)
         self.thumb = (pts, frames, self.n.cross(frames[0][0]).normalized())
-        # The top of the forearm, where the bracer sits: square to the
+        # The top of the forearm, where the vambrace sits: square to the
         # forearm, halfway between straight up and toward the eye from the gauge.
         g = self.on_forearm(GAUGE_S)
         up = Z + (-g).normalized()
@@ -618,8 +741,8 @@ class Piece:
 
 
 class Builder:
-    STEPS = ["start", "arms", "gloves", "fingers", "glove_detail", "wrap_detail", "bracer", "gauge",
-             "bracer_detail", "compass", "rig", "animate"]
+    STEPS = ["start", "arms", "gloves", "fingers", "glove_detail", "wrap_detail", "vambraces", "gauge",
+             "bracer_detail", "compass", "tubes", "rig", "animate"]
 
     def __init__(self):
         self.bm = bmesh.new()
@@ -629,7 +752,10 @@ class Builder:
         self.pieces = {}
         self.attach = []     # (piece, piece) that must touch in every pose
         self.covered = []    # (piece, vertex list, [pieces]): verts that must stay inside one of the pieces
-        self.band_edges = []  # per forearm, ring loops whose edges must crease
+        self.strips = {"L": [], "R": []}   # per forearm: (strip piece, outer wrist-edge verts, outer elbow-edge verts), each edge in order round it
+        self.scratches = []  # (piece, side, outward normal of its facet)
+        self.tubes_info = []  # (piece, side, rings, device housing piece)
+        self.hand_plates = {}  # per hand: its back-of-hand plate segments, wrist to knuckles
         self.lcd = []        # (piece, glyph, row, top centre, right, up, n): every lit dot of the gauge's readout
         self.segs = {}       # (side, digit, segment) -> the segment's frame and sizes, for the glove detail
         self.palm_loops = {}
@@ -941,11 +1067,11 @@ class Builder:
         return out
 
     def arms(self):
-        """Each arm tube, capped at the shoulder and inside the glove at the
-        wrist, with the forearm's stepped cloth bands."""
-        for S, seed in (("L", 7), ("R", 19)):
+        """Each arm tube, the dark undersuit sleeve: capped at the shoulder
+        and inside the glove at the wrist, its forearm rings on fore_r (so
+        the sleeve between them is exactly sleeve_r)."""
+        for S in "LR":
             sd = self.sides[S]
-            rng = random.Random(seed)
             ref = X
             loops = []
             loops.append(self._ring(sd.S - sd.au * 0.035, sd.au, 0.044, ref))      # shoulder cap
@@ -953,48 +1079,30 @@ class Builder:
             loops.append(self._ring(sd.S + sd.au * 0.13, sd.au, UPPER_R, ref))
             loops.append(self._ring(sd.E - sd.au * 0.045, sd.au, 0.047, ref))
             loops.append(self._ring(sd.E, (sd.au + sd.af).normalized(), 0.049, ref))
-            loops.append(self._ring(sd.on_forearm(-FORE_LEN + 0.025), sd.af, sd.fore_r(-FORE_LEN + 0.025) + 0.001, ref))
-            # Bands, elbow to wrist: band k runs from its foot at b[k] (wrist
-            # side) up to its lip just short of b[k+1] (elbow side), where a
-            # 60 degree bevel drops to the next band's foot.
-            b = [BAND_START]
-            for _ in range(BAND_COUNT):
-                b.append(b[-1] - rng.uniform(*BAND_W))
-            hs = [rng.uniform(*BAND_H) for _ in range(BAND_COUNT)]
-            tilts = [(rng.uniform(0, 2 * math.pi), rng.uniform(*BAND_TILT) * rng.choice((-1, 1)))
-                     for _ in range(BAND_COUNT + 1)]
-            band_loops = []   # the band edges that show: behind the cuff's rear face
-            foot_at, lip_at = {}, {}
-            for k in range(BAND_COUNT, -1, -1):
-                foot = self._ring(sd.on_forearm(b[k]), sd.af, sd.fore_r(b[k]), ref, tilts[k])
-                foot_at[k] = len(loops)
-                loops.append(foot)
-                if b[k] < CUFF[0][0]:
-                    band_loops.append(foot)
-                if k > 0:
-                    # Band k-1's lip stands over this foot, a bevel's run toward the wrist.
-                    h = hs[k - 1]
-                    sl = b[k] + h / math.tan(BEVEL)
-                    lip = self._ring(sd.on_forearm(sl), sd.af, sd.fore_r(sl) + h, ref, tilts[k])
-                    lip_at[k - 1] = len(loops)
-                    loops.append(lip)
-                    if sl < CUFF[0][0]:
-                        band_loops.append(lip)
+            for s in SLEEVE_S:
+                loops.append(self._ring(sd.on_forearm(s), sd.af, sd.fore_r(s), ref))
             loops.append(self._ring(sd.on_forearm(0.002), sd.af, sd.fore_r(0.0) - 0.001, ref))   # inside the glove
-            sd.bands = (b, hs)
-            p = self.piece(f"{S}.arm", "Arms_Wrap")
+            p = self.piece(f"{S}.arm", "Arms_Undersuit")
             vl = self.loft(p, loops)
             self.finish(p, self.arm_weights(sd))
             p.sides = SIDES
-            # Grime bands: band k is the bevel up from foot k+1 to its lip and
-            # the slope down from the lip to foot k (loft pairs foot k+1 and lip k).
-            for k in GRIME_BANDS:
-                for pair in (foot_at[k + 1], lip_at[k]):
-                    for f in p.faces[pair * SIDES:(pair + 1) * SIDES]:
-                        f.material_index = M["Arms_Grime"]
-            self.band_edges.append((S, [vl[i] for i in range(len(loops)) if any(loops[i] is bl for bl in band_loops)], vl))
             self.covered.append((p.name, vl[-1], [f"{S}.cuff", f"{S}.palm"]))
             self.refresh()
+
+    def sleeve_r(self, sd, s, d):
+        """The sleeve's radius at s along the forearm in the direction d
+        (square to the forearm): its 12-sided section, vertices at fore_r(s)."""
+        u, w = ring_frame(sd.af, X)
+        phi = math.degrees(math.atan2(d.dot(w), d.dot(u)))
+        delta = (phi + 15.0) % 30.0 - 15.0     # from the nearest facet's middle (the vertices sit at 15 + 30k)
+        return sd.fore_r(s) * math.cos(math.radians(15.0)) / math.cos(math.radians(delta))
+
+    def strip_at(self, S, s):
+        """The strip (wrist edge, elbow edge, material, standoff) lying under s, by its unfrayed edges, or None."""
+        for st in STRIPS[S]:
+            if st[0] <= -s <= st[1]:
+                return st
+        return None
 
     def gloves(self):
         """The flared cuffs over the wraps and the faceted hands."""
@@ -1158,11 +1266,81 @@ class Builder:
         self.finish(p, self.wrist_weights(self.sides[S]))
         self.attach.append((name, f"{S}.palm"))
 
+    @staticmethod
+    def knuckle_i(S, lat):
+        """The palm's ring index (fractional, between rings 5 and 6) GUARD_BACK
+        behind the knuckle at lateral offset lat: where a knuckle guard sits."""
+        s5 = PALM[5][0]
+        front = palm_front(lat)
+        return 5.0 + (front - 0.004 - GUARD_BACK - s5) / (front - s5)
+
+    @staticmethod
+    def dorsal_k(lat):
+        """The index round the palm's rings (on the dorsal side, k 1-6) at lateral offset lat."""
+        hw = PALM[5][1] * GLOVE_BULK
+        tx = lat / hw
+        for k in range(1, 6):
+            t0, t1 = PALM_SHAPE[k][0], PALM_SHAPE[k + 1][0]
+            if t1 <= tx <= t0:
+                return k + (t0 - tx) / (t0 - t1)
+        raise ValueError(f"lateral {lat} is off the back of the hand")
+
+    def hand_plate(self, S, j, i0, i1):
+        """One segment of the back-of-hand plate over the palm's dorsal side,
+        from ring i0 to i1 and across HAND_PLATE_K, rigid to the hand. The
+        first lies on the glove; each later one starts HAND_PLATE_LAP up on
+        the one before and slopes down onto the glove by the end of it. Its
+        top drops HAND_PLATE_BEVEL at every edge, and that rim and the walls
+        are worn bare (Arms_Steel)."""
+        k0, k1 = HAND_PLATE_K
+        prev_end = HAND_PLATE_I[j - 1][1] if j else None
+
+        def params(n):
+            inner = [HAND_PLATE_RIM + (1 - 2 * HAND_PLATE_RIM) * c / (n - 1) for c in range(n)]
+            return [0.0] + inner + [1.0]
+        rows, cols = params(5), params(9)
+
+        def base(i):
+            if prev_end is None or i >= prev_end:
+                return -HAND_PLATE_SINK
+            return HAND_PLATE_LAP + (-HAND_PLATE_SINK - HAND_PLATE_LAP) * (i - i0) / (prev_end - i0)
+        top, bot = [], []
+        for a, fa in enumerate(rows):
+            i = i0 + (i1 - i0) * fa
+            rt, rb = [], []
+            for c, fc in enumerate(cols):
+                k = k0 + (k1 - k0) * fc
+                p, nrm = self.palm_surface(S, i, k)
+                edge = a in (0, len(rows) - 1) or c in (0, len(cols) - 1)
+                lo = base(i)
+                rt.append(p + nrm * (lo + HAND_PLATE_T - (HAND_PLATE_BEVEL if edge else 0.0)))
+                rb.append(p + nrm * lo)
+            top.append(rt)
+            bot.append(rb)
+        name = f"{S}.hand_plate.{j + 1}"
+        p = self.piece(name, "Arms_Gunmetal")
+        self.slab(p, top, bot)
+        self.finish(p, self.rigid(f"hand.{S}"))
+        # The worn rim: the top's outer ring of quads and the walls (slab
+        # order: top quads, bottom quads interleaved per cell, then the walls).
+        na, nb = len(rows), len(cols)
+        for i in range(na - 1):
+            for c in range(nb - 1):
+                if i in (0, na - 2) or c in (0, nb - 2):
+                    p.faces[2 * (i * (nb - 1) + c)].material_index = M["Arms_Steel"]
+        for f in p.faces[2 * (na - 1) * (nb - 1):]:
+            f.material_index = M["Arms_Steel"]
+        self.attach.append((name, f"{S}.palm"))
+        if j:
+            self.attach.append((name, f"{S}.hand_plate.{j}"))
+        self.hand_plates.setdefault(S, []).append(name)
+
     def glove_detail(self):
         """Stitching along every finger and thumb and round the cuff's flare,
-        knuckle pads, worn patches on the palm, the back of the hand and every
-        fingertip, and a strap with a snap rivet round each cuff. Each piece
-        takes the weights of the glove surface under it."""
+        worn patches on the palm, the back of the hand and every fingertip, a
+        strap with a snap rivet round each cuff, each taking the weights of
+        the glove surface under it; and the back-of-hand plate and the knuckle
+        guards on it, rigid to the hand."""
         ln, wd, gap, proud, sink = STITCH
         for S in "LR":
             sd = self.sides[S]
@@ -1200,25 +1378,29 @@ class Builder:
                 p.sides = 12
                 self.finish(p, self.rigid(f"{digit}.3.{S}"))
                 self.attach.append((name, g["anchor"]))
-            # Knuckle pads over each index-pinky .1 joint, bevelled.
-            for digit in ("index", "middle", "ring", "pinky"):
-                g = self.segs[(S, digit, 1)]
-                d, side, up = g["d"], g["side"], g["up"]
-                across, along, h, bev = PAD
-                c = g["joint"] + d * (0.0005 + along / 2)
-                f = (c - g["a2"]).dot(d) / (g["mid"] - g["a2"]).dot(d)
-                c = c + up * ((g["th"] + (g["t1"] - g["th"]) * f) / 2)
+            # The back-of-hand plate: three overlapping gunmetal segments.
+            for j, (i0, i1) in enumerate(HAND_PLATE_I):
+                self.hand_plate(S, j, i0, i1)
+            # Raised knuckle guards over the four knuckles, bevelled, rigid to
+            # the hand: each stands on the plate's last segment, which reaches
+            # under it (the glove there blends toward the forearm, so the
+            # guards are held by the plate, not the glove).
+            for name_f, lat, *_ in FINGERS:
+                c, nrm = self.palm_surface(S, self.knuckle_i(S, lat), self.dorsal_k(lat))
+                d = (sd.f - nrm * sd.f.dot(nrm)).normalized()
+                side = nrm.cross(d).normalized()
+                across, along, h, bev, sunk = GUARD
 
-                def octa(hx, hy, cut, z, c=c, side=side, d=d, up=up):
+                def octa(hx, hy, cut, z, c=c, side=side, d=d, up=nrm):
                     pts2 = [(hx - cut, -hy), (hx, -hy + cut), (hx, hy - cut), (hx - cut, hy),
                             (-hx + cut, hy), (-hx, hy - cut), (-hx, -hy + cut), (-hx + cut, -hy)]
                     return [c + side * x + d * y + up * z for x, y in pts2]
-                name = f"{S}.pad_{digit}"
+                name = f"{S}.guard_{name_f}"
                 p = self.piece(name, "Arms_Worn")
-                self.loft(p, [octa(across / 2, along / 2, 0.0015, -0.0012), octa(across / 2, along / 2, 0.0015, h - bev),
-                              octa(across / 2 - bev, along / 2 - bev, 0.001, h)])
-                self.finish(p, self.rigid(f"{digit}.1.{S}"))
-                self.attach.append((name, g["anchor"]))
+                self.loft(p, [octa(across / 2, along / 2, 0.002, -sunk), octa(across / 2, along / 2, 0.002, h - bev),
+                              octa(across / 2 - bev, along / 2 - bev, 0.0015, h)])
+                self.finish(p, self.rigid(f"hand.{S}"))
+                self.attach.append((name, self.hand_plates[S][-1]))
             # Worn patches on the back of the hand and a reinforced palm patch.
             self.palm_patch(S, f"{S}.patch_back", 2.3, 4.4, 2.4, 4.6)
             self.palm_patch(S, f"{S}.patch_palm", 1.6, 4.4, 8.7, 10.6)
@@ -1250,21 +1432,78 @@ class Builder:
             self.attach.append((name, f"{S}.cuffstrap"))
         self.refresh()
 
+    def sleeve_weights(self, sd):
+        """The sleeve's own weights along the forearm: its rings' weights
+        (arm_weights at each ring), interpolated between rings as the skinned
+        facets are. The strips lying on it take these."""
+        ws = self.arm_weights(sd)
+        ref = self._ring(sd.on_forearm(0.0), sd.af, 1.0, X)[0] - sd.on_forearm(0.0)
+        rings = sorted((s, dict(ws(sd.on_forearm(s) + ref * sd.fore_r(s)))) for s in SLEEVE_S)
+
+        def f(p):
+            s = min(max(sd.s_wrist(p), rings[0][0]), rings[-1][0])
+            for (sa, wa), (sb, wb) in zip(rings, rings[1:]):
+                if sa <= s <= sb:
+                    t = (s - sa) / (sb - sa)
+                    return [(n, wa[n] * (1 - t) + wb[n] * t) for n in wa]
+        return f
+
     def wrap_detail(self):
-        """A frayed Arms_Grime tail from the band nearest the cuff, on each
-        forearm's outer side: a knot and three strands of uneven length,
-        rigid to the forearm. (The grime bands are coloured in arms().)"""
-        for S in "LR":
+        """The wrap: on each forearm, cloth strips wound over the undersuit
+        sleeve (STRIPS), each a thin closed ring following the sleeve's facets,
+        leaning a little, both edges frayed into uneven notches; and a frayed
+        Arms_Grime tail on the forearm's outer side, a knot on a strip and
+        three strands of uneven length, rigid to the forearm."""
+        for S, seed in (("L", 7), ("R", 19)):
             sd = self.sides[S]
+            rng = random.Random(seed)
+            u, w = ring_frame(sd.af, X)
+            n = STRIP_SECTIONS
+            dirs = [u * math.cos(2 * math.pi * j / n) + w * math.sin(2 * math.pi * j / n) for j in range(n)]
+            for k, (e0, e1, mat, st) in enumerate(STRIPS[S]):
+                phase = rng.uniform(0, 2 * math.pi)
+                lean = math.tan(math.radians(rng.uniform(*STRIP_TILT))) * rng.choice((-1, 1))
+                r_mid = sd.fore_r(-(e0 + e1) / 2)
+                line = [lean * r_mid * math.cos(2 * math.pi * j / n - phase) for j in range(n)]
+                # Each edge as distances from the wrist: teeth on the even
+                # sections, notches between them. The wrist edge's teeth
+                # reach toward the wrist and its notches cut toward the elbow;
+                # the elbow edge's the other way.
+                teeth0 = {j: e0 + line[j] - rng.uniform(0, FRAY_JITTER) for j in range(0, n, 2)}
+                teeth1 = {j: e1 + line[j] + rng.uniform(0, FRAY_JITTER) for j in range(0, n, 2)}
+                edge0, edge1 = [], []
+                for j in range(n):
+                    if j % 2 == 0:
+                        edge0.append(teeth0[j])
+                        edge1.append(teeth1[j])
+                    else:
+                        a, c = (j - 1) % n, (j + 1) % n
+                        edge0.append(max(teeth0[a], teeth0[c]) + rng.uniform(*FRAY_DIP))
+                        edge1.append(min(teeth1[a], teeth1[c]) - rng.uniform(*FRAY_DIP))
+                sections = []
+                for j, d in enumerate(dirs):
+                    s0, s1 = -edge0[j], -edge1[j]
+                    sections.append([sd.on_forearm(s) + d * (self.sleeve_r(sd, s, d) + h)
+                                     for s, h in ((s0, -STRIP_SINK), (s0, st), (s1, st), (s1, -STRIP_SINK))])
+                name = f"{S}.strip.{k + 1}"
+                p = self.piece(name, mat)
+                vl = self.ring_loft(p, sections)
+                self.finish(p, self.sleeve_weights(sd))
+                self.attach.append((name, f"{S}.arm"))
+                self.strips[S].append((name, [sec[1] for sec in vl], [sec[2] for sec in vl]))
+            # The tail, knotted on the strip under TAIL_S.
+            s_t = TAIL_S[S]
+            host = next(f"{S}.strip.{k + 1}" for k, st in enumerate(STRIPS[S]) if st is self.strip_at(S, s_t))
+            st = self.strip_at(S, s_t)[3]
             rad = self.radial(sd, self.outer_angle(sd))
             tang = sd.af.cross(rad).normalized()
-            knot_c = sd.on_forearm(TAIL_S) + rad * (sd.fore_r(TAIL_S) + 0.003)
+            knot_c = sd.on_forearm(s_t) + rad * (self.sleeve_r(sd, s_t, rad) + st + 0.002)
             name = f"{S}.tail_root"
             p = self.piece(name, "Arms_Grime")
             self.box(p, knot_c, sd.af, tang, rad, 0.010, 0.009, 0.006)
             self.finish(p, self.rigid(f"forearm.{S}"))
             p.gadget = f"forearm.{S}"
-            self.attach.append((name, f"{S}.arm"))
+            self.attach.append((name, host))
             for j, L in enumerate(TAIL_LEN):
                 start = knot_c + sd.af * (0.004 * (j - 1)) + rad * 0.001
                 D0 = (rad * 0.55 - Z * 0.8 + sd.af * (0.15 * (j - 1))).normalized()
@@ -1292,19 +1531,21 @@ class Builder:
                 self.attach.append((name, f"{S}.tail_root"))
         self.refresh()
 
-    # ---- bracer and gauge (left forearm) -----------------------------------
+    # ---- vambraces, and the gauge on the left one ----------------------------
 
     def _bracer_point(self, sd, s, ang, r):
-        """A point on the left forearm at s, `ang` degrees round from its back, radius r."""
+        """A point on a forearm at s, `ang` degrees round from its back, radius r."""
         side = sd.af.cross(sd.back).normalized()
         a = math.radians(ang)
         return sd.on_forearm(s) + (sd.back * math.cos(a) + side * math.sin(a)) * r
 
     def outside_angle(self, sd):
-        """The angle round the left forearm (from its back) facing most outward, +X, off the plate."""
+        """The angle round a forearm (from its back) facing most outward (+X
+        on the left, -X on the right), off the plate."""
         side = sd.af.cross(sd.back).normalized()
+        sgn = 1 if sd.tag == "L" else -1
         best = max((a for a in range(int(BRACER_SPAN) + 15, 360 - int(BRACER_SPAN) - 15)),
-                   key=lambda a: (sd.back * math.cos(math.radians(a)) + side * math.sin(math.radians(a))).x)
+                   key=lambda a: sgn * (sd.back * math.cos(math.radians(a)) + side * math.sin(math.radians(a))).x)
         return float(best)
 
     def radius_at(self, sd, p):
@@ -1312,6 +1553,7 @@ class Builder:
         return (q - sd.af * q.dot(sd.af)).length
 
     def bracer_r(self, sd, s):
+        """The vambrace plate's inner radius at s (at its facets' corners)."""
         return sd.fore_r(s) + BRACER_SIT
 
     def plate_point(self, sd, s, a, lift=0.0):
@@ -1324,6 +1566,19 @@ class Builder:
         nrm = self.radial(sd, c)
         return self._bracer_point(sd, s, a, r) + nrm * lift, nrm
 
+    def facet_frame(self, sd, s, a):
+        """On the plate's facet under (s, a): the surface point, the unit
+        direction along the forearm in the facet's plane, the one across it,
+        and the facet's true normal (each facet is a plane, leaning with the
+        forearm's taper)."""
+        P, _ = self.plate_point(sd, s, a)
+        ts = (self.plate_point(sd, s + 1e-4, a)[0] - self.plate_point(sd, s - 1e-4, a)[0]).normalized()
+        ta = self.plate_point(sd, s, a + 0.01)[0] - self.plate_point(sd, s, a - 0.01)[0]
+        nrm = ts.cross(ta).normalized()
+        if nrm.dot(P - sd.on_forearm(s)) < 0:
+            nrm = -nrm
+        return P, ts, nrm.cross(ts).normalized(), nrm
+
     def angle_at(self, sd, q):
         """The angle round the forearm (from its back) of a point, and its s."""
         s = (q - sd.W).dot(sd.af)
@@ -1331,14 +1586,22 @@ class Builder:
         side = sd.af.cross(sd.back).normalized()
         return math.degrees(math.atan2(r.dot(side), r.dot(sd.back))), s
 
-    def bracer(self):
-        """A brass plate curved over the back of the left forearm in four flat
-        facets, its edges bevelled, held by two straps with stitched edges,
-        each with a steel buckle frame and tongue and a keeper loop."""
-        sd = self.sides["L"]
+    def vambraces(self):
+        for S in "LR":
+            self.vambrace(S)
+        self.refresh()
+
+    def vambrace(self, S):
+        """A gunmetal plate curved over the back of the forearm in four flat
+        facets, its edges bevelled and worn bare (Arms_Steel), scratched to the
+        steel (SCRATCHES) and rusted in patches (RUST), standing off the strips
+        and held by two straps with stitched edges, each with a steel buckle
+        frame and tongue and a keeper loop. The left one carries the gauge."""
+        sd = self.sides[S]
         angs = [-BRACER_SPAN + 2 * BRACER_SPAN * i / 4 for i in range(5)]
-        s0, s1 = BRACER_S
-        p = self.piece("L.bracer", "Arms_Brass")
+        s0, s1 = VAMBRACE_S[S]
+        plate = f"{S}.vambrace"
+        p = self.piece(plate, "Arms_Gunmetal")
 
         # Closed slab: a loop of outer then inner points at each section. The
         # long edges are bevelled on the facets' own planes, the ends by
@@ -1356,13 +1619,50 @@ class Builder:
             return outer + inner
         self.loft(p, [section(s0, PLATE_BEVEL), section(s0 + PLATE_BEVEL, 0.0),
                       section(s1 - PLATE_BEVEL, 0.0), section(s1, PLATE_BEVEL)])
-        self.gadget(p, "L")
-        self.attach.append(("L.bracer", "L.arm"))
-        # Straps: rings round the forearm, over the plate on the back.
-        under = [BRACER_SPAN + (360 - 2 * BRACER_SPAN) * i / 5 for i in range(1, 5)]
+        self.gadget(p, S)
+        # The worn edges: the end bevels and caps, and along the long sides
+        # the edge bevels and walls (loop k runs from point k to k + 1; the
+        # 12 points are 7 outer, then 5 inner).
+        nl = 12
+        for pair in range(3):
+            for k in range(nl):
+                if pair != 1 or k in (0, 5, 6, 11):
+                    p.faces[pair * nl + k].material_index = M["Arms_Steel"]
+        for f in p.faces[3 * nl:]:
+            f.material_index = M["Arms_Steel"]
+        # Scratches: thin steel slivers on the facets, each straight along its
+        # facet's plane, standing SCRATCH[1] proud.
+        sw, proud, sink = SCRATCH
+        for k, (sc, ac, ln, skew) in enumerate(SCRATCHES[S]):
+            P, ts, ta, nrm = self.facet_frame(sd, sc, ac)
+            along = ts * math.cos(math.radians(skew)) + ta * math.sin(math.radians(skew))
+            name = f"{S}.scratch.{k + 1}"
+            q = self.piece(name, "Arms_Steel")
+            self.box(q, P + nrm * ((proud - sink) / 2), along, nrm.cross(along), nrm, ln, sw, proud + sink)
+            self.gadget(q, S)
+            self.attach.append((name, plate))
+            self.scratches.append((name, S, along.normalized(), nrm.cross(along).normalized()))
+        # Rust patches: an uneven 7-sided slab on a facet.
+        rr = random.Random(31 if S == "L" else 43)
+        for k, (sc, ac, rad) in enumerate(RUST[S]):
+            P, ts, ta, nrm = self.facet_frame(sd, sc, ac)
+            poly = []
+            for j in range(7):
+                phi = 2 * math.pi * (j + rr.uniform(-0.25, 0.25)) / 7
+                poly.append((ts * math.cos(phi) + ta * math.sin(phi)) * rad * rr.uniform(0.7, 1.1))
+            name = f"{S}.rust.{k + 1}"
+            q = self.piece(name, "Arms_Rust")
+            self.loft(q, [[P + d + nrm * h for d in poly] for h in (-RUST_PROUD, RUST_PROUD)])
+            self.gadget(q, S)
+            self.attach.append((name, plate))
+        # Straps: rings round the forearm, over the plate on the back and on
+        # the strip under them round the rest, sunk a little into it.
+        under = [BRACER_SPAN + (360 - 2 * BRACER_SPAN) * i / (STRAP_UNDER + 1) for i in range(1, STRAP_UNDER + 1)]
         strap_angs = angs + under
-        for k, sc in enumerate(STRAPS):
-            p = self.piece(f"L.strap.{k + 1}", "Arms_Strap")
+        for k, sc in enumerate(STRAPS[S]):
+            host = self.strip_at(S, sc)
+            hname = f"{S}.strip.{STRIPS[S].index(host) + 1}"
+            p = self.piece(f"{S}.strap.{k + 1}", "Arms_Strap")
             # Cross-section loop per angle: (front inner, front outer, back outer, back inner).
             sections = []
             for a in strap_angs:
@@ -1372,7 +1672,7 @@ class Builder:
                     if on_plate:
                         rin = self.bracer_r(sd, s) + BRACER_T - 0.001
                     else:
-                        rin = sd.fore_r(s) + 0.0025
+                        rin = self.sleeve_r(sd, s, self.radial(sd, a)) + host[3] - 0.0008
                     sec.append((s, rin))
                 (sa, ra), (sb, rb) = sec
                 sections.append([self._bracer_point(sd, sa, a, ra), self._bracer_point(sd, sa, a, ra + STRAP_T + 0.001),
@@ -1387,9 +1687,9 @@ class Builder:
                 for j in range(4):
                     jj = (j + 1) % 4
                     p.faces.append(bm.faces.new((A[j], A[jj], B[jj], B[j])))
-            self.gadget(p, "L")
-            self.attach.append((p.name, "L.arm"))
-            self.attach.append((p.name, "L.bracer"))
+            self.gadget(p, S)
+            self.attach.append((p.name, hname))
+            self.attach.append((p.name, plate))
             strap = p.name
             # The buckle, on the strap's outer surface on the outside of the
             # forearm: angles round the strap from the plate's edge, wrapping.
@@ -1407,20 +1707,20 @@ class Builder:
             out = along.cross(across).normalized()
             if out.dot(c - sd.on_forearm(sc)) < 0:
                 out = -out
-            q = self.piece(f"L.buckle_frame.{k + 1}", "Arms_Steel")
+            q = self.piece(f"{S}.buckle_frame.{k + 1}", "Arms_Steel")
             self.frame(q, c + out * 0.0006, along, across, out, BUCKLE[0], STRAP_W + 0.003, 0.0022, 0.0016)
-            self.gadget(q, "L")
+            self.gadget(q, S)
             self.attach.append((q.name, strap))
-            q = self.piece(f"L.buckle_tongue.{k + 1}", "Arms_Steel")
+            q = self.piece(f"{S}.buckle_tongue.{k + 1}", "Arms_Steel")
             self.box(q, c + out * 0.0007 - along * 0.002, along, across, out, 0.009, 0.0018, 0.0012)
-            self.gadget(q, "L")
-            self.attach.append((q.name, f"L.buckle_frame.{k + 1}"))
+            self.gadget(q, S)
+            self.attach.append((q.name, f"{S}.buckle_frame.{k + 1}"))
             # The keeper loop round the strap beside the buckle, gripping it.
             kc = c + along * 0.012 - out * ((STRAP_T + 0.001) / 2)
-            q = self.piece(f"L.buckle_keeper.{k + 1}", "Arms_Strap")
+            q = self.piece(f"{S}.buckle_keeper.{k + 1}", "Arms_Strap")
             self.frame(q, kc, across, out, along, STRAP_W - 0.0004 + 0.0028, STRAP_T + 0.001 - 0.0004 + 0.0028,
                        0.0014, 0.004)
-            self.gadget(q, "L")
+            self.gadget(q, S)
             self.attach.append((q.name, strap))
             # Stitched edges: a row of dashes 2.5 mm in from each edge of the
             # strap's outer face, clear of the buckle and keeper.
@@ -1433,15 +1733,14 @@ class Builder:
                     nrm = (B - A).cross(sections[i][2] - sections[i][1])
                     if nrm.dot((A + B) / 2 - sd.on_forearm(sc)) < 0:
                         nrm = -nrm
-                    count += self.dash_row(f"L.stitch_strap.{k + 1}.{tag}", A, B, nrm, self.rigid("forearm.L"),
+                    count += self.dash_row(f"{S}.stitch_strap.{k + 1}.{tag}", A, B, nrm, self.rigid(f"forearm.{S}"),
                                            strap, start=count, keep=lambda q, c=c: (q - c).length > 0.024)
             for name in self.pieces:
-                if name.startswith(f"L.stitch_strap.{k + 1}."):
-                    self.pieces[name].gadget = "forearm.L"
-        self.refresh()
+                if name.startswith(f"{S}.stitch_strap.{k + 1}."):
+                    self.pieces[name].gadget = f"forearm.{S}"
 
     def gauge(self):
-        """A brass bezel on the plate, turned toward the eye, its window
+        """A gunmetal bezel on the left plate, turned toward the eye, its window
         recessed 3 mm, with a backlit screen reading 47% and a block cursor."""
         sd = self.sides["L"]
         ri = self.bracer_r(sd, GAUGE_S) + BRACER_T
@@ -1472,7 +1771,7 @@ class Builder:
         top = base + n * lam
         self.gauge_lift = lam
         bm = self.bm
-        p = self.piece("L.gauge", "Arms_Brass")
+        p = self.piece("L.gauge", "Arms_Gunmetal")
 
         def tp(x, y, h=0.0):
             return top + u * x + w * y + n * h
@@ -1500,7 +1799,7 @@ class Builder:
         p.faces.append(bm.faces.new(F))                              # window floor
         p.faces.append(bm.faces.new(list(reversed(B))))              # underside, in the plate
         self.gadget(p, "L")
-        self.attach.append(("L.gauge", "L.bracer"))
+        self.attach.append(("L.gauge", "L.vambrace"))
         self.gauge_top = top
         self.gauge_frame = (top, u, w, n, hl, hw)
         self.gauge_on_plate = on_plate
@@ -1537,9 +1836,9 @@ class Builder:
     def bracer_detail(self):
         """The hygrometer's devices round the gauge, all rigid to forearm.L:
         four slotted screws on the bezel's corners, a knurled dial on its inner
-        side, three toggles at the plate's wrist end, a copper coil on a brass
-        tube behind the bezel, a copper and a rubber cable back under the
-        straps into the wraps, and a canister clipped beside the plate."""
+        side, three toggles at the plate's wrist end, a copper coil on a
+        gunmetal tube behind the bezel, a dark rubber cable back under the
+        straps into the sleeve, and a canister clipped beside the plate."""
         sd = self.sides["L"]
         top, u, w, n, hl, hw = self.gauge_frame
         # Screws: an 8-sided head at each corner of the bezel, its slot cut
@@ -1598,7 +1897,7 @@ class Builder:
                       for j in range(ridges)]
         self.knurl_axis = (D, ad)
         name = "L.knurl_mark"
-        p = self.piece(name, "Arms_Paint")
+        p = self.piece(name, "Arms_Rust")
         self.box(p, front + m1 * 0.0033 + ad * 0.0002, m1, m2, ad, 0.0046, 0.0026, 0.0008)
         self.gadget(p, "L")
         self.attach.append((name, "L.knurl_dial"))
@@ -1611,7 +1910,7 @@ class Builder:
             p = self.piece(names[0], "Arms_Steel")
             self.box(p, pt + nrm * 0.0002, sd.af, sd.af.cross(nrm), nrm, 0.0042, 0.0042, 0.002)
             self.gadget(p, "L")
-            self.attach.append((names[0], "L.bracer"))
+            self.attach.append((names[0], "L.vambrace"))
             ld = nrm.slerp(sd.af, 0.3).normalized()
             l0 = pt + nrm * 0.0008
             l1 = l0 + ld * 0.0062
@@ -1619,20 +1918,20 @@ class Builder:
             self.cylinder(p, l0, l1, 0.0011, 6, ref=sd.af, rb=0.0008)
             self.gadget(p, "L")
             self.attach.append((names[1], names[0]))
-            p = self.piece(names[2], "Arms_Paint")
+            p = self.piece(names[2], "Arms_Rust")
             self.cylinder(p, l1 - ld * 0.0006, l1 + ld * 0.0026, TOGGLE_TIP / 2, 8, ref=sd.af, bevel=0.0004)
             self.gadget(p, "L")
             self.attach.append((names[2], names[1]))
             self.toggles.append(names)
-        # The coil: a short brass tube on the plate behind the bezel, and a
+        # The coil: a short gunmetal tube on the plate behind the bezel, and a
         # copper wire wound round it.
         c0, c1, turns, ang = COIL
         A, nrm = self.plate_point(sd, c0 - 0.003, ang, 0.0028)
         B, _ = self.plate_point(sd, c1 + 0.003, ang, 0.0028)
-        p = self.piece("L.coil_tube", "Arms_Brass")
+        p = self.piece("L.coil_tube", "Arms_Gunmetal")
         self.cylinder(p, A, B, 0.0035, 12, ref=nrm, bevel=0.0006)
         self.gadget(p, "L")
-        self.attach.append(("L.coil_tube", "L.bracer"))
+        self.attach.append(("L.coil_tube", "L.vambrace"))
         ax = (B - A).normalized()
         e1 = (nrm - ax * nrm.dot(ax)).normalized()
         e2 = ax.cross(e1)
@@ -1644,32 +1943,33 @@ class Builder:
         self.tube(p, path, 0.0009, 6)
         self.gadget(p, "L")
         self.attach.append(("L.coil", "L.coil_tube"))
-        # Cables: out of the bezel's elbow-side wall, along the plate under the
-        # straps, and down under the wrap band past the plate's elbow end.
-        for tag, mat, y, rc in CABLES:
-            P0 = top + u * (-hl + 0.0025) + w * y - n * 0.003
-            a, s = self.angle_at(sd, top + u * (-hl - 0.002) + w * y)
-            path = [P0]
-            while s > BRACER_S[0] + 0.004:
-                path.append(self.plate_point(sd, s, a, rc - 0.0003)[0])
-                s -= 0.006
-            path.append(self.plate_point(sd, BRACER_S[0], a, rc - 0.0006)[0] + sd.af * (-0.002))
-            for s, dr in ((-0.168, 0.004), (-0.174, 0.0005), (CABLE_END, -0.004)):
-                path.append(self._bracer_point(sd, s, a, sd.fore_r(s) + dr))
-            name = f"L.cable_{tag}"
-            p = self.piece(name, mat)
-            vl = self.tube(p, path, rc, 6)
-            self.gadget(p, "L")
-            self.attach.append((name, "L.gauge"))
-            self.covered.append((name, vl[0], ["L.gauge"]))
-            self.covered.append((name, vl[-1], ["L.arm"]))
+        # The dark rubber cable: out of the bezel's elbow-side wall, along the
+        # plate under the straps, and down into the sleeve past the plate's
+        # elbow end. (The glowing tubes beside it are laid in tubes().)
+        y, rc = CABLE
+        P0 = top + u * (-hl + 0.0025) + w * y - n * 0.003
+        a, s = self.angle_at(sd, top + u * (-hl - 0.002) + w * y)
+        path = [P0]
+        while s > BRACER_S[0] + 0.004:
+            path.append(self.plate_point(sd, s, a, rc - 0.0003)[0])
+            s -= 0.006
+        path.append(self.plate_point(sd, BRACER_S[0], a, rc - 0.0006)[0] + sd.af * (-0.002))
+        for s, dr in ((-0.168, 0.004), (-0.174, 0.0005), (CABLE_END, -0.004)):
+            path.append(self._bracer_point(sd, s, a, sd.fore_r(s) + dr))
+        name = "L.cable"
+        p = self.piece(name, "Arms_Rubber")
+        vl = self.tube(p, path, rc, 6)
+        self.gadget(p, "L")
+        self.attach.append((name, "L.gauge"))
+        self.covered.append((name, vl[0], ["L.gauge"]))
+        self.covered.append((name, vl[-1], ["L.arm"]))
         # The canister, beside the plate's outer edge over the first strap,
         # held by a clip to the plate, a valve wheel on its wrist end.
         sE, sW, rc, ac = CANISTER
         Ee = self._bracer_point(sd, sE, ac, sd.fore_r(sE) + 0.012 + rc)
         Ew = self._bracer_point(sd, sW, ac, sd.fore_r(sW) + 0.012 + rc)
         ax = (Ew - Ee).normalized()
-        p = self.piece("L.canister", "Arms_Steel")
+        p = self.piece("L.canister", "Arms_Gunmetal")
         self.cylinder(p, Ee, Ew, rc, 12, ref=sd.back, bevel=0.0015)
         self.gadget(p, "L")
         m1 = (sd.back - ax * sd.back.dot(ax)).normalized()
@@ -1699,16 +1999,17 @@ class Builder:
         self.box(p, (foot + Pp) / 2, ax, ax.cross(Pp - foot), (Pp - foot).normalized(), 0.005, 0.002,
                  (Pp - foot).length + 0.001)
         self.gadget(p, "L")
-        self.attach.append(("L.canister_clip", "L.bracer"))
+        self.attach.append(("L.canister_clip", "L.vambrace"))
         self.attach.append(("L.canister", "L.canister_clip"))
         self.refresh()
 
     def compass(self):
         """The sun compass on the right wrist, rigid to forearm.R: a strap
-        over the middle of the cuff carrying a post, a round steel housing with
-        its ivory face turned toward the eye, 12 tick marks, a fixed needle,
-        an amber lamp on the face's rim, two side buttons, and a sun-shade lid
-        hinged on the face's far edge (toward the fingers), propped open."""
+        over the middle of the cuff carrying a post, a round gunmetal housing
+        with its dark face turned toward the eye, 12 glowing tick marks, a
+        glowing fixed needle and status lamp on the face's rim, two side
+        buttons, and a sun-shade lid hinged on the face's far edge (toward the
+        fingers), propped open."""
         sd = self.sides["R"]
         s0, sm, s1 = COMPASS_STRAP
 
@@ -1735,7 +2036,7 @@ class Builder:
         def fp(h, r, phi):
             a = math.radians(phi)
             return C0 + nF * h + (e1 * math.cos(a) + e2 * math.sin(a)) * r
-        p = self.piece("R.compass_housing", "Arms_Steel")
+        p = self.piece("R.compass_housing", "Arms_Gunmetal")
         self.loft(p, [circle(C0, nF, 0.0155, 16, e1), circle(C0 + nF * 0.0015, nF, HOUSING_R, 16, e1),
                       circle(C0 + nF * 0.006, nF, HOUSING_R, 16, e1), circle(C0 + nF * 0.008, nF, 0.0145, 16, e1)])
         p.sides = 16
@@ -1753,7 +2054,7 @@ class Builder:
             phi = 30.0 * k
             rd = fp(0, 1, phi) - C0
             name = f"R.compass_tick.{k + 1}"
-            p = self.piece(name, "Arms_Paint")
+            p = self.piece(name, "Arms_Glow")
             self.box(p, fp(0.0092, TICK[0], phi), rd, nF.cross(rd), nF, TICK[1], TICK[2], 0.0008)
             self.gadget(p, "R")
             self.attach.append((name, "R.compass_face"))
@@ -1761,7 +2062,7 @@ class Builder:
         tip_r, tail_r, nw, nphi = NEEDLE
         perp = fp(0, 1, nphi + 90) - C0
         pts2 = [fp(0, tip_r, nphi) - C0, perp * (nw / 2), fp(0, tail_r, nphi + 180) - C0, perp * (-nw / 2)]
-        p = self.piece("R.compass_needle", "Arms_Paint")
+        p = self.piece("R.compass_needle", "Arms_Glow")
         self.loft(p, [[C0 + nF * h + q for q in pts2] for h in (0.0088, 0.0096)])
         self.gadget(p, "R")
         self.attach.append(("R.compass_needle", "R.compass_face"))
@@ -1773,7 +2074,7 @@ class Builder:
         face.append("R.compass_hub")
         lr, lrad, lphi = LAMP
         Lc = fp(0, lr, lphi)
-        p = self.piece("R.compass_lamp", "Arms_Amber")
+        p = self.piece("R.compass_lamp", "Arms_Glow")
         self.cylinder(p, Lc + nF * 0.0087, Lc + nF * 0.0102, lrad, 8, ref=e1, bevel=0.0004)
         self.gadget(p, "R")
         self.attach.append(("R.compass_lamp", "R.compass_face"))
@@ -1797,7 +2098,7 @@ class Builder:
         def opened(q):
             return Hc + Rm @ (q - Hc)
         Lc0 = C0 + nF * 0.0108
-        p = self.piece("R.compass_lid", "Arms_Steel")
+        p = self.piece("R.compass_lid", "Arms_Gunmetal")
         self.loft(p, [[opened(q) for q in circle(Lc0 + nF * dh, nF, 0.0175, 16, e1)] for dh in (-0.0007, 0.0007)])
         self.box(p, opened(C0 + e1 * 0.0175 + nF * 0.0086), Rm @ e1, Rm @ e2, Rm @ nF, 0.0035, 0.008, 0.0048)
         p.sides = 16
@@ -1812,8 +2113,95 @@ class Builder:
         self.attach.append(("R.compass_prop", "R.compass_housing"))
         self.attach.append(("R.compass_prop", "R.compass_lid"))
         self.compass_info = dict(centre=C0 + nF * 0.009, normal=nF, face=face, dial="R.compass_face",
-                                 lamp="R.compass_lamp", lid="R.compass_lid", angle=ac)
+                                 lamp="R.compass_lamp", lid="R.compass_lid", angle=ac, base=C0, e1=e1)
         self.refresh()
+
+    # ---- tubes ----------------------------------------------------------------
+
+    def tube_lift(self, S, s):
+        """How far a tube's centre lies off the plate's outer surface at s:
+        resting on it, and dipped under each strap (its top inside the strap)."""
+        hi, lo = TUBE_LIFT
+        lift = hi
+        for sc in STRAPS[S]:
+            d = abs(s - sc) - (STRAP_W / 2 + 0.0015)
+            if d <= 0:
+                return lo
+            if d < 0.004:
+                lift = min(lift, lo + (hi - lo) * d / 0.004)
+        return lift
+
+    def plate_run(self, S, a, s_from, s_to):
+        """A tube's path along the plate at angle a, from s_from toward the
+        elbow to s_to, every TUBE_STEP and at each strap's ramps."""
+        ss = []
+        s = s_from
+        while s > s_to:
+            ss.append(s)
+            s -= TUBE_STEP
+        for sc in STRAPS[S]:
+            for e in (STRAP_W / 2 + 0.0015, STRAP_W / 2 + 0.0055):
+                ss += [x for x in (sc - e, sc + e) if s_to < x < s_from]
+        ss = sorted(set(round(x, 6) for x in ss), reverse=True)
+        clean = []
+        for x in ss:
+            if not clean or clean[-1] - x > 0.0015:
+                clean.append(x)
+        return [self.plate_point(self.sides[S], x, a, self.tube_lift(S, x))[0] for x in clean]
+
+    def tubes(self):
+        """The glowing tubes (Arms_Glow, TUBE_R, TUBE_SIDES sides), rigid to
+        their forearm: two out of the gauge's elbow-side wall (the first on
+        the old copper cable's path) and one out of the bottom of the compass
+        housing. Each runs along its vambrace's plate, dips under both
+        straps, and past the plate's elbow end goes down into the sleeve, out
+        of view below the bottom edge."""
+        sd = self.sides["L"]
+        top, u, w, n, hl, hw = self.gauge_frame
+        s_end = VAMBRACE_S["L"][0]
+        for k, y in enumerate(TUBES_L):
+            P0 = top + u * (-hl + 0.0025) + w * y - n * 0.003
+            a, s = self.angle_at(sd, top + u * (-hl - 0.002) + w * y)
+            path = [P0] + self.plate_run("L", a, s, s_end + 0.004)
+            path.append(self.plate_point(sd, s_end, a, TUBE_LIFT[0] - 0.0003)[0] + sd.af * (-0.002))
+            for s, dr in ((s_end - 0.008, 0.0045), (s_end - 0.014, 0.0005), (CABLE_END, -0.0055)):
+                path.append(self._bracer_point(sd, s, a, sd.fore_r(s) + dr))
+            self.lay_tube(f"L.tube.{k + 1}", "L", path, "L.gauge", "L.vambrace")
+        # The right one: from inside the compass housing out of its bottom,
+        # down beside the post onto the cuff, back along the cuff and off its
+        # rear face onto the strip and the sleeve, up onto the plate's wrist
+        # end, along it, and down into the sleeve past its elbow end.
+        sd = self.sides["R"]
+        ci = self.compass_info
+        C0, nF, e1 = ci["base"], ci["normal"], ci["e1"]
+        a = TUBE_R_ANGLE
+        s0, s1 = VAMBRACE_S["R"]
+        rad = self.radial(sd, a)
+        path = [C0 + nF * 0.002 - e1 * 0.008, C0 - nF * 0.003 - e1 * 0.012]
+        for s in (-0.024, -0.030, -0.034):
+            path.append(sd.on_forearm(s) + self.radial(sd, ci["angle"] + (a - ci["angle"]) * (-0.012 - s) / 0.022)
+                        * (self.cuff_r(s) + TUBE_LIFT[0]))
+        st = self.strip_at("R", -0.039)[3]
+        path.append(sd.on_forearm(-0.039) + rad * (self.sleeve_r(sd, -0.039, rad) + st + TUBE_LIFT[0]))
+        for s in (-0.044, -0.050, -0.055):
+            path.append(sd.on_forearm(s) + rad * (self.sleeve_r(sd, s, rad) + TUBE_LIFT[0]))
+        path.append(self.plate_point(sd, s1 + 0.003, a, TUBE_LIFT[0] - 0.001)[0])
+        path += self.plate_run("R", a, s1 - 0.002, s0 + 0.004)
+        path.append(self.plate_point(sd, s0, a, TUBE_LIFT[0] - 0.0003)[0] + sd.af * (-0.002))
+        for s, dr in ((s0 - 0.008, 0.0045), (s0 - 0.014, 0.0005), (TUBE_R_END, -0.0055)):
+            path.append(self._bracer_point(sd, s, a, sd.fore_r(s) + dr))
+        self.lay_tube("R.tube.1", "R", path, "R.compass_housing", "R.vambrace")
+        self.refresh()
+
+    def lay_tube(self, name, S, path, housing, plate):
+        p = self.piece(name, "Arms_Glow")
+        vl = self.tube(p, path, TUBE_R, TUBE_SIDES)
+        self.gadget(p, S)
+        self.attach.append((name, housing))
+        self.attach.append((name, plate))
+        self.covered.append((name, vl[0], [housing]))
+        self.covered.append((name, vl[-1], [f"{S}.arm"]))
+        self.tubes_info.append((name, S, vl, housing))
 
     # ---- rig ------------------------------------------------------------------
 
@@ -2161,29 +2549,6 @@ def closed_problems(b):
     return problems
 
 
-def band_crease_problems(b):
-    """Each band's lip and foot edges turn more than CREASE_MIN degrees."""
-    problems, worst = [], {}
-    for S, band_loops, all_loops in b.band_edges:
-        idx = {id(l[0]): i for i, l in enumerate(all_loops)}
-        lo = 180.0
-        for loop in band_loops:
-            i = idx[id(loop[0])]
-            if i == 0 or i == len(all_loops) - 1:
-                continue
-            A, B, C = all_loops[i - 1], loop, all_loops[i + 1]
-            for k in range(SIDES):
-                j = (k + 1) % SIDES
-                n1 = (A[j].co - A[k].co).cross(B[k].co - A[k].co)
-                n2 = (B[j].co - B[k].co).cross(C[k].co - B[k].co)
-                ang = math.degrees(n1.angle(n2))
-                lo = min(lo, ang)
-        worst[S] = round(lo, 1)
-        if lo <= CREASE_MIN:
-            problems.append(f"{S} forearm: a band edge turns only {lo:.1f} degrees (needs > {CREASE_MIN})")
-    return problems, worst
-
-
 def evaluated_points(b):
     bpy.context.view_layer.update()
     dg = bpy.context.evaluated_depsgraph_get()
@@ -2435,6 +2800,212 @@ def framing(b, pts, idx):
     if len(pitches) < 2 or min(pitches) < SMALL_MIN_PX:
         problems.append(f"the knurl pitch is {m['knurl']['pitch_px_min']} px over {len(pitches)} seen pairs "
                         f"(needs {SMALL_MIN_PX})")
+    # The undersuit: enough of the sleeve's forearm vertices seen between the
+    # strips on each checked forearm (the right; the left plate covers every
+    # in-view part of the left forearm).
+    under = {}
+    for S, need in GEAR_TARGETS["undersuit_seen"].items():
+        sd = b.sides[S]
+        vs = [i for i in idx[f"{S}.arm"][0] if sd.s_elbow(pts[i]) > 0.0 and sd.s_wrist(pts[i]) < 0.0]
+        got = [i for i in vs if seen(tree, pts[i])]
+        ss = [round(sd.s_wrist(pts[i]), 4) for i in got]
+        under[S] = {"seen": len(got), "s_m": [min(ss), max(ss)] if ss else None}
+        if len(got) < need:
+            problems.append(f"only {len(got)} undersuit vertices on the {S} forearm are seen (needs {need})")
+    m["undersuit_seen"] = under
+    # The tubes: each one's last ring out of view below the bottom edge (or
+    # behind the eye), and every vertex of it in view at least CLEARANCE ahead.
+    tubes = {}
+    for name, S, rings, housing in b.tubes_info:
+        last = [project(pts[x.index]) for x in rings[-1]]
+        out = all(q is None or q[1] < -1.0 for q in last)
+        ahead = [q[2] for q in (project(p) for p in verts(name)) if q is not None and abs(q[0]) <= 1 and abs(q[1]) <= 1]
+        tubes[name] = {"last_ring_max_ndc_y": round(max(q[1] for q in last if q is not None), 3)
+                       if any(q is not None for q in last) else None,
+                       "in_view_vertices": len(ahead), "nearest_in_view_m": round(min(ahead), 3) if ahead else None}
+        if not out:
+            problems.append(f"{name}'s last ring is not wholly below the bottom edge: {tubes[name]}")
+        if ahead and min(ahead) < CLEARANCE:
+            problems.append(f"{name} comes {min(ahead):.3f} m from the eye in view (needs {CLEARANCE})")
+    m["tubes"] = tubes
+    return problems, m
+
+
+def gear_problems(b, idx):
+    """The gear's binding sizes and counts (GEAR_TARGETS), measured on the
+    built pieces at rest: copper only on the coil, the strips and their
+    frayed edges, the tails, the vambrace plates with their scratches and
+    straps, the hand plates and knuckle guards, and the tubes' sides, radius
+    and starts. (What the eye sees of them is checked in framing().)"""
+    T = GEAR_TARGETS
+    problems, m = [], {}
+    pieces = b.pieces
+    bm = b.bm
+    bm.verts.ensure_lookup_table()
+    # Copper: every face in Arms_Copper belongs to a piece named *.coil*.
+    copper = sorted({name for name, p in pieces.items()
+                     if any(f.material_index == M["Arms_Copper"] for f in p.faces)})
+    m["copper_pieces"] = copper
+    bad = [n for n in copper if ".coil" not in n]
+    if bad or not copper:
+        problems.append(f"Arms_Copper on {bad or 'nothing'} (only the coil may be copper)")
+
+    def side_pieces(S, prefix, mat=None):
+        out = [n for n in pieces if n.startswith(f"{S}.{prefix}")]
+        if mat is not None:
+            wrong = [n for n in out if pieces[n].mat not in (mat if isinstance(mat, tuple) else (mat,))]
+            if wrong:
+                problems.append(f"{wrong} are not in {mat}")
+        return sorted(out)
+
+    def along(S, co):
+        """Distance from the wrist along the forearm axis (toward the elbow +)."""
+        sd = b.sides[S]
+        return -(co - sd.W).dot(sd.af)
+
+    def overlap(a, c):
+        ta = BVHTree.FromPolygons([x.co for x in pieces[a].verts],
+                                  [[pieces[a].verts.index(x) for x in f.verts] for f in pieces[a].faces])
+        tc = BVHTree.FromPolygons([x.co for x in pieces[c].verts],
+                                  [[pieces[c].verts.index(x) for x in f.verts] for f in pieces[c].faces])
+        return bool(ta.overlap(tc))
+
+    for S in "LR":
+        sd = b.sides[S]
+        ms = {}
+        # Strips: 2-3 per forearm, each edge with at least notches_min notches
+        # (a local minimum of the edge's distance along the axis, notch_dip
+        # below the maxima either side).
+        strips = side_pieces(S, "strip.", ("Arms_Wrap", "Arms_Grime"))
+        if not T["strips"][0] <= len(strips) <= T["strips"][1]:
+            problems.append(f"{S} forearm has {len(strips)} strips, wants {T['strips']}")
+        edges = {name: (e0, e1) for name, e0, e1 in b.strips[S]}
+        notches = {}
+        for name in strips:
+            if name not in edges:
+                problems.append(f"{name}: its edges were not recorded")
+                continue
+            for tag, loop in zip(("wrist", "elbow"), edges[name]):
+                d = [along(S, x.co) for x in loop]
+                n = len(d)
+                good, dips = 0, []
+                for j in range(n):
+                    if d[j] < d[j - 1] and d[j] < d[(j + 1) % n]:
+                        # The neighbouring maxima: walk out each way while the edge rises.
+                        lo = j
+                        while d[(lo - 1) % n] >= d[lo % n] and (lo - 1) % n != j:
+                            lo -= 1
+                        hi = j
+                        while d[(hi + 1) % n] >= d[hi % n] and (hi + 1) % n != j:
+                            hi += 1
+                        dip = min(d[lo % n], d[hi % n]) - d[j]
+                        dip_hi = max(d[lo % n], d[hi % n]) - d[j]
+                        dips.append(round(dip * 1000, 2))
+                        if T["notch_dip"][0] <= dip and dip_hi <= T["notch_dip"][1]:
+                            good += 1
+                notches[f"{name}.{tag}"] = {"notches": good, "dips_mm": [min(dips), max(dips)] if dips else None}
+                if good < T["notches_min"]:
+                    problems.append(f"{name}'s {tag} edge has {good} notches of {T['notch_dip']} m "
+                                    f"(needs {T['notches_min']})")
+        ms["strips"] = notches
+        tails = side_pieces(S, "tail.", "Arms_Grime")
+        ms["tails"] = len(tails)
+        if not T["tails"][0] <= len(tails) <= T["tails"][1]:
+            problems.append(f"{S} forearm has {len(tails)} tails, wants {T['tails']}")
+        # The vambrace: one gunmetal plate, its length along the forearm and
+        # its span round it from the forearm's back.
+        plates = side_pieces(S, "vambrace")
+        if len(plates) != 1 or pieces[plates[0]].mat != "Arms_Gunmetal":
+            problems.append(f"{S} forearm's vambrace plates: {plates} (wants one, Arms_Gunmetal)")
+        else:
+            co = [x.co for x in pieces[plates[0]].verts]
+            ss = [along(S, c) for c in co]
+            side = sd.af.cross(sd.back).normalized()
+            angs = []
+            for c in co:
+                r = c - sd.on_forearm(-along(S, c))
+                angs.append(math.degrees(math.atan2(r.dot(side), r.dot(sd.back))))
+            ln, span = max(ss) - min(ss), max(angs) - min(angs)
+            ms["plate"] = {"length_m": round(ln, 4), "span_deg": round(span, 2),
+                           "from_wrist_m": [round(min(ss), 4), round(max(ss), 4)]}
+            if not T["plate_len"][0] <= ln <= T["plate_len"][1]:
+                problems.append(f"{S} vambrace plate is {ln:.4f} m long, wants {T['plate_len']}")
+            if not T["plate_span"][0] <= span <= T["plate_span"][1]:
+                problems.append(f"{S} vambrace plate spans {span:.1f} degrees, wants {T['plate_span']}")
+            scr = [(n, a, c) for n, s_, a, c in b.scratches if s_ == S]
+            sizes = []
+            for name, al, ac in scr:
+                pc = pieces[name]
+                cs = [x.co for x in pc.verts]
+                L = max(c.dot(al) for c in cs) - min(c.dot(al) for c in cs)
+                Wd = max(c.dot(ac) for c in cs) - min(c.dot(ac) for c in cs)
+                ok = pc.mat == "Arms_Steel" and T["scratch_len"][0] <= L <= T["scratch_len"][1] \
+                    and Wd <= T["scratch_w_max"] + 1e-7 and overlap(name, plates[0])
+                sizes.append((round(L * 1000, 1), round(Wd * 1000, 2), ok))
+            ms["scratches_mm"] = sizes
+            if sum(1 for *_, ok in sizes) < T["scratches_min"] or not all(ok for *_, ok in sizes):
+                problems.append(f"{S} vambrace scratches (length, width mm, ok): {sizes}, wants at least "
+                                f"{T['scratches_min']} steel, {T['scratch_len']} m long, at most {T['scratch_w_max']} wide")
+        straps = side_pieces(S, "strap.", "Arms_Strap")
+        buckles = []
+        for name in straps:
+            k = name.split(".")[-1]
+            parts = {f"{S}.buckle_frame.{k}": "Arms_Steel", f"{S}.buckle_tongue.{k}": "Arms_Steel",
+                     f"{S}.buckle_keeper.{k}": "Arms_Strap"}
+            ok = all(n in pieces and pieces[n].mat == mt for n, mt in parts.items()) and \
+                overlap(f"{S}.buckle_frame.{k}", name)
+            buckles.append(ok)
+        ms["straps_buckled"] = buckles
+        if len(straps) != T["straps"] or not all(buckles):
+            problems.append(f"{S} vambrace straps {straps}, buckled {buckles} (wants {T['straps']}, each with a buckle)")
+        # Hand plates: three gunmetal segments, each touching the next; four knuckle guards.
+        hp = side_pieces(S, "hand_plate.", "Arms_Gunmetal")
+        laps = [overlap(a, c) for a, c in zip(hp, hp[1:])]
+        thick = []
+        for name in hp:
+            pc = pieces[name]
+            nv = len(pc.verts) // 2   # the slab's top grid, then its bottom grid, point for point
+            thick.append(round(max((pc.verts[i].co - pc.verts[nv + i].co).length for i in range(nv)) * 1000, 2))
+        ms["hand_plates"] = {"segments": len(hp), "touching": laps, "thickness_mm": thick}
+        if len(hp) != T["hand_plates"] or not all(laps):
+            problems.append(f"{S} hand plate segments {hp}, touching {laps} (wants {T['hand_plates']}, each touching the next)")
+        guards = side_pieces(S, "guard_", "Arms_Worn")
+        ms["knuckle_guards"] = len(guards)
+        if len(guards) != T["knuckle_guards"]:
+            problems.append(f"{S} hand has {len(guards)} knuckle guards, wants {T['knuckle_guards']}")
+        # Tubes: their count, sides and radius, and each start at its device's housing.
+        tubes = [t for t in b.tubes_info if t[1] == S]
+        named = side_pieces(S, "tube.", "Arms_Glow")
+        tm = []
+        for name, _, rings, housing in tubes:
+            sides = {len(r) for r in rings}
+            radii = []
+            for r in rings:
+                c = sum((x.co for x in r), Vector()) / len(r)
+                radii += [(x.co - c).length for x in r]
+            start = sum((x.co for x in rings[0]), Vector()) / len(rings[0])
+            hp_ = pieces[housing]
+            ht = BVHTree.FromPolygons([x.co for x in hp_.verts], [[hp_.verts.index(x) for x in f.verts] for f in hp_.faces])
+            near, _, _, dist = ht.find_nearest(start)
+            # Inside the housing counts as 0.
+            hits, o, dd = 0, start.copy(), Vector((0.31, 0.22, 0.925)).normalized()
+            for _ in range(32):
+                hit, _, _, _ = ht.ray_cast(o, dd)
+                if hit is None:
+                    break
+                hits += 1
+                o = hit + dd * 1e-6
+            gap = 0.0 if hits % 2 == 1 else dist
+            ok = sides == {T["tube_sides"]} and pieces[name].sides == T["tube_sides"] and \
+                T["tube_r"][0] <= min(radii) and max(radii) <= T["tube_r"][1] and gap <= T["tube_start"]
+            tm.append({"name": name, "sides": sorted(sides), "radius_mm": [round(min(radii) * 1000, 3), round(max(radii) * 1000, 3)],
+                       "start_from_housing_mm": round(gap * 1000, 3), "housing": housing, "ok": ok})
+            if not ok:
+                problems.append(f"{name}: {tm[-1]}")
+        ms["tubes"] = tm
+        if len(tubes) != T["tubes"][S] or sorted(named) != sorted(t[0] for t in tubes):
+            problems.append(f"{S} forearm has tubes {named} (wants {T['tubes'][S]})")
+        m[S] = ms
     return problems, m
 
 
@@ -2446,11 +3017,12 @@ def check(b):
     objs = sorted(o.name for o in b.coll.objects)
     if objs != sorted([MESH, RIG]):
         problems.append(f"objects {objs} are not {sorted([MESH, RIG])}")
+    # The materials: the spec's names, order, colours and emissive flags.
     mats = [mt.name for mt in b.obj.data.materials]
-    if mats != [n for n, _, _ in MATERIALS]:
-        problems.append(f"materials {mats} are not in the order {[n for n, _, _ in MATERIALS]}")
+    if mats != [n for n, _, _ in SPEC_MATERIALS]:
+        problems.append(f"materials {mats} are not in the order {[n for n, _, _ in SPEC_MATERIALS]}")
     colours = {}
-    for (name, srgb, glow), mt in zip(MATERIALS, b.obj.data.materials):
+    for (name, srgb, glow), mt in zip(SPEC_MATERIALS, b.obj.data.materials):
         bsdf = mt.node_tree.nodes["Principled BSDF"]
         back = tuple(round(to_srgb(c) * 255) for c in bsdf.inputs["Base Color"].default_value[:3])
         emits = bsdf.inputs["Emission Strength"].default_value > 0
@@ -2518,15 +3090,13 @@ def check(b):
         problems.append(f"gadget parts not rigid to their forearm: {loose}")
     # Small parts' sizes as built.
     m["screw_head_mm"], m["screw_slot_mm"] = SCREW[0] * 1000, SCREW[1] * 1000
-    # Closed volumes and band creases.
+    # Closed volumes.
     problems += closed_problems(b)
-    cp, worst = band_crease_problems(b)
-    problems += cp
-    m["band_edge_min_turn_deg"] = worst
-    m["bands"] = {S: {"boundaries_m": [round(x, 4) for x in b.sides[S].bands[0]],
-                      "lips_mm": [round(h * 1000, 1) for h in b.sides[S].bands[1]]} for S in "LR"}
     # Poses: framing at rest, attachment in every test pose.
     idx = piece_indices(b)
+    gp, gm = gear_problems(b, idx)
+    problems += gp
+    m["gear"] = gm
     polys = [tuple(p.vertices) for p in b.obj.data.polygons]
     m["pieces"] = len(idx)
     poses = b.test_poses()
@@ -2862,8 +3432,8 @@ def add_clips(path, b):
 
 def check_glb(path, tris_expected):
     """Read the glb back: one skinned mesh, 39 named joints, the 15
-    materials in order with their colours, only the glow, amber and screen emissive,
-    and the two clips (checked further by check_glb_clips)."""
+    materials in the spec's order with its colours, only the glow and screen
+    emissive, and the two clips (checked further by check_glb_clips)."""
     with open(path, "rb") as fh:
         data = fh.read()
     magic, _, _ = struct.unpack_from("<III", data, 0)
@@ -2882,10 +3452,10 @@ def check_glb(path, tris_expected):
         problems.append(f"glb joints differ: {sorted(set(joints) ^ set(JOINTS))}")
     mats = gj.get("materials", [])
     names = [mt["name"] for mt in mats]
-    if names != [n for n, _, _ in MATERIALS]:
+    if names != [n for n, _, _ in SPEC_MATERIALS]:
         problems.append(f"glb materials {names}")
     got = {}
-    for mt, (name, srgb, glow) in zip(mats, MATERIALS):
+    for mt, (name, srgb, glow) in zip(mats, SPEC_MATERIALS):
         c = mt.get("pbrMetallicRoughness", {}).get("baseColorFactor", [1, 1, 1, 1])
         back = tuple(round(to_srgb(x) * 255) for x in c[:3])
         e = mt.get("emissiveFactor", [0, 0, 0])
