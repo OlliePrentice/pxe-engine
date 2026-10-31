@@ -242,7 +242,7 @@ Assets: no
 Merged: f7fc8c9
 
 ## module-index-tools: Module index check, and overrides that reach a build script's modules
-Status: queued
+Status: in-progress
 Type: tooling
 Spec: docs/tasks/module-index-tools/task.md
 Depends on: none
