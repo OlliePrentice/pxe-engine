@@ -503,6 +503,27 @@ Action: none yet; a third sighting queues a tooling task.
 ## F-070: Attachment at joint angles beyond the test poses
 Kind: tool
 Status: open
-Seen: desert-arms-motion (2026-10-31, designer: `docs/tasks/desert-arms-motion/scripts/elbow_close_attachment.py`)
-Detail: Runs the attachment check with the elbows closed at a range of angles. First sighting.
+Seen: desert-arms-motion (2026-10-31, designer: `docs/tasks/desert-arms-motion/scripts/elbow_close_attachment.py`), desert-arms-motion (2026-10-31, designer, cycle 2: `scripts/elbow_close_sweep.py`, the sweep for two values of a constant)
+Detail: Runs the attachment check with the elbows closed at a range of angles. Second sighting.
+Action: none yet; a third sighting queues a tooling task.
+
+## F-071: A replan's Verification diff against a base that already holds part of the change
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-motion (2026-10-31, designer, cycle 2: Verification 8 wanted "exactly the three replacements" from `git diff <cycle base>`, but two landed in cycle 1 before that base; checked against the first base 0a63800 instead)
+Detail: Neither the unblock nor the replan instructions said which base a revised Verification diff is taken against.
+Action: .claude/skills/feature/SKILL.md (Unblocking 3) and .claude/skills/backlog-run/SKILL.md (Replanning 2): name each diff's base, the task's first cycle base when earlier cycles committed part of the change (36b7f69).
+
+## F-072: A fix proved at planning that the build's checks don't guard
+Kind: instruction-gap
+Status: actioned
+Seen: desert-arms-motion (2026-10-31, designer, cycle 2: with the old `TUBE_R_END` -0.205 the whole build still passes; the tube shows only at 18-27° closed and the single 30° test pose is past that window; `scripts/elbow_close_sweep.txt`)
+Detail: The planning trial proved the new value clean but never ran the old one, so the spec added no check that fails on the regression.
+Action: .claude/skills/feature/SKILL.md, step 1.7: run the build with the old value and confirm a check fails, or add one that would (36b7f69). The arms' own gap is reported to the user as a possible follow-up.
+
+## F-073: Comparing two commits' rest meshes by vertex index
+Kind: tool
+Status: open
+Seen: desert-arms-motion (2026-10-31, designer: `docs/tasks/desert-arms-motion/scripts/rest_compare.py`, both commits' build_arms.py through runpy, per piece and ring)
+Detail: Verification asked for rest vertices compared by index between two builds; nothing in `tools/` does it (`tools/glb.py compare` compares glbs, not per-piece rest vertices). First sighting.
 Action: none yet; a third sighting queues a tooling task.
