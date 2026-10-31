@@ -1,6 +1,6 @@
 # Arms: a natural walk and a pumping sprint
 Type: feature
-Status: open
+Status: complete
 Cycle: 2
 
 ## Goal
@@ -130,13 +130,13 @@ Run in the task's worktree, against the cycle base:
    - the menu's Arms preview (Walk, Sprint, Hold pose with a phase scrub) shows each clip standing still.
 
 ## Acceptance criteria
-- [ ] `CLIPS`, `FRAME_TOP_CLIP` and `CLIP_SCALES` hold the Decisions' numbers. `carry()` implements the binding formulas, axes and signs.
-- [ ] `clip_checks` runs every binding check in §1 against `CLIP_TARGETS`, kept apart from `CLIPS`. The fallback over `CLIP_SCALES` works as specified and is recorded.
-- [ ] `TUBE_R_END` is −0.195 and `ELBOW_CLOSE_TEST` 30.0; `ELBOW_SPAN` is not in `clip_checks`.
-- [ ] The rest pose, mesh and skin are unchanged except `R.tube.1`'s end (Verification 3). Perspective captures as Verification 5.
-- [ ] `desert/docs/art-style.md` has exactly the three replacements.
-- [ ] Verification 2–8 pass.
-- [ ] Project builds cleanly from a fresh build directory with CMake
+- [x] `CLIPS`, `FRAME_TOP_CLIP` and `CLIP_SCALES` hold the Decisions' numbers. `carry()` implements the binding formulas, axes and signs. (build_arms.py CLIPS/FRAME_TOP_CLIP/CLIP_SCALES and Builder.carry, reviewed term by term; measured sprint y 0.018 fwd / -0.007 back, elbow 7..27°)
+- [x] `clip_checks` runs every binding check in §1 against `CLIP_TARGETS`, kept apart from `CLIPS`. The fallback over `CLIP_SCALES` works as specified and is recorded. (clip_checks, fit_clips; assets.md clip_scale 1.0 both; negative run back=0.070 fails at every k, scripts/negative_runs.txt)
+- [x] `TUBE_R_END` is −0.195 and `ELBOW_CLOSE_TEST` 30.0; `ELBOW_SPAN` is not in `clip_checks`. (build_arms.py lines 534, 602; grep finds no ELBOW_SPAN)
+- [x] The rest pose, mesh and skin are unchanged except `R.tube.1`'s end (Verification 3). Perspective captures as Verification 5. (scripts/rest_compare.txt: only 16 vertices in R.tube.1's last two rings moved; ortho 6/6, perspective 3/3 identical against d5bccf4)
+- [x] `desert/docs/art-style.md` has exactly the three replacements. (git diff 0a63800 -- desert/docs/art-style.md: exactly three; two landed in cycle 1)
+- [x] Verification 2–8 pass. (handoff.md cycle 2; two scratch builds cmp-identical; glb.py info as base; no diff in engine/game/examples/desert/src; captures twice identical, pairwise distinct)
+- [x] Project builds cleanly from a fresh build directory with CMake (check preset, --fresh --clean-first: only stb sprintf warning)
 
 ## Assets
 - **arms** (revised clips only): `desert/assets/characters/arms.glb`'s `Arms_Walk` and `Arms_Sprint`, rebuilt by `build_arms.py`, with the preview sheets.
@@ -153,8 +153,15 @@ Run in the task's worktree, against the cycle base:
 ## Spec revisions
 - 2026-10-31, replan 1, approved by the user at unblock: option (b) + (d) of `replan-1.md`. The sprint's forward peak is driven up and in rather than out (new back, swing and in-drift numbers, chosen by a planning trial of the whole build's checks at every k), `R.tube.1`'s end shortened 10 mm so it stays sleeved up to 33° closed, `ELBOW_SPAN` dropped for clips and the closed-elbow test pose raised to 30°. The fallback's trigger is any failing clip check. Changed: Decisions, Approach, Verification 3, 5 and 8, Acceptance criteria, Assets, Out of scope. The walk is unchanged and kept as built in db6e434.
 
+## Playtest checklist
+- Walk (W): the arms swing from the shoulder in opposition to the stride, on a slight arc, with a small sharp dip at each footfall; the hands follow through at the wrist just after each swing.
+- Sprint (Shift+W): a distinctly different pump. Arms more bent, loose fists driven up and in at the front, back and out behind, with a harder footfall.
+- Stop: the arms settle back to rest, open-handed.
+- Tab menu > Arms preview: Walk, Sprint and Hold pose with the phase scrub each show the clip standing still, with no tube or strap popping out of a sleeve at any phase (watch the right forearm's tube in the sprint).
+
 ## Cycle log
 - Cycle 1, 2026-10-31, base 0a63800.
 - Cycle 1, 2026-10-31: blocked. Arms_Sprint passes at no k in CLIP_SCALES: the forward-peak wrist target is out of the rotation-only chain's reach (46.7 mm short at k 1), and closing the elbows 18° or more pushes R.tube.1 out of its sleeve. Arms_Walk passes at k 1.0 (db6e434). See replan-1.md.
 - Unblocked: 2026-10-31, sprint driven up and in (back 0.080, swing 0.035, in 0.030), R.tube.1 end −0.195, ELBOW_SPAN dropped, closed test pose 30°.
 - Cycle 2, 2026-10-31, base d5bccf4 (first cycle after revision 1; no outstanding issues).
+- Cycle 2, 2026-10-31: review passed, no issues (designer 2cd5598; both clips at clip_scale 1.0). Complete.
