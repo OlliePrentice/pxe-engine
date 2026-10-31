@@ -1,0 +1,13 @@
+# Blender -b --python-exit-code 1 -P docs/tasks/desert-arms-motion/scripts/elbow_close_sweep.py   (attachment_problems with both elbows closed, everything else at rest)
+END -0.205 closed 10: 0 []
+END -0.205 closed 18: 1 ["closed 18: 1 end verts of R.tube.1 show outside ['R.arm'] near (-0.297, -0.169, -0.275)"]
+END -0.205 closed 22: 1 ["closed 22: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.294, -0.167, -0.279)"]
+END -0.205 closed 27: 1 ["closed 27: 2 end verts of R.tube.1 show outside ['R.arm'] near (-0.294, -0.162, -0.279)"]
+END -0.205 closed 30: 0 []
+END -0.205 closed 33: 0 []
+END -0.195 closed 10: 0 []
+END -0.195 closed 18: 0 []
+END -0.195 closed 22: 0 []
+END -0.195 closed 27: 0 []
+END -0.195 closed 30: 0 []
+END -0.195 closed 33: 0 []

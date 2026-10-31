@@ -1,0 +1,5 @@
+# Verification 7 (task desert-arms-motion): tools/captures.sh --twice --out docs/tasks/desert-arms-motion docs/tasks/desert-arms-motion/scripts/captures.txt
+walk-a    desert/pxe_desert --walk 2
+walk-b    desert/pxe_desert --walk 2.29
+sprint-a  desert/pxe_desert --walk 3 --sprint
+sprint-b  desert/pxe_desert --walk 3.25 --sprint

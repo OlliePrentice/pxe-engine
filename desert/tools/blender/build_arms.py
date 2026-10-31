@@ -122,7 +122,7 @@ patches take the weights of the glove surface under them, the strips the
 sleeve's; the hand plates and knuckle guards are rigid to the hand. The attachment check runs in the
 rest pose and in test poses: each wrist twisted, flexed and bent sideways 30
 degrees each way, every finger and thumb joint curled 60 degrees, each elbow
-opened 30 degrees and closed 10.
+opened 30 degrees and closed 30.
 
 Two looping clips (task desert-arms-motion), a first-person carry in place,
 each 1.0 s at 30 fps, 31 keys (the last the first), linear, every joint keyed
@@ -132,10 +132,13 @@ and the footfalls are at phases 0 and 0.5. In Arms_Walk the arms swing from
 the shoulder along a pendulum arc, drifting a little toward the body's middle
 on the forward swing; the elbows give a little just after each forward peak,
 the hands follow through at the wrist, and a sharp small dip marks each
-footfall. Arms_Sprint is a pumping motion: the elbows held more bent, the
-hands lifted and drawn back, driven up and forward, then back and out, the
-elbow closing at the front and opening at the back, a harder footfall, and
-every finger and thumb joint curled 25 degrees into a loose fist. The
+footfall. Arms_Sprint is a pumping motion: the elbows held closed by 15
+degrees, the hands lifted 15 mm and drawn back 80 mm, near where the bent arm
+puts them; the forward peak is driven up and in toward the body's middle, not
+out, and the back swing goes out away from it; the elbow closes a further 12
+degrees at the front and opens 8 at the back, a little after the swing; a
+harder footfall; and every finger and thumb joint curled 25 degrees toward
+the palm into a loose fist. The
 formulas are above CLIPS. The wrist targets are reached by the least turn of
 the shoulder and upper arm; the forearm's and hand's turns are fixed by the
 formulas. If a clip fails its checks, the build retries it with its vertical
@@ -528,7 +531,7 @@ TUBES_L = (-0.008, 0.013)
 TUBE_LIFT = (TUBE_R - 0.0003, 0.0003)
 TUBE_STEP = 0.004       # along the plate
 TUBE_R_ANGLE = -40.0    # the right tube's angle round the right forearm, from its back
-TUBE_R_END = -0.205     # the right tube's end along the forearm, past the plate's elbow end
+TUBE_R_END = -0.195     # the right tube's end along the forearm, past the plate's elbow end
 # The sun compass, right forearm.
 COMPASS_STRAP = (-0.0155, -0.011, -0.0065)  # strap rear edge, the post's line, front edge
 COMPASS_POST = 0.008
@@ -563,8 +566,8 @@ CLIPS = {
     "Arms_Walk": dict(cycle=2.0, swing=0.035, back=0.0, lift=0.0, arc=0.006, drive=0.0, bob=0.012, bob_pow=2,
                       drift=0.006, out=0.0, hold=0.0, give=6.0, pump=(0.0, 0.0), elbow_lag=0.05,
                       hand=5.0, hand_lag=0.15, fist=0.0),
-    "Arms_Sprint": dict(cycle=3.0, swing=0.070, back=0.020, lift=0.015, arc=0.0, drive=0.025, bob=0.022, bob_pow=3,
-                        drift=0.0, out=0.010, hold=15.0, give=0.0, pump=(12.0, 8.0), elbow_lag=0.03,
+    "Arms_Sprint": dict(cycle=3.0, swing=0.035, back=0.080, lift=0.015, arc=0.0, drive=0.025, bob=0.022, bob_pow=3,
+                        drift=0.030, out=0.010, hold=15.0, give=0.0, pump=(12.0, 8.0), elbow_lag=0.03,
                         hand=8.0, hand_lag=0.10, fist=25.0),
 }
 CLIP_ORDER = ("Arms_Walk", "Arms_Sprint")
@@ -584,8 +587,8 @@ CLIP_SCALES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)
 CLIP_TARGETS = {
     "Arms_Walk": dict(z_max=0.035, z_min=-0.035, y_fwd=(-0.012, 0.006), y_back=(-0.012, 0.006),
                       x_in_max=0.006, x_in_min=0.0, elbow_lag=0.05, hand_lag=0.15),
-    "Arms_Sprint": dict(z_max=0.050, z_min=-0.090, y_fwd=(-0.022, 0.040), y_back=(-0.022, 0.015),
-                        x_in_max=0.0, x_in_min=-0.010, elbow_lag=0.03, hand_lag=0.10),
+    "Arms_Sprint": dict(z_max=-0.045, z_min=-0.115, y_fwd=(-0.022, 0.040), y_back=(-0.022, 0.015),
+                        x_in_max=0.030, x_in_min=-0.010, elbow_lag=0.03, hand_lag=0.10),
 }
 LIMBS = ("shoulder", "upper_arm", "forearm", "hand")   # the joints a clip may turn
 DIGITS = ("thumb", "index", "middle", "ring", "pinky")  # and, curled into a fist, these in Arms_Sprint
@@ -596,7 +599,7 @@ TIMING_TOL = 1.0 / 30.0   # each peak within this of its phase
 WRIST_MAX = 30.0          # the test poses' ranges from rest: a hand about each axis,
 FINGER_MAX = 60.0         # a finger or thumb joint,
 STEP_MAX = 45.0           # no joint turns more than this between adjacent keys
-ELBOW_CLOSE_TEST = 10.0   # the closed-elbow test pose
+ELBOW_CLOSE_TEST = 30.0   # the closed-elbow test pose
 ATTACH_FRAMES = 8         # attachment is checked at this many evenly spaced phases of each clip
 SHEET = (4, 2, 640, 360)  # clip preview sheets: columns, rows, tile size
 
