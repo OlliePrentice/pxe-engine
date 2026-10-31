@@ -215,12 +215,13 @@ Assets: yes
 Merged: 255a676
 
 ## desert-arms-motion: Arms: a natural walk and a pumping sprint
-Status: in-progress
+Status: done
 Type: feature
 Spec: docs/tasks/desert-arms-motion/task.md
 Depends on: desert-arms-gear
 Touches: desert/tools/blender/build_arms.py, desert/assets/characters/, desert/docs/art-style.md, docs/tasks/desert-arms-motion/
 Assets: yes
+Merged: 7ea605f
 
 ## perspective-surface-detail: Terminator sharpness and surface ripples in perspective mode
 Status: done
